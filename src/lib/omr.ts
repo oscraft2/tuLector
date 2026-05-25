@@ -49,108 +49,89 @@ function getLayout(config: OMRConfig) {
   return { NAME_TOP, NAME_BOTTOM, ID_START, Q_TOP };
 }
 
-/** Detectar los 4 cuadrados de esquina */
+/** Detectar los 4 cuadrados de esquina (inspirado en ZipGrade: quadrant-based) */
 export function findCorners(
   imageData: ImageData,
   config: OMRConfig = DEFAULT_CONFIG
 ): [number, number][] | null {
   const { width, height, data } = imageData;
-  const gray = new Uint8Array(width * height);
+  const w = width, h = height;
+
+  // Convertir a grayscale
+  const gray = new Uint8Array(w * h);
   for (let i = 0; i < gray.length; i++) {
-    const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
-    gray[i] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    const j = i * 4;
+    gray[i] = Math.round(data[j] * 0.299 + data[j + 1] * 0.587 + data[j + 2] * 0.114);
   }
 
-  // Otsu threshold
-  const hist = new Int32Array(256);
-  for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
-  const total = gray.length;
-  let sumB = 0, wB = 0, maxVariance = 0, threshold = 128;
-  let sum = 0;
-  for (let i = 0; i < 256; i++) sum += i * hist[i];
-  for (let t = 0; t < 256; t++) {
-    wB += hist[t];
-    if (wB === 0) continue;
-    const wF = total - wB;
-    if (wF === 0) break;
-    sumB += t * hist[t];
-    const mB = sumB / wB;
-    const mF = (sum - sumB) / wF;
-    const between = wB * wF * (mB - mF) * (mB - mF);
-    if (between > maxVariance) { maxVariance = between; threshold = t; }
-  }
+  // En vez de flood-fill costoso, buscar regiones oscuras cerca de cada esquina
+  // usando escaneo radial desde la esquina de la imagen hacia adentro
+  const corners: [number, number][] = [];
+  const quadrants: [number, number, number, number][] = [
+    [0, 0, w / 2, h / 2],          // TL: top-left
+    [w / 2, 0, w, h / 2],           // TR: top-right
+    [w / 2, h / 2, w, h],           // BR: bottom-right
+    [0, h / 2, w / 2, h],           // BL: bottom-left
+  ];
 
-  const binary = new Uint8Array(width * height);
-  for (let i = 0; i < gray.length; i++) {
-    binary[i] = gray[i] < threshold ? 1 : 0;
-  }
+  for (const [qx0, qy0, qx1, qy1] of quadrants) {
+    // Direccion de busqueda: desde la esquina de la imagen hacia adentro
+    const xDir = qx0 === 0 ? 1 : -1;
+    const yDir = qy0 === 0 ? 1 : -1;
+    const xStart = qx0 === 0 ? 0 : w - 1;
+    const yStart = qy0 === 0 ? 0 : h - 1;
+    const xEnd = qx0 === 0 ? w / 2 : w / 2;
+    const yEnd = qy0 === 0 ? h / 2 : h / 2;
 
-  // Flood-fill para encontrar componentes conectados (blobs oscuros)
-  const visited = new Uint8Array(width * height);
-  const blobs: { cx: number; cy: number; area: number; bbox: number[] }[] = [];
+    let bestX = Math.round((qx0 + qx1) / 2);
+    let bestY = Math.round((qy0 + qy1) / 2);
+    let bestScore = Infinity;
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = y * width + x;
-      if (binary[idx] === 0 || visited[idx] === 1) continue;
-
-      const stack: [number, number][] = [[x, y]];
-      visited[idx] = 1;
-      let area = 0;
-      let minX = x, maxX = x, minY = y, maxY = y;
-
-      while (stack.length > 0) {
-        const [cx, cy] = stack.pop()!;
-        area++;
-        if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
-        if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
-
-        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-          const nx = cx + dx, ny = cy + dy;
-          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-            const ni = ny * width + nx;
-            if (binary[ni] === 1 && visited[ni] === 0) {
-              visited[ni] = 1;
-              stack.push([nx, ny]);
+    // Escanear una cuadricula de puntos en el cuadrante, buscar el mas oscuro
+    // que sea razonablemente cuadrado (el corner square)
+    for (let cy = Math.min(yStart, yEnd); cy <= Math.max(yStart, yEnd); cy += 4) {
+      for (let cx = Math.min(xStart, xEnd); cx <= Math.max(xStart, xEnd); cx += 4) {
+        // Calcular densidad de oscuridad en una ventana alrededor de (cx, cy)
+        let darkCount = 0, totalCount = 0;
+        const winSize = 30;
+        for (let dy = -winSize; dy <= winSize; dy += 2) {
+          for (let dx = -winSize; dx <= winSize; dx += 2) {
+            const px = cx + dx, py = cy + dy;
+            if (px >= 0 && px < w && py >= 0 && py < h) {
+              totalCount++;
+              if (gray[py * w + px] < 100) darkCount++;
             }
           }
         }
-      }
+        const darkRatio = totalCount > 0 ? darkCount / totalCount : 0;
 
-      const bw = maxX - minX + 1;
-      const bh = maxY - minY + 1;
-      if (area > 80 && bw > 6 && bh > 6 && bw < 200 && bh < 200) {
-        const aspect = bw / Math.max(bh, 1);
-        if (aspect > 0.5 && aspect < 2.0) {
-          blobs.push({ cx: Math.round((minX + maxX) / 2), cy: Math.round((minY + maxY) / 2), area, bbox: [minX, minY, maxX, maxY] });
+        // Un corner square debe tener alta densidad oscura pero no 100%
+        // (los corners son cuadrados huecos = borde oscuro + centro blanco)
+        if (darkRatio > 0.08 && darkRatio < 0.5) {
+          // Score: preferir puntos cercanos a la esquina con alta densidad
+          const cornerDist = Math.hypot(cx - xStart, cy - yStart);
+          const score = cornerDist - darkRatio * 500;
+          if (score < bestScore) {
+            bestScore = score;
+            bestX = cx;
+            bestY = cy;
+          }
         }
       }
     }
+
+    corners.push([bestX, bestY]);
   }
 
-  // Cuadrantes: elegir el blob mas cercano a cada esquina de la imagen
-  const quadrants: Record<string, { cx: number; cy: number; score: number }> = {};
-  for (const blob of blobs) {
-    const qx = blob.cx < width / 2 ? 0 : 1;
-    const qy = blob.cy < height / 2 ? 0 : 1;
-    const key = `${qx},${qy}`;
-    const cornerX = qx === 0 ? 0 : width;
-    const cornerY = qy === 0 ? 0 : height;
-    const dist = Math.hypot(blob.cx - cornerX, blob.cy - cornerY);
-    const score = dist - blob.area * 0.01;
-    if (!quadrants[key] || score < quadrants[key].score) {
-      quadrants[key] = { cx: blob.cx, cy: blob.cy, score };
-    }
-  }
+  // Validar que las 4 esquinas formen un cuadrilatero razonable
+  const [tl, tr, br, bl] = corners;
+  const diag1 = Math.hypot(tr[0] - tl[0], tr[1] - tl[1]);
+  const diag2 = Math.hypot(br[0] - bl[0], br[1] - bl[1]);
+  const ratio = Math.max(diag1, diag2) / Math.min(diag1, diag2);
 
-  if (Object.keys(quadrants).length !== 4) return null;
+  if (ratio > 3) return null; // esquinas demasiado asimetricas
 
-  return [
-    [quadrants["0,0"].cx, quadrants["0,0"].cy],
-    [quadrants["1,0"].cx, quadrants["1,0"].cy],
-    [quadrants["1,1"].cx, quadrants["1,1"].cy],
-    [quadrants["0,1"].cx, quadrants["0,1"].cy],
-  ];
+  return corners as [number, number][];
 }
 
 /** Correccion de perspectiva via mapeo inverso sobre canvas */
