@@ -49,7 +49,7 @@ function getLayout(config: OMRConfig) {
   return { NAME_TOP, NAME_BOTTOM, ID_START, Q_TOP };
 }
 
-/** Detectar los 4 cuadrados de esquina - busqueda por densidad oscura en cuadrantes */
+/** Detectar los 4 cuadrados de esquina - centro de masa de pixeles oscuros en cada cuadrante */
 export function findCorners(
   imageData: ImageData,
   config: OMRConfig = DEFAULT_CONFIG
@@ -62,47 +62,35 @@ export function findCorners(
     gray[i] = Math.round(imageData.data[j] * 0.299 + imageData.data[j + 1] * 0.587 + imageData.data[j + 2] * 0.114);
   }
 
-  const zones = [
-    { x0: 0, y0: 0, x1: w * 0.3, y1: h * 0.3, icx: 0, icy: 0 },
-    { x0: w * 0.7, y0: 0, x1: w, y1: h * 0.3, icx: w, icy: 0 },
-    { x0: w * 0.7, y0: h * 0.7, x1: w, y1: h, icx: w, icy: h },
-    { x0: 0, y0: h * 0.7, x1: w * 0.3, y1: h, icx: 0, icy: h },
+  // Centros de masa en zonas muy cercanas a cada esquina (sin incluir texto/ID cercano)
+  const zones: [number, number, number, number][] = [
+    [0, 0, w * 0.08, h * 0.06],              // TL: solo el corner, sin nombre/ID
+    [w * 0.92, 0, w, h * 0.06],               // TR
+    [w * 0.92, h * 0.92, w, h],               // BR
+    [0, h * 0.92, w * 0.08, h],               // BL
   ];
 
   const corners: [number, number][] = [];
 
-  for (const z of zones) {
-    let bestX = 0, bestY = 0, bestScore = Infinity;
+  for (const [x0, y0, x1, y1] of zones) {
+    let sumX = 0, sumY = 0, count = 0;
 
-    for (let y = z.y0; y < z.y1; y += 2) {
-      for (let x = z.x0; x < z.x1; x += 2) {
-        let dk = 0, tot = 0;
-        // Ventana de tamano intermedio para detectar el cuadrado completo
-        for (let dy = -12; dy <= 12; dy += 2) {
-          for (let dx = -12; dx <= 12; dx += 2) {
-            const px = x + dx, py = y + dy;
-            if (px >= 0 && px < w && py >= 0 && py < h) {
-              tot++;
-              if (gray[py * w + px] < 100) dk++;
-            }
-          }
-        }
-        const ratio = tot > 0 ? dk / tot : 0;
-        // El corner tiene borde oscuro + interior blanco = densidad media
-        if (ratio > 0.03 && ratio < 0.7) {
-          const dist = Math.hypot(x - z.icx, y - z.icy);
-          // Penalizar distancia, recompensar densidad y tamano de zona oscura
-          const score = dist * 0.5 - dk * 3;
-          if (score < bestScore) {
-            bestScore = score;
-            bestX = x;
-            bestY = y;
-          }
+    for (let y = Math.round(y0); y < y1; y++) {
+      for (let x = Math.round(x0); x < x1; x++) {
+        if (gray[y * w + x] < 80) {
+          sumX += x;
+          sumY += y;
+          count++;
         }
       }
     }
 
-    corners.push([bestX, bestY]);
+    if (count > 20) {
+      corners.push([Math.round(sumX / count), Math.round(sumY / count)]);
+    } else {
+      // Fallback: centro de la zona
+      corners.push([Math.round((x0 + x1) / 2), Math.round((y0 + y1) / 2)]);
+    }
   }
 
   return corners as [number, number][];
