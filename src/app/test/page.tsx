@@ -79,8 +79,10 @@ export default function TestPage() {
       addLog(`[WARP] pixeles oscuros: ${wDark} (${(wDark/(warped.width*warped.height)*100).toFixed(1)}%)`);
 
       // ─── Burbujas ───
-      const bubbleResults = gradeBubbles(warped);
+      const report = gradeBubbles(warped);
+      const bubbleResults = report.results;
       setResults(bubbleResults);
+      addLog(`[BUBBLES] valid=${report.valid} ${report.reason || ""}`);
 
       let correct = 0;
       addLog(`[BUBBLES] Q   ans  esp  scores (top 5)`);
