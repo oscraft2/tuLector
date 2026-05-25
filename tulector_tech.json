@@ -249,7 +249,30 @@
       },
       "platform": {
         "zipgrade": "Native Android only, requires APK install",
-        "tulector": "Any browser, any device, install-free, iOS + Android + Desktop"
+        "tulector_web": "Any browser, install-free, iOS + Android + Desktop",
+        "tulector_flutter": "APK/IPA nativo, camara optimizada, mismo layout 1200x1650 que web"
+      },
+      "flutter_vs_web_vs_zipgrade": {
+        "capture": {
+          "zipgrade": "CameraX YUV_420_888",
+          "tulector_web": "getUserMedia → Canvas RGBA",
+          "tulector_flutter": "camera plugin → NV21 → FFI"
+        },
+        "corners": {
+          "zipgrade": "C++ contornos + morfologia",
+          "tulector_web": "Flood-fill + cuadrantes (JSON describe Otsu; codigo usa Y<80)",
+          "tulector_flutter": "C++ centro de masa Y<80 (alineado a omr.ts actual)"
+        },
+        "bubbles": {
+          "zipgrade": "3 modelos SVM",
+          "tulector_web": "Umbral adaptativo gray<128",
+          "tulector_flutter": "Umbral adaptativo RGB avg<80, ROI 16x16"
+        },
+        "performance": {
+          "zipgrade": "Sub-ms warp SIMD",
+          "tulector_web": "~15ms/frame en navegador",
+          "tulector_flutter": "Isolate + nativo; objetivo gama media Snapdragon 600"
+        }
       }
     },
 

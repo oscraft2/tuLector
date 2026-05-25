@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { findCorners, warpPerspective, gradeBubbles, readStudentId, DEFAULT_CONFIG, BubbleResult } from "@/lib/omr";
+import { createClient } from "@/lib/supabase";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
 
@@ -136,7 +137,7 @@ export default function ScanPage() {
   }, [stream, phase, lastScan, config]);
 
   // Procesar escaneo (warp + grade)
-  const processScan = (frame: ImageData, corners: [number, number][]) => {
+  const processScan = async (frame: ImageData, corners: [number, number][]) => {
     const video = videoRef.current;
     const canvas = hiddenCanvas.current;
     if (!video || !canvas) return;
@@ -170,6 +171,15 @@ export default function ScanPage() {
       setDebugLog(logs);
       setScanCount((c) => c + 1);
       setPhase("result");
+
+      // Enviar log a Supabase para debug remoto
+      try {
+        const supabase = createClient();
+        await supabase.from("scan_logs").insert({
+          user_agent: navigator.userAgent,
+          log: { corners, scores: bubbleResults.map(r => ({ q: r.question, a: r.answer, s: r.scores })), id: idRows, frameW: canvas.width, frameH: canvas.height }
+        });
+      } catch { /* silencioso - no interrumpe el flujo */ }
 
       // Vibrar si disponible (feedback tactil como ZipGrade)
       if (navigator.vibrate) navigator.vibrate(100);
