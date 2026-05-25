@@ -38,6 +38,17 @@ const DEFAULT_CONFIG: OMRConfig = {
   cornerSize: 50,
 };
 
+/** Layout precalculado (debe coincidir con el generador de hojas) */
+function getLayout(config: OMRConfig) {
+  const { margin: M, cornerSize: CS, idRows } = config;
+  const NAME_TOP = M + CS + 10;       // 100 - bajo la esquina TL
+  const NAME_H = 35;
+  const NAME_BOTTOM = NAME_TOP + NAME_H; // 135
+  const ID_START = NAME_BOTTOM + 15;    // 150 - primera fila de burbujas ID
+  const Q_TOP = ID_START + idRows * 28 + 30; // 264 - primera fila de preguntas
+  return { NAME_TOP, NAME_BOTTOM, ID_START, Q_TOP };
+}
+
 /** Detectar los 4 cuadrados de esquina */
 export function findCorners(
   imageData: ImageData,
@@ -245,9 +256,7 @@ export function gradeBubbles(
   const { numQuestions, numOptions, margin: M, cornerSize: CS } = config;
   const labels = config.optionLabels.split("");
 
-  const idTop = M + CS + 20;
-  const idStartY = idTop + 20;
-  const qTop = idStartY + config.idRows * 28 + 30;
+  const { Q_TOP } = getLayout(config);
   const qH = 42;
 
   const gray = new Float32Array(width * height);
@@ -258,7 +267,7 @@ export function gradeBubbles(
   const results: BubbleResult[] = [];
 
   for (let q = 0; q < numQuestions; q++) {
-    const qy = qTop + q * qH;
+    const qy = Q_TOP + q * qH;
     const scores: number[] = [];
 
     for (let o = 0; o < numOptions; o++) {
@@ -310,11 +319,10 @@ export function readStudentId(
 ): string[] {
   const { width, height, data } = imageData;
   const { idRows, idCols, margin: M, cornerSize: CS } = config;
+  const { ID_START } = getLayout(config);
 
-  const idTop = M + CS + 20;
-  const idStartY = idTop + 20;
   const xStart = M + 30;
-  const yStart = idStartY + 10;
+  const yStart = ID_START + 10;
 
   const gray = new Float32Array(width * height);
   for (let i = 0; i < gray.length; i++) {
