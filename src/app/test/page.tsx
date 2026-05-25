@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { TEST_IMAGE_BASE64, EXPECTED_ANSWERS, EXPECTED_ID } from "./test_image";
-import { findCorners, gradeBubbles, readStudentId, BubbleResult } from "@/lib/omr";
+import { findCorners, warpPerspective, gradeBubbles, readStudentId, type BubbleResult } from "@/lib/omr";
 
 type TestStep = {
   name: string;
@@ -27,11 +27,7 @@ export default function TestPage() {
     let idx = 0;
 
     try {
-      // Step 1: Load image
-      newSteps[idx].status = "pass";
-      newSteps[idx].detail = "Imagen base64 cargada, 1200x1650 PNG";
-      setSteps([...newSteps]); idx++;
-
+      // Load image
       const img = new Image();
       await new Promise((resolve, reject) => {
         img.onload = resolve;
@@ -39,18 +35,34 @@ export default function TestPage() {
         img.src = TEST_IMAGE_BASE64;
       });
 
+      // Step 1: Load image
+      newSteps[idx].status = "pass";
+      newSteps[idx].detail = `Imagen: ${img.width}x${img.height} (natural: ${img.naturalWidth}x${img.naturalHeight})`;
+      setSteps([...newSteps]); idx++;
+
       const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
       const ctx = canvas.getContext("2d")!;
       ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, img.width, img.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+      // Quick sanity check
+      let darkPx = 0;
+      for (let i = 0; i < imageData.data.length; i += 4) {
+        const g = imageData.data[i] * 0.299 + imageData.data[i+1] * 0.587 + imageData.data[i+2] * 0.114;
+        if (g < 128) darkPx++;
+      }
+      const darkPct = Math.round(darkPx / (canvas.width * canvas.height) * 100);
+      newSteps[0].detail += ` | Pixels oscuros: ${darkPct}%`;
+      setSteps([...newSteps]);
 
       // Step 2: Corner detection
       const corners = findCorners(imageData);
       if (!corners || corners.length !== 4) {
         newSteps[idx].status = "fail";
-        newSteps[idx].detail = `Se detectaron ${corners?.length ?? 0} esquinas (necesita 4)`;
+        const c = corners?.length ?? 0;
+        newSteps[idx].detail = `Se detectaron ${c} esquinas (necesita 4). ${darkPct}% pixeles oscuros. ${imageData.width}x${imageData.height}`;
         setSteps([...newSteps]);
         setRunning(false);
         return;
@@ -60,9 +72,7 @@ export default function TestPage() {
       setSteps([...newSteps]); idx++;
 
       // Step 3: Bubble analysis
-      // Apply warp first for accurate grading
-      const { warpPerspective: wp } = await import("@/lib/omr");
-      const warped = wp(ctx, corners);
+      const warped = warpPerspective(ctx, corners);
       const bubbleResults = gradeBubbles(warped);
       setResults(bubbleResults);
 
