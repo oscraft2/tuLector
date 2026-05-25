@@ -94,11 +94,20 @@ export default function ScanPage() {
       octx.clearRect(0, 0, overlay.width, overlay.height);
 
       if (corners && sharp) {
-        setDetected(true);
-        setInFocus(true);
+        // Validar que las esquinas formen un cuadrilatero razonable
+        const [tl, tr, br, bl] = corners;
+        const topW = Math.hypot(tr[0]-tl[0], tr[1]-tl[1]);
+        const botW = Math.hypot(br[0]-bl[0], br[1]-bl[1]);
+        const ratio = Math.max(topW, botW) / Math.min(topW, botW);
+        const area = Math.abs((tr[0]-tl[0])*(br[1]-tl[1]) - (tr[1]-tl[1])*(br[0]-tl[0]));
+        const valid = ratio < 2.5 && area > 10000;
 
-        // Dibujar esquinas
-        for (const [cx, cy] of corners) {
+        if (valid) {
+          setDetected(true);
+          setInFocus(true);
+
+          // Dibujar esquinas
+          for (const [cx, cy] of corners) {
           octx.strokeStyle = "#22c55e";
           octx.lineWidth = 2;
           octx.beginPath();
@@ -122,6 +131,11 @@ export default function ScanPage() {
           stableFrames.current = 0;
           setPhase("scanning");
           processScan(frame, corners);
+        }
+        } else {
+          stableFrames.current = 0;
+          setDetected(false);
+          setInFocus(false);
         }
       } else {
         stableFrames.current = 0;
@@ -161,10 +175,18 @@ export default function ScanPage() {
       const idRows = readStudentId(warped, config);
 
       addLog(`Q  answer  scores`);
+      const allSame = bubbleResults.length > 0 && bubbleResults.every(r => r.answer !== "-" && r.answer === bubbleResults[0].answer);
       for (const r of bubbleResults) {
         addLog(`Q${String(r.question).padStart(2)}: ${r.answer.padEnd(5)} [${r.scores.map(s=>s.toFixed(2)).join(",")}]`);
       }
       addLog(`ID: [${idRows.join(",")}]`);
+
+      if (allSame && bubbleResults[0].answer !== "-") {
+        addLog(`WARN: Todas las respuestas son '${bubbleResults[0].answer}' - posible mal warp o mala deteccion`);
+        setError(`Resultado sospechoso: todas "${bubbleResults[0].answer}". Reposiciona la hoja y espera.`);
+        setPhase("detecting");
+        return;
+      }
 
       setResults(bubbleResults);
       setStudentId(idRows);
