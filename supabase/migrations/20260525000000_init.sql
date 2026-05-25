@@ -160,3 +160,18 @@ CREATE POLICY "papers_storage_insert" ON storage.objects
 
 CREATE POLICY "papers_storage_select" ON storage.objects
     FOR SELECT USING (auth.uid() = owner);
+
+-- ================================================================
+-- TABLA DE LOGS DE ESCANEO (debug remoto)
+-- ================================================================
+CREATE TABLE IF NOT EXISTS scan_logs (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_agent TEXT,
+    log JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Permiso PUBLICO para insertar logs (sin auth, para debug)
+ALTER TABLE scan_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "public_insert_logs" ON scan_logs FOR INSERT WITH CHECK (true);
+CREATE POLICY "public_select_logs" ON scan_logs FOR SELECT USING (true);
