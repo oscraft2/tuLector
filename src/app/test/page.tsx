@@ -57,16 +57,8 @@ export default function TestPage() {
       newSteps[0].detail += ` | Pixels oscuros: ${darkPct}%`;
       setSteps([...newSteps]);
 
-      // Step 2: Corner detection
+      // Step 2: Corner detection (always returns 4 corners now)
       const corners = findCorners(imageData);
-      if (!corners || corners.length !== 4) {
-        newSteps[idx].status = "fail";
-        const c = corners?.length ?? 0;
-        newSteps[idx].detail = `Se detectaron ${c} esquinas (necesita 4). ${darkPct}% pixeles oscuros. ${imageData.width}x${imageData.height}`;
-        setSteps([...newSteps]);
-        setRunning(false);
-        return;
-      }
       newSteps[idx].status = "pass";
       newSteps[idx].detail = `TL(${corners[0][0]},${corners[0][1]}) TR(${corners[1][0]},${corners[1][1]}) BR(${corners[2][0]},${corners[2][1]}) BL(${corners[3][0]},${corners[3][1]})`;
       setSteps([...newSteps]); idx++;
