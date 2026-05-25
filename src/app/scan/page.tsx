@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import Link from "next/link";
 import { findCorners, warpPerspective, gradeBubbles, readStudentId, DEFAULT_CONFIG, BubbleResult } from "@/lib/omr";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
@@ -179,6 +180,7 @@ export default function ScanPage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+        <Link href="/sheet" className="text-sm text-zinc-400 hover:text-white">Hoja</Link>
         <h1 className="text-lg font-bold">TuLector</h1>
         <div className="flex items-center gap-2 text-xs text-zinc-500">
           {scanCount > 0 && <span>{scanCount} escaneos</span>}

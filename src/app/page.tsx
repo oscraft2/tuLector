@@ -18,6 +18,13 @@ export default function Home() {
           </Link>
 
           <Link
+            href="/sheet"
+            className="block w-full py-4 bg-zinc-800 hover:bg-zinc-700 rounded-xl font-semibold text-lg transition"
+          >
+            Descargar hoja de respuestas
+          </Link>
+
+          <Link
             href="/dashboard"
             className="block w-full py-4 bg-zinc-800 hover:bg-zinc-700 rounded-xl font-semibold text-lg transition"
           >

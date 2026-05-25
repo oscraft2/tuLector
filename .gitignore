@@ -34,3 +34,5 @@ omr/
 test_*.jpg
 answer_sheet.png
 debug/
+
+.vercel
