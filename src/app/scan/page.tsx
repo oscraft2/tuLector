@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { findCorners, warpPerspective, gradeBubbles, readStudentId, DEFAULT_CONFIG, BubbleResult } from "@/lib/omr";
+import { findCorners, warpPerspective, gradeBubbles, readStudentId, DEFAULT_CONFIG, type BubbleResult, type GradeReport } from "@/lib/omr";
 import { createClient } from "@/lib/supabase";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
@@ -171,22 +171,24 @@ export default function ScanPage() {
       const warped = warpPerspective(ctx, corners, config);
       addLog(`Warped: ${warped.width}x${warped.height}  dark%=${((warped.data.reduce((c,v,i)=>i%4===0&&(v*0.299+warped.data[i+1]*0.587+warped.data[i+2]*0.114)<128?c+1:c,0)/warped.data.length*4)*100).toFixed(1)}%`);
 
-      const bubbleResults = gradeBubbles(warped, config);
+      const report = gradeBubbles(warped, config);
       const idRows = readStudentId(warped, config);
 
-      addLog(`Q  answer  scores`);
-      const allSame = bubbleResults.length > 0 && bubbleResults.every(r => r.answer !== "-" && r.answer === bubbleResults[0].answer);
-      for (const r of bubbleResults) {
-        addLog(`Q${String(r.question).padStart(2)}: ${r.answer.padEnd(5)} [${r.scores.map(s=>s.toFixed(2)).join(",")}]`);
-      }
-      addLog(`ID: [${idRows.join(",")}]`);
-
-      if (allSame && bubbleResults[0].answer !== "-") {
-        addLog(`WARN: Todas las respuestas son '${bubbleResults[0].answer}' - posible mal warp o mala deteccion`);
-        setError(`Resultado sospechoso: todas "${bubbleResults[0].answer}". Reposiciona la hoja y espera.`);
+      if (!report.valid) {
+        addLog(`WARN: ${report.reason}`);
+        setError(report.reason || "Resultado no valido. Reposiciona la hoja.");
+        setDebugLog(logs);
         setPhase("detecting");
         return;
       }
+
+      const bubbleResults = report.results;
+
+      addLog(`Q  answer  scores`);
+      for (const r of bubbleResults) {
+        addLog(`Q${String(r.question).padStart(2)}: ${r.answer.padEnd(5)} [${r.scores.map((s: number) => s.toFixed(2)).join(",")}]`);
+      }
+      addLog(`ID: [${idRows.join(",")}]`);
 
       setResults(bubbleResults);
       setStudentId(idRows);
