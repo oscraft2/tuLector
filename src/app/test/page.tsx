@@ -1,156 +1,159 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { TEST_IMAGE_BASE64, EXPECTED_ANSWERS, EXPECTED_ID } from "./test_image";
 import { findCorners, warpPerspective, gradeBubbles, readStudentId, type BubbleResult } from "@/lib/omr";
 
-type TestStep = {
-  name: string;
-  status: "pending" | "pass" | "fail";
-  detail: string;
-};
-
 export default function TestPage() {
-  const [steps, setSteps] = useState<TestStep[]>([
-    { name: "Cargar imagen de prueba", status: "pending", detail: "" },
-    { name: "Deteccion de 4 esquinas", status: "pending", detail: "" },
-    { name: "Analisis de burbujas (20 preguntas)", status: "pending", detail: "" },
-    { name: "Lectura de ID de estudiante", status: "pending", detail: "" },
-  ]);
+  const [log, setLog] = useState<string[]>([]);
   const [results, setResults] = useState<BubbleResult[]>([]);
   const [running, setRunning] = useState(false);
+  const [passed, setPassed] = useState(false);
+
+  const addLog = (msg: string) => setLog((p) => [...p, msg]);
 
   const runTests = async () => {
     setRunning(true);
-    const newSteps: TestStep[] = steps.map((s) => ({ name: s.name, status: "pending", detail: "" }));
-    let idx = 0;
+    setLog([]);
+    setPassed(false);
+    setResults([]);
 
     try {
-      // Load image
+      // ─── Cargar imagen ───
       const img = new Image();
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = TEST_IMAGE_BASE64;
-      });
-
-      // Step 1: Load image
-      newSteps[idx].status = "pass";
-      newSteps[idx].detail = `Imagen: ${img.width}x${img.height} (natural: ${img.naturalWidth}x${img.naturalHeight})`;
-      setSteps([...newSteps]); idx++;
+      await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = TEST_IMAGE_BASE64; });
 
       const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
       const ctx = canvas.getContext("2d")!;
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-      // Quick sanity check
-      let darkPx = 0;
-      for (let i = 0; i < imageData.data.length; i += 4) {
-        const g = imageData.data[i] * 0.299 + imageData.data[i+1] * 0.587 + imageData.data[i+2] * 0.114;
-        if (g < 128) darkPx++;
+      const d = imageData.data;
+      addLog(`[IMG] ${canvas.width}x${canvas.height}  data.length=${d.length}  channels=${d.length / (canvas.width * canvas.height)}`);
+
+      // Stats de pixeles
+      let darkPx = 0, minV = 255, maxV = 0;
+      const grayArr = new Uint8Array(canvas.width * canvas.height);
+      for (let i = 0; i < grayArr.length; i++) {
+        const j = i * 4;
+        const v = Math.round(d[j] * 0.299 + d[j+1] * 0.587 + d[j+2] * 0.114);
+        grayArr[i] = v;
+        if (v < 128) darkPx++;
+        if (v < minV) minV = v;
+        if (v > maxV) maxV = v;
       }
-      const darkPct = Math.round(darkPx / (canvas.width * canvas.height) * 100);
-      newSteps[0].detail += ` | Pixels oscuros: ${darkPct}%`;
-      setSteps([...newSteps]);
+      addLog(`[GRAY] min=${minV} max=${maxV}  dark(<128)=${darkPx} (${(darkPx/grayArr.length*100).toFixed(1)}%)`);
 
-      // Step 2: Corner detection (always returns 4 corners now)
+      // Muestrear pixeles en posiciones clave
+      const sampleAt = (x: number, y: number) => {
+        if (x >= 0 && x < canvas.width && y >= 0 && y < canvas.height) {
+          const g = grayArr[y * canvas.width + x];
+          return `${(x+","+y).padEnd(10)} gray=${g}`;
+        }
+        return `${(x+","+y).padEnd(10)} OOB`;
+      };
+      addLog(`[SAMPLE] TL corner area:   ${sampleAt(65, 65)}`);
+      addLog(`[SAMPLE] TL corner area:   ${sampleAt(40, 40)}  ${sampleAt(90, 40)}`);
+      addLog(`[SAMPLE] TL corner area:   ${sampleAt(40, 90)}  ${sampleAt(90, 90)}`);
+      addLog(`[SAMPLE] TR corner area:   ${sampleAt(1135, 65)}  ${sampleAt(1110, 65)}`);
+      addLog(`[SAMPLE] Q1 bubble A:      ${sampleAt(90, 264+16)}`);
+      addLog(`[SAMPLE] Q1 bubble B:      ${sampleAt(140, 264+16)}`);
+
+      // ─── Esquinas ───
       const corners = findCorners(imageData);
-      newSteps[idx].status = "pass";
-      newSteps[idx].detail = `TL(${corners[0][0]},${corners[0][1]}) TR(${corners[1][0]},${corners[1][1]}) BR(${corners[2][0]},${corners[2][1]}) BL(${corners[3][0]},${corners[3][1]})`;
-      setSteps([...newSteps]); idx++;
+      addLog(`[CORNERS] TL=(${corners[0][0]},${corners[0][1]})  TR=(${corners[1][0]},${corners[1][1]})  BR=(${corners[2][0]},${corners[2][1]})  BL=(${corners[3][0]},${corners[3][1]})`);
+      addLog(`[CORNERS] Esperado: TL=(65,65) TR=(1135,65) BR=(1135,1585) BL=(65,1585)`);
 
-      // Step 3: Bubble analysis
+      // ─── Warp ───
       const warped = warpPerspective(ctx, corners);
+      addLog(`[WARP] ${warped.width}x${warped.height}  length=${warped.data.length}`);
+      // Check dark pixels in warped
+      let wDark = 0;
+      for (let i = 0; i < warped.width * warped.height; i++) {
+        const j = i * 4;
+        const v = Math.round(warped.data[j] * 0.299 + warped.data[j+1] * 0.587 + warped.data[j+2] * 0.114);
+        if (v < 128) wDark++;
+      }
+      addLog(`[WARP] pixeles oscuros: ${wDark} (${(wDark/(warped.width*warped.height)*100).toFixed(1)}%)`);
+
+      // ─── Burbujas ───
       const bubbleResults = gradeBubbles(warped);
       setResults(bubbleResults);
 
       let correct = 0;
+      addLog(`[BUBBLES] Q   ans  esp  scores (top 5)`);
       for (let i = 0; i < bubbleResults.length; i++) {
-        if (bubbleResults[i].answer === EXPECTED_ANSWERS[i]) correct++;
+        const r = bubbleResults[i];
+        const ok = r.answer === EXPECTED_ANSWERS[i];
+        if (ok) correct++;
+        const topScores = r.scores
+          .map((s: number, idx: number) => ({ s, idx }))
+          .sort((a: {s:number}, b: {s:number}) => b.s - a.s)
+          .slice(0, 3)
+          .map((x: {s:number, idx:number}) => `[${"ABCDE"[x.idx]}]=${x.s.toFixed(3)}`)
+          .join(" ");
+        addLog(`[BUBBLES] Q${String(i+1).padStart(2)}: ${r.answer.padEnd(5)} ${EXPECTED_ANSWERS[i].padEnd(3)} ${ok ? "OK" : "FAIL"}  ${topScores}`);
       }
+      addLog(`[BUBBLES] RESULT: ${correct}/20 correctas`);
 
-      newSteps[idx].status = correct === 20 ? "pass" : "fail";
-      newSteps[idx].detail = `Aciertos: ${correct}/20  |  Fallos: ${20 - correct}`;
-      setSteps([...newSteps]); idx++;
-
-      // Step 4: Student ID
+      // ─── ID ───
       const idRows = readStudentId(warped);
       let idMatch = 0;
       for (let i = 0; i < idRows.length; i++) {
-        if (idRows[i] === EXPECTED_ID[i]) idMatch++;
+        const ok = idRows[i] === EXPECTED_ID[i];
+        if (ok) idMatch++;
+        addLog(`[ID] fila${i}: detectado=${idRows[i]}  esperado=${EXPECTED_ID[i]}  ${ok ? "OK" : "FAIL"}`);
       }
-      newSteps[idx].status = idMatch === 3 ? "pass" : "fail";
-      newSteps[idx].detail = `Filas correctas: ${idMatch}/3  |  Detectado: [${idRows.join(", ")}]  |  Esperado: [${EXPECTED_ID.join(", ")}]`;
-      setSteps([...newSteps]);
+      addLog(`[ID] RESULT: ${idMatch}/3 correctas`);
+
+      addLog(`\n[FINAL] ${correct === 20 && idMatch === 3 ? "TODAS LAS PRUEBAS PASARON" : "HAY FALLOS - revisar log arriba"}`);
+      if (correct === 20 && idMatch === 3) setPassed(true);
 
     } catch (e) {
-      newSteps[idx].status = "fail";
-      newSteps[idx].detail = String(e);
-      setSteps([...newSteps]);
+      addLog(`[ERROR] ${e}`);
     }
     setRunning(false);
   };
-
-  const allPass = steps.every((s) => s.status === "pass");
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
         <Link href="/" className="text-sm text-zinc-400 hover:text-white">&larr; Inicio</Link>
-        <h1 className="text-lg font-bold">Pruebas internas</h1>
-        <span className="text-sm text-zinc-500">OMR Engine</span>
+        <h1 className="text-lg font-bold">Pruebas OMR</h1>
+        <span className="text-xs text-zinc-500">v2</span>
       </header>
 
-      <main className="max-w-lg mx-auto w-full px-4 py-6 space-y-6">
-        {!running && steps[0].status === "pending" && (
-          <button
-            onClick={runTests}
-            className="w-full py-3 bg-green-600 hover:bg-green-500 rounded-xl font-semibold transition active:scale-[0.98]"
-          >
-            Ejecutar pruebas
-          </button>
-        )}
+      <main className="max-w-2xl mx-auto w-full px-4 py-6 space-y-4">
+        <button
+          onClick={runTests}
+          disabled={running}
+          className="w-full py-3 bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-xl font-semibold transition active:scale-[0.98]"
+        >
+          {running ? "Ejecutando..." : "Ejecutar pruebas con log"}
+        </button>
 
-        <div className="space-y-3">
-          {steps.map((step, i) => (
-            <div key={i}
-              className={`bg-zinc-900 border rounded-xl p-4 flex items-start gap-3 transition-all ${
-                step.status === "pass" ? "border-green-800" :
-                step.status === "fail" ? "border-red-800" :
-                "border-zinc-800"
-              }`}
-            >
-              <div className={`mt-0.5 text-lg ${
-                step.status === "pass" ? "text-green-500" :
-                step.status === "fail" ? "text-red-500" :
-                "text-zinc-600"
-              }`}>
-                {step.status === "pass" ? "OK" : step.status === "fail" ? "FAIL" : "..."}
-              </div>
-              <div className="flex-1">
-                <h3 className="font-semibold text-sm">{step.name}</h3>
-                {step.detail && (
-                  <p className="text-xs text-zinc-400 mt-1 break-all">{step.detail}</p>
-                )}
-              </div>
-            </div>
-          ))}
+        {/* Log */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+          <h3 className="font-semibold text-sm mb-2">Log detallado</h3>
+          <pre className="text-xs text-zinc-400 font-mono whitespace-pre-wrap break-all max-h-[60vh] overflow-y-auto leading-relaxed">
+            {log.length === 0 && "Presiona 'Ejecutar pruebas' para ver el log..."}
+            {log.map((line, i) => (
+              <div key={i}>{line}</div>
+            ))}
+          </pre>
         </div>
 
-        {allPass && results.length > 0 && (
+        {passed && (
           <div className="bg-green-900/30 border border-green-800 rounded-xl p-4 text-center">
             <p className="text-green-400 font-bold text-lg">Todas las pruebas pasaron</p>
-            <p className="text-green-500/70 text-sm mt-1">El motor OMR funciona correctamente</p>
           </div>
         )}
 
         {results.length > 0 && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-            <h3 className="font-semibold mb-2 text-sm">Resultados por pregunta</h3>
+            <h3 className="font-semibold mb-2 text-sm">Resultados</h3>
             <div className="grid grid-cols-5 gap-1">
               {results.map((r) => (
                 <div key={r.question}
@@ -158,8 +161,7 @@ export default function TestPage() {
                     r.answer === EXPECTED_ANSWERS[r.question - 1]
                       ? "bg-green-900/40 text-green-400"
                       : "bg-red-900/40 text-red-400"
-                  }`}
-                >
+                  }`}>
                   <div className="text-[10px] opacity-60">{r.question}</div>
                   <div className="font-mono font-bold">{r.answer}</div>
                 </div>
