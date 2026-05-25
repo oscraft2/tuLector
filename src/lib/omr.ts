@@ -49,58 +49,50 @@ function getLayout(config: OMRConfig) {
   return { NAME_TOP, NAME_BOTTOM, ID_START, Q_TOP };
 }
 
-/** Detectar los 4 cuadrados de esquina - busqueda por cuadrantes simplificada */
+/** Detectar los 4 cuadrados de esquina - busqueda por densidad oscura en cuadrantes */
 export function findCorners(
   imageData: ImageData,
   config: OMRConfig = DEFAULT_CONFIG
 ): [number, number][] {
   const w = imageData.width, h = imageData.height;
 
-  // Convertir a grayscale rapido
   const gray = new Uint8Array(w * h);
   for (let i = 0; i < gray.length; i++) {
     const j = i * 4;
     gray[i] = Math.round(imageData.data[j] * 0.299 + imageData.data[j + 1] * 0.587 + imageData.data[j + 2] * 0.114);
   }
 
-  // Para cada cuadrante, buscar la region con mas pixeles oscuros cerca de la esquina
-  type CornerZone = { x0: number; y0: number; x1: number; y1: number; targetX: number; targetY: number };
-  const zones: CornerZone[] = [
-    { x0: 0, y0: 0, x1: w * 0.3, y1: h * 0.3, targetX: 0, targetY: 0 },                    // TL
-    { x0: w * 0.7, y0: 0, x1: w, y1: h * 0.3, targetX: w, targetY: 0 },                      // TR
-    { x0: w * 0.7, y0: h * 0.7, x1: w, y1: h, targetX: w, targetY: h },                      // BR
-    { x0: 0, y0: h * 0.7, x1: w * 0.3, y1: h, targetX: 0, targetY: h },                      // BL
+  const zones = [
+    { x0: 0, y0: 0, x1: w * 0.3, y1: h * 0.3, icx: 0, icy: 0 },
+    { x0: w * 0.7, y0: 0, x1: w, y1: h * 0.3, icx: w, icy: 0 },
+    { x0: w * 0.7, y0: h * 0.7, x1: w, y1: h, icx: w, icy: h },
+    { x0: 0, y0: h * 0.7, x1: w * 0.3, y1: h, icx: 0, icy: h },
   ];
 
   const corners: [number, number][] = [];
 
-  for (const zone of zones) {
-    let bestX = Math.round((zone.x0 + zone.x1) / 2);
-    let bestY = Math.round((zone.y0 + zone.y1) / 2);
-    let bestScore = Infinity;
+  for (const z of zones) {
+    let bestX = 0, bestY = 0, bestScore = Infinity;
 
-    // Muestrear con step para velocidad
-    const step = 2;
-    for (let y = Math.round(zone.y0); y < zone.y1; y += step) {
-      for (let x = Math.round(zone.x0); x < zone.x1; x += step) {
-        // Contar pixeles oscuros en ventana 25x25 alrededor
-        let dark = 0, total = 0;
-        const r = 12;
-        for (let dy = -r; dy <= r; dy += 2) {
-          for (let dx = -r; dx <= r; dx += 2) {
+    for (let y = z.y0; y < z.y1; y += 2) {
+      for (let x = z.x0; x < z.x1; x += 2) {
+        let dk = 0, tot = 0;
+        // Ventana de tamano intermedio para detectar el cuadrado completo
+        for (let dy = -12; dy <= 12; dy += 2) {
+          for (let dx = -12; dx <= 12; dx += 2) {
             const px = x + dx, py = y + dy;
             if (px >= 0 && px < w && py >= 0 && py < h) {
-              total++;
-              if (gray[py * w + px] < 80) dark++;
+              tot++;
+              if (gray[py * w + px] < 100) dk++;
             }
           }
         }
-        const ratio = total > 0 ? dark / total : 0;
-
-        // Buscar regiones con densidad oscura media-alta (el corner tiene borde negro + interior blanco)
-        if (ratio > 0.05 && ratio < 0.7) {
-          const dist = Math.hypot(x - zone.targetX, y - zone.targetY);
-          const score = dist - ratio * 200;
+        const ratio = tot > 0 ? dk / tot : 0;
+        // El corner tiene borde oscuro + interior blanco = densidad media
+        if (ratio > 0.03 && ratio < 0.7) {
+          const dist = Math.hypot(x - z.icx, y - z.icy);
+          // Penalizar distancia, recompensar densidad y tamano de zona oscura
+          const score = dist * 0.5 - dk * 3;
           if (score < bestScore) {
             bestScore = score;
             bestX = x;
