@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -91,6 +92,28 @@ class _ScannerScreenState extends State<ScannerScreen> {
     }
   }
 
+  /// Laplacian variance sobre plano Y (paridad con scan/page.tsx del JSON web).
+  bool _isFrameSharp(Uint8List nv21, int width, int height) {
+    if (nv21.length < width * height) return false;
+    double sum = 0;
+    int count = 0;
+    for (var y = 1; y < height - 1; y += 2) {
+      for (var x = 1; x < width - 1; x += 2) {
+        final idx = y * width + x;
+        final c = nv21[idx].toDouble();
+        final lap = (-4 * c +
+                nv21[idx - width] +
+                nv21[idx + width] +
+                nv21[idx - 1] +
+                nv21[idx + 1])
+            .abs();
+        sum += lap * lap;
+        count++;
+      }
+    }
+    return count > 0 && sum / count > 40;
+  }
+
   bool _cornersStable(List<Offset> prev, List<Offset> next) {
     if (prev.length != 4 || next.length != 4) return false;
     for (var i = 0; i < 4; i++) {
@@ -121,7 +144,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
       if (!mounted) return;
 
-      if (detect.found && detect.corners.length == 4) {
+      final sharp = _isFrameSharp(nv21, image.width, image.height);
+
+      if (detect.found && detect.corners.length == 4 && sharp) {
         final stable = _corners.isNotEmpty &&
             _cornersStable(_corners, detect.corners);
         _corners = detect.corners;

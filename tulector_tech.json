@@ -175,6 +175,55 @@
         "sheet_height": 1650,
         "code_reference": "src/lib/omr.ts:29-51 (DEFAULT_CONFIG + getLayout)"
       }
+    },
+
+    "tulector_flutter_mobile": {
+      "location": "mobile/",
+      "runtime": "Flutter 3 + Dart FFI + C++17 (libomr_engine.so / iOS static link)",
+      "no_external_dependencies": "Sin OpenCV. Otsu, homografia 8x8, centro de masa en C++ puro",
+      "pipeline": {
+        "step_1_capture": {
+          "name": "Camera frame capture",
+          "technology": "camera plugin (CameraX Android / AVFoundation iOS)",
+          "format": "YUV420 convertido a NV21 en Dart",
+          "code_reference": "mobile/lib/services/camera_service.dart"
+        },
+        "step_2_corner_detection": {
+          "name": "4-corner detection",
+          "technology": "Centro de masa pixeles Y<80 en zonas 8%x6% (igual que omr.ts simplificado, no flood-fill)",
+          "code_reference": "mobile/native/omr_engine.cpp findCorners"
+        },
+        "step_3_perspective_correction": {
+          "name": "Perspective warp",
+          "technology": "Homografia 8-DOF + eliminacion gaussiana + mapeo inverso bilineal",
+          "output": "RGBA 1200x1650",
+          "code_reference": "mobile/native/omr_engine.cpp warpPerspective"
+        },
+        "step_4_bubble_analysis": {
+          "name": "Bubble grading",
+          "technology": "ROI 16x16, oscuro si (R+G+B)/3<80, umbral adaptativo max(0.10, max*0.35)",
+          "code_reference": "mobile/native/omr_engine.cpp gradeBubbles"
+        },
+        "step_5_student_id": {
+          "name": "Student ID",
+          "technology": "Grilla 3x10, xStart=70, umbral 0.12",
+          "code_reference": "mobile/native/omr_engine.cpp readStudentId"
+        }
+      },
+      "auto_scan_features": {
+        "frame_stability": "12 frames consecutivos con esquinas estables (<15px)",
+        "focus_detection": "Laplacian variance Y>40 en Dart (paridad web)",
+        "cooldown": "3000ms",
+        "haptic_feedback": "HapticFeedback + vibration package",
+        "isolate_processing": "Isolate.run por frame",
+        "code_reference": "mobile/lib/screens/scanner_screen.dart"
+      },
+      "ffi_bridge": {
+        "library_android": "libomr_engine.so via CMakeLists.txt + NDK",
+        "library_ios": "omr_engine.cpp en target Runner",
+        "entrypoint": "omr_process_frame",
+        "code_reference": "mobile/lib/services/omr_bridge.dart"
+      }
     }
   },
 

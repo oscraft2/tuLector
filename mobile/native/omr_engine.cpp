@@ -105,12 +105,29 @@ void nv21ToRgba(const uint8_t* nv21, int w, int h, std::vector<uint8_t>& rgba) {
   }
 }
 
-uint8_t sampleRgba(const std::vector<uint8_t>& rgba, int sw, int sh, float sx, float sy) {
-  const int x = (int)std::round(sx);
-  const int y = (int)std::round(sy);
-  if (x < 0 || x >= sw || y < 0 || y >= sh) return 255;
-  const int i = (y * sw + x) * 4;
-  return (uint8_t)((rgba[i] * 77 + rgba[i + 1] * 150 + rgba[i + 2] * 29) >> 8);
+uint8_t sampleGrayBilinear(const std::vector<uint8_t>& rgba, int sw, int sh, float sx, float sy) {
+  if (sx < 0 || sy < 0 || sx >= sw - 1 || sy >= sh - 1) return 255;
+  const int x0 = (int)sx;
+  const int y0 = (int)sy;
+  const float fx = sx - x0;
+  const float fy = sy - y0;
+  auto grayAt = [&](int x, int y) {
+    const int i = (y * sw + x) * 4;
+    return rgba[i] * 0.299f + rgba[i + 1] * 0.587f + rgba[i + 2] * 0.114f;
+  };
+  const float g00 = grayAt(x0, y0);
+  const float g10 = grayAt(x0 + 1, y0);
+  const float g01 = grayAt(x0, y0 + 1);
+  const float g11 = grayAt(x0 + 1, y0 + 1);
+  const float top = g00 * (1 - fx) + g10 * fx;
+  const float bot = g01 * (1 - fx) + g11 * fx;
+  return (uint8_t)std::round(top * (1 - fy) + bot * fy);
+}
+
+bool isPixelDarkRgb(const std::vector<uint8_t>& rgba, int sw, int px, int py) {
+  const int i = (py * sw + px) * 4;
+  const int avg = (rgba[i] + rgba[i + 1] + rgba[i + 2]) / 3;
+  return avg < 80;
 }
 
 bool solve8x8(double A[8][9], double out[8]) {
@@ -227,8 +244,8 @@ bool warpPerspective(
       const float sx = (float)((h[0] * dx + h[1] * dy + h[2]) / denom);
       const float sy = (float)((h[3] * dx + h[4] * dy + h[5]) / denom);
       const int di = (dy * SHEET_W + dx) * 4;
-      if (sx >= 0 && sx < sw && sy >= 0 && sy < sh) {
-        const uint8_t g = sampleRgba(srcRgba, sw, sh, sx, sy);
+      if (sx >= 0 && sx < sw - 1 && sy >= 0 && sy < sh - 1) {
+        const uint8_t g = sampleGrayBilinear(srcRgba, sw, sh, sx, sy);
         outRgba[di] = g;
         outRgba[di + 1] = g;
         outRgba[di + 2] = g;
@@ -243,26 +260,20 @@ bool warpPerspective(
 }
 
 void gradeBubbles(const std::vector<uint8_t>& rgba, int answers[NUM_QUESTIONS]) {
-  std::vector<float> gray(SHEET_W * SHEET_H);
-  for (int i = 0; i < SHEET_W * SHEET_H; i++) {
-    const int j = i * 4;
-    gray[i] = rgba[j] * 0.299f + rgba[j + 1] * 0.587f + rgba[j + 2] * 0.114f;
-  }
-
   for (int q = 0; q < NUM_QUESTIONS; q++) {
     const int qy = Q_TOP + q * Q_H;
     float scores[NUM_OPTIONS];
     for (int o = 0; o < NUM_OPTIONS; o++) {
       const int cx = MARGIN + 50 + o * 50;
       const int cy = qy + 16;
-      const int r = 10;
+      const int r = 8;  // ROI 16x16
       int dark = 0, total = 0;
       for (int dy = -r; dy <= r; dy++) {
         for (int dx = -r; dx <= r; dx++) {
           const int px = cx + dx, py = cy + dy;
           if (px >= 0 && px < SHEET_W && py >= 0 && py < SHEET_H) {
             total++;
-            if (gray[py * SHEET_W + px] < 128) dark++;
+            if (isPixelDarkRgb(rgba, SHEET_W, px, py)) dark++;
           }
         }
       }

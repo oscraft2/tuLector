@@ -45,6 +45,8 @@ export default function ScanPage() {
   const [inFocus, setInFocus] = useState(false);
   const [lastScan, setLastScan] = useState(0);
   const [scanCount, setScanCount] = useState(0);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const [showDebug, setShowDebug] = useState(false);
 
   const config = DEFAULT_CONFIG;
   const cooldownMs = 3000; // 3s entre escaneos
@@ -144,13 +146,28 @@ export default function ScanPage() {
     const ctx = canvas.getContext("2d")!;
     ctx.putImageData(frame, 0, 0);
 
+    const logs: string[] = [];
+    const addLog = (msg: string) => { logs.push(msg); console.log("[Scan]", msg); };
+
     try {
+      addLog(`Frame: ${canvas.width}x${canvas.height}`);
+      addLog(`Corners: TL=(${corners[0][0]},${corners[0][1]}) TR=(${corners[1][0]},${corners[1][1]}) BR=(${corners[2][0]},${corners[2][1]}) BL=(${corners[3][0]},${corners[3][1]})`);
+
       const warped = warpPerspective(ctx, corners, config);
+      addLog(`Warped: ${warped.width}x${warped.height}  dark%=${((warped.data.reduce((c,v,i)=>i%4===0&&(v*0.299+warped.data[i+1]*0.587+warped.data[i+2]*0.114)<128?c+1:c,0)/warped.data.length*4)*100).toFixed(1)}%`);
+
       const bubbleResults = gradeBubbles(warped, config);
       const idRows = readStudentId(warped, config);
 
+      addLog(`Q  answer  scores`);
+      for (const r of bubbleResults) {
+        addLog(`Q${String(r.question).padStart(2)}: ${r.answer.padEnd(5)} [${r.scores.map(s=>s.toFixed(2)).join(",")}]`);
+      }
+      addLog(`ID: [${idRows.join(",")}]`);
+
       setResults(bubbleResults);
       setStudentId(idRows);
+      setDebugLog(logs);
       setScanCount((c) => c + 1);
       setPhase("result");
 
@@ -225,10 +242,24 @@ export default function ScanPage() {
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 animate-in fade-in slide-in-from-bottom-4">
             <div className="flex justify-between items-center mb-3">
               <h2 className="font-semibold text-lg">Escaneo #{scanCount}</h2>
-              <span className="text-xs text-zinc-500 font-mono">
-                ID: {studentId.join(" ")}
-              </span>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setShowDebug(!showDebug)}
+                  className="text-[10px] px-2 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-white">
+                  {showDebug ? "Ocultar log" : "Ver log"}
+                </button>
+                <span className="text-xs text-zinc-500 font-mono">
+                  ID: {studentId.join(" ")}
+                </span>
+              </div>
             </div>
+
+            {showDebug && debugLog.length > 0 && (
+              <div className="mb-3 bg-black/50 rounded-lg p-3 max-h-48 overflow-y-auto">
+                <pre className="text-[10px] text-zinc-400 font-mono leading-relaxed whitespace-pre-wrap break-all">
+                  {debugLog.join("\n")}
+                </pre>
+              </div>
+            )}
 
             <div className="grid grid-cols-5 gap-1">
               {results.map((r) => (
