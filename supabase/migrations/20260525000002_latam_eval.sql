@@ -189,6 +189,18 @@ FROM evaluation_systems WHERE country_code='CO' AND name='Saber';
 -- ================================================================
 -- 5. EXPORT FORMATS oficiales por sistema de gobierno
 -- ================================================================
+CREATE TABLE IF NOT EXISTS export_formats (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    country_code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    delimiter TEXT DEFAULT ',',
+    encoding TEXT DEFAULT 'UTF-8',
+    header_template JSONB,
+    column_mapping JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 INSERT INTO export_formats (country_code, name, description, column_mapping) VALUES
     ('CL', 'agencia_calidad_2024', 'Agencia de Calidad Chile - Formato oficial 2024',
      '{"run":"RUN","nombre":"Nombre","curso":"Curso","puntaje":"Puntaje","nivel_logro":"Nivel Logro","eje":"Eje","habilidad":"Habilidad","fecha":"Fecha"}'),
