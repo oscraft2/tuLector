@@ -178,8 +178,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
         _stableFrames = 0;
         _corners = [];
         _badFrames++;
-        if (!sharp) _oofFrames++;
-        else _oofFrames = 0;
+        if (!sharp) {
+          _oofFrames++;
+        } else {
+          _oofFrames = 0;
+        }
 
         String? err;
         if (_badFrames >= ScanThresholds.badPaperThreshold && !detect.found) {
@@ -231,7 +234,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
         lastResult: graded,
         scanCount: state.scanCount + 1,
         statusText: 'Escaneo completado',
-        error: null,
+        error: '',
       );
 
       Future.delayed(const Duration(seconds: 2), () {

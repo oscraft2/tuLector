@@ -1,4 +1,4 @@
-/// Paridad con src/lib/scanner_config.ts y omr_reference.json
+// Paridad con src/lib/scanner_config.ts y omr_reference.json
 
 class ScanCodes {
   static const int graded = 1;
