@@ -1,183 +1,343 @@
 {
-  "omr_reference": {
-    "description": "Analisis tecnico de motor OMR de referencia - ingenieria inversa educativa",
-    "source": "APK descompilado v3.79.616, package com.referencia.android.omr",
-    "total_classes": 4921,
-    "obfuscation": "ProGuard/R8 pesado (clases A-Z, a-z)",
-    "key_files_analyzed": [
-      "SheetReader.java (273 lines) - Bridge JNI al motor nativo",
-      "ScanningFragment.java (797 lines) - Fragmento principal de escaneo",
-      "t/I.java (523 lines) - ImageAnalysis.Analyzer callback",
-      "ImageProcessingUtil.java (183 lines) - Procesamiento de imagen nativo"
-    ],
+  "omr_engine_reference": {
+    "description": "Referencia tecnica completa de motor OMR - ingenieria inversa educativa. Todos los metodos, parametros, codigos de retorno y constantes extraidos del APK descompilado.",
+    "source": "APK v3.79.616, package com.referencia.android.omr",
+    "total_classes_decompiled": 4921,
 
-    "native_libraries": {
-      "libmixed_sample.so": {
-        "approx_size": "~2 MB",
-        "purpose": "Motor OMR principal: deteccion de esquinas, warp, clasificacion SVM, OCR de ID",
-        "jni_methods": {
-          "ProcessByteFrame": {
-            "signature": "int ProcessByteFrame(int width, int height, byte[] yuvData, int[] trackingArray, int focusReq, int rotationDeg, int brightDetect, int strictMode, int rectLeft, int rectTop, int rectRight, int rectBottom)",
-            "params": {
-              "width": "Ancho del frame YUV",
-              "height": "Alto del frame YUV",
-              "yuvData": "Buffer YUV compactado sin padding/stride",
-              "trackingArray": "int[16] tracking interno del motor",
-              "focusReq": "Requisito de foco (default 50, rango 1-100)",
-              "rotationDeg": "Rotacion ajustada (deviceRotation - 90)",
-              "brightDetect": "0=detectar brillo, 1=ignorar",
-              "strictMode": "Modo estricto de verificacion (default 0)",
-              "rectLeft/rectTop/rectRight/rectBottom": "Region de interes del papel en el frame"
-            },
-            "return_codes": {
-              "1": "GRADED - Papel calificado exitosamente",
-              "5": "BRIGHT - Brillo/reflejo detectado",
-              "10": "CURVE_FAIL - Verificacion de curvatura fallida",
-              "30": "WRONG_FORMAT - Formato de hoja no reconocido",
-              "100_106": "ALIGNMENT - Problemas de alineacion del visor",
-              "1001": "OUT_OF_FOCUS - Fuera de foco"
-            }
+    "sheet_reader": {
+      "file": "SheetReader.java (273 lines)",
+      "purpose": "Bridge JNI entre Java/Kotlin y el motor OMR nativo (libmixed_sample.so)",
+      "native_library": "mixed_sample (cargada en static block linea 39-41)",
+      "fields": [
+        {"line": 34, "name": "TAG", "type": "String", "value": "\"SheetReader\""},
+        {"line": 35, "name": "mAnswerSheet", "type": "a"},
+        {"line": 36, "name": "mContext", "type": "Context"},
+        {"line": 37, "name": "nativeHandle", "type": "long"}
+      ],
+      "constructors": [
+        {
+          "type": "simple",
+          "line": 44,
+          "signature": "SheetReader(a aVar)",
+          "params": {"aVar": "AnswerSheet object (a.f1121d = id, a.f1119b = jsonData)"},
+          "logic": "NewSheetReader(aVar.f1121d, 320, '', '', ''). PushAnswerSheetData(aVar.f1119b)"
+        },
+        {
+          "type": "full",
+          "line": 239,
+          "signature": "SheetReader(a aVar, int i2, j jVar, Boolean bool)",
+          "params": {"aVar": "AnswerSheet", "i2": "preview height", "jVar": "Quiz (for answer validation)", "bool": "use glare SVM if true"},
+          "logic": "saveModelAssetToFileSystem(). Elige SVM: bool?i0():k0() segun jVar question data. NewSheetReader(id, height, svmPath, svmGlarePath, testImagePath)"
+        }
+      ],
+      "jni_methods": {
+        "ProcessByteFrame": {
+          "line": 89,
+          "signature": "native int ProcessByteFrame(int width, int height, byte[] yuvData, int[] trackingArray, int focusReq, int rotationDeg, int brightDetectSetting, int strictMode, int rectLeft, int rectTop, int rectRight, int rectBottom)",
+          "params_detail": {
+            "width": "ancho del frame YUV compactado",
+            "height": "alto del frame YUV compactado",
+            "yuvData": "byte[] YUV sin padding ni stride",
+            "trackingArray": "int[16] array interno del motor (se actualiza en cada llamada)",
+            "focusReq": "requisito de foco (default 50, rango 1-100)",
+            "rotationDeg": "deviceRotation - 90 grados",
+            "brightDetectSetting": "0=detectar brillo, 1=ignorar",
+            "strictMode": "modo estricto (default 0, preference strictReq)",
+            "rectLeft/rectTop/rectRight/rectBottom": "bounding box del papel detectado"
           },
-          "CompleteProcess": "void CompleteProcess() - Finaliza procesamiento despues de graded",
-          "GetEncodedGrade": "String GetEncodedGrade() - CSV con respuestas en formato 'A~,C~,B~,...'",
-          "SavePaperImage": "void SavePaperImage(String path) - Guarda PNG del papel escaneado",
-          "SavePaperNameImage": "void SavePaperNameImage(String path) - Guarda PNG zona del nombre",
-          "SaveRawMat": "void SaveRawMat(String path) - Guarda imagen raw para entrenamiento",
-          "PushAnswerSheetData": "void PushAnswerSheetData(String json) - Configuracion de hoja",
-          "NewSheetReader": "long NewSheetReader(String sheetId, int, String svmPath, String svmGlarePath, String testImagePath)",
-          "GetRequestToken": "String GetRequestToken(String deviceId) - Token de suscripcion"
-        }
+          "return_codes": {
+            "1": "GRADED - papel calificado, dispara CompleteProcess + ReturnGradedPaper",
+            "5": "BRIGHT - brillo/reflejo detectado (solo si brightDetect=0)",
+            "10": "CURVE_FAIL - papel curvado/doblado",
+            "30": "WRONG_FORMAT - formato de hoja incorrecto",
+            "100": "ALIGNMENT - alinea los 4 cuadrados (start)",
+            "106": "ALIGNMENT_END - ultimo codigo de alineacion",
+            "1001": "OUT_OF_FOCUS - imagen fuera de foco"
+          },
+          "call_site": "t/I.java:366 - llamado desde ImageAnalysis.Analyzer callback"
+        },
+        "NewSheetReader": {
+          "line": 87,
+          "signature": "native long NewSheetReader(String sheetId, int previewHeight, String svmPath, String svmGlarePath, String testImagePath)",
+          "params_detail": {
+            "sheetId": "ID de la hoja de respuestas",
+            "previewHeight": "alto del preview (320 en constructor simple)",
+            "svmPath": "ruta al archivo de SVM (svmsingle o svmcombo)",
+            "svmGlarePath": "ruta al archivo SVM de glare",
+            "testImagePath": "ruta a imagen de test"
+          }
+        },
+        "CompleteProcess": {"line": 79, "signature": "native void CompleteProcess()", "purpose": "finaliza el procesamiento despues de un graded exitoso"},
+        "GetEncodedGrade": {"line": 83, "signature": "native String GetEncodedGrade()", "purpose": "retorna CSV con respuestas: 'A~,C~,B~,...' (separador ',~')"},
+        "SavePaperImage": {"line": 182, "signature": "native void SavePaperImage(String path)", "purpose": "guarda PNG del papel escaneado en la ruta"},
+        "SavePaperNameImage": {"line": 184, "signature": "native void SavePaperNameImage(String path)", "purpose": "guarda PNG de la zona del nombre"},
+        "SaveRawMat": {"line": 186, "signature": "native void SaveRawMat(String path)", "purpose": "guarda imagen raw para re-entrenamiento de SVM"},
+        "PushAnswerSheetData": {"line": 91, "signature": "native void PushAnswerSheetData(String json)", "purpose": "envia configuracion JSON de la hoja al motor nativo"},
+        "GetAnswerSheetName": {"line": 81, "signature": "native String GetAnswerSheetName()"},
+        "GetRequestToken": {"line": 85, "signature": "native String GetRequestToken(String deviceId)", "purpose": "genera token de licencia/suscripcion"},
+        "dispose": {"line": 188, "signature": "native void dispose()", "purpose": "libera recursos nativos"}
       },
-      "libimage_processing_util_jni.so": {
-        "approx_size": "~500 KB",
-        "purpose": "Conversion de formatos de imagen: YUV↔RGB, rotacion, pixel shift",
-        "jni_methods": {
-          "nativeConvertAndroid420ToABGR": "int(ByteBuffer y, int yStride, ByteBuffer u, int uStride, ByteBuffer v, int vStride, int yPixelStride, int uvPixelStride, Surface out, ByteBuffer buf, int w, int h, int cropLeft, int cropTop, int cropRight, int cropBottom, int rotation)",
-          "nativeConvertAndroid420ToBitmap": "int(ByteBuffer y, int yStride, ByteBuffer u, int uStride, ByteBuffer v, int vStride, int yPixelStride, int uvPixelStride, Bitmap out, int rowBytes, int w, int h)",
-          "nativeRotateYUV": "int(19 params) - Rotacion de 3 planos YUV con ImageWriter",
-          "nativeShiftPixel": "int(13 params) - Corrige desalineacion entre planos YUV",
-          "nativeWriteJpegToSurface": "int(byte[] jpeg, Surface out) - JPEG a Surface YUV"
-        }
-      },
-      "libsurface_util_jni.so": {
-        "approx_size": "~100 KB",
-        "purpose": "Utilidades de Surface Android para renderizado"
+      "java_methods": {
+        "ReturnGradedPaper": {
+          "line": 93,
+          "signature": "String ReturnGradedPaper(j jVar)",
+          "purpose": "parsea el resultado de GetEncodedGrade() y lo guarda en DB",
+          "logic_steps": [
+            "1. GetEncodedGrade() -> string CSV separado por ',`'",
+            "2. split(',`') -> listAsList",
+            "3. Genera 2 UUIDs (upperCase para imagen, upperCase2 para nombre)",
+            "4. SavePaperImage('imageStore/'+upperCase)",
+            "5. SavePaperNameImage('imageStore/'+upperCase2)",
+            "6. Si jVar!=null: duplica en 'imageSync/'",
+            "7. Si shareDebugImages: SaveRawMat('imageSync/trainH-'+upperCase+...)",
+            "8. Parsea studentId del answerSheet (b() ? parseInt(f1121d) : nombre escrito)",
+            "9. Parsea scores: indice 1 = timestamp, indice 2 = rawScore, indice 3..N = respuestas",
+            "10. '~' en respuesta = marcada como correcta, se agrega a f890t",
+            "11. Guarda en DB via iVar.g()",
+            "12. Retorna iVar.b() (paper ID)"
+          ]
+        },
+        "saveModelAssetToFileSystem": {
+          "line": 190,
+          "purpose": "copia 4 modelos SVM de raw resources al filesystem",
+          "files": [
+            "R.raw.testimage -> AbstractC0889f.E0() (imagen de test)",
+            "R.raw.svmsingle -> AbstractC0889f.k0() (573 KB)",
+            "R.raw.svmcombo -> AbstractC0889f.i0() (1.05 MB)",
+            "R.raw.svmglare -> AbstractC0889f.j0() (519 KB)"
+          ]
+        },
+        "saveBitmapToFile": {"line": 63, "signature": "static void saveBitmapToFile(Bitmap, String)", "purpose": "guarda bitmap como PNG en Pictures/ y lo agrega a galeria"},
+        "addImageToGallery": {"line": 55, "signature": "static void addImageToGallery(String)"}
       }
     },
 
-    "camera_setup": {
-      "api": "CameraX + Camera2 interop",
-      "format": "YUV_420_888 (format=35)",
-      "resolution_select": "Output sizes del StreamConfigurationMap. Busca 4:3 mas cercano a 1.333. Altura minima 720, maxima 3000. Samsung SM-T350 usa 2576x2576 fijo",
-      "preference": "resolutionSelection: '0'=auto, '1'=2576x2576",
-      "rotation": "Device rotation - 90 grados. Ajustado en t/I.java:337",
-      "code_ref": "ScanningFragment.java:218-442"
-    },
-
-    "frame_processing": {
-      "description": "El ImageAnalysis.Analyzer recibe cada frame. Extrae planos YUV y los compata sin padding",
-      "yuv_extraction": "t/I.java:260-311. Elimina row stride y pixel stride de los 3 planos. Y copia fila por fila si pixelStride==1. U/V copian con pixelStride variable",
-      "rgb_path": "Si el frame viene en JPEG, decodifica via nativeWriteJpegToSurface + acquireLatestImage (ImageProcessingUtil.java:45-58)",
-      "rotation": "Si rotation > 0, rota planos via nativeRotateYUV con ImageWriter (ImageProcessingUtil.java:128-163)",
-      "grading_call": "SheetReader.ProcessByteFrame(width, height, compactYUV, trackingArray, focusReq, rotation-90, brightDetect, strictMode, rect.left, rect.top, rect.right, rect.bottom)",
-      "code_ref": "t/I.java:366"
-    },
-
-    "auto_scan_logic": {
-      "trigger": "Sin boton. Cada frame se pasa a ProcessByteFrame. Si retorna 1, auto-dispara",
-      "cooldown": "2500ms entre escaneos. ProgressBar se llena durante cooldown (t/I.java:324)",
-      "bad_frame_counters": {
-        "wrong_format": "45 frames consecutivos con codigo 30 → advertencia 'Verify answer sheet' (t/I.java:409)",
-        "out_of_focus": "50 frames consecutivos con codigo 1001 → advertencia de reposicionar (t/I.java:416-419)"
+    "scanning_fragment": {
+      "file": "ScanningFragment.java (797 lines)",
+      "purpose": "Fragmento principal de escaneo. Configura CameraX, ImageAnalysis, y UI",
+      "key_fields": {
+        "f8852c0": {"line": 142, "type": "SheetReader", "purpose": "instancia del motor OMR"},
+        "f8840C": {"line": 106, "type": "PreviewView", "purpose": "visor de camara"},
+        "f8842P": {"line": 112, "type": "ScanningSquaresView", "purpose": "cuadrados guia en el visor"},
+        "f8843T": {"line": 115, "type": "ScanningViewfinderView", "purpose": "visor con lineas guia"},
+        "f8844U": {"line": 118, "type": "Vibrator", "purpose": "feedback tactil"},
+        "f8853d0": {"line": 145, "type": "MediaPlayer", "purpose": "sonido de obturador"},
+        "f8866q0": {"line": 182, "type": "ProgressBar", "purpose": "barra de progreso cooldown (max=2500)"},
+        "f8862n": {"line": 210, "type": "ExecutorService", "purpose": "single thread para ImageAnalysis"},
+        "f8870u0": {"line": 194, "type": "boolean", "purpose": "flag de scanning en progreso"},
+        "f8871v0": {"line": 197, "type": "long", "purpose": "timestamp del ultimo escaneo"},
+        "f8873y0": {"line": 205, "type": "long", "purpose": "contador de bad papers consecutivos"},
+        "f8874z0": {"line": 207, "type": "long", "purpose": "contador de out-of-focus consecutivos"}
       },
-      "vibration": "Vibrator service. Preferencia 'vibrateOnScan'",
-      "shutter_sound": "MediaPlayer con R.raw.camera. Preferencia 'playShutterSound'",
-      "code_ref": "t/I.java:366-424, ScanningFragment.java:444-461"
+      "preferences_read": {
+        "line_689_698": "lee de SharedPreferences al crear la vista",
+        "focusReq": {"key": "focusReq", "default": "50", "field": "f8854e0", "unit": "int"},
+        "strictReq": {"key": "strictReq", "default": "0", "field": "f8856g0", "unit": "int"},
+        "playShutterSound": {"key": "playShutterSound", "default": true, "field": "f8857h0", "unit": "boolean"},
+        "vibrateOnScan": {"key": "vibrateOnScan", "default": true, "field": "f8858i0", "unit": "boolean"},
+        "brightDetect": {"key": "brightDetect", "default": true, "field": "f8855f0", "unit": "0=on, 1=off"}
+      },
+      "status_message_method": {
+        "line": 444,
+        "signature": "final String h(int code)",
+        "mapping": {
+          "code_100_to_105": "R.string.scan_alignViewfinder + '\\n' + quizName",
+          "code_106_plus": "R.string.scan_waitingOnFocus + '\\n' + quizName",
+          "code_30": "R.string.scan_verifyAnswerSheet + '\\n' + quizName",
+          "code_10": "R.string.scan_failCurveCheck + '\\n' + quizName",
+          "code_5": "R.string.brightLightsDetected",
+          "default": "\"\""
+        }
+      },
+      "camera_setup": {
+        "api": "CameraX ImageAnalysis + Camera2 interop",
+        "format": "YUV_420_888 (format=35)",
+        "resolution_strategy": {
+          "primary": "busca mejor 4:3 (aspect ~1.333). Altura minima 720, maxima 3000",
+          "fallback": "la mas grande con height > width",
+          "special_case": "Samsung SM-T350 usa 2576x2576 fijo"
+        },
+        "rotation": "resta 90 grados al device rotation (t/I.java:337)",
+        "executor": "single thread executor (f8862n linea 210)"
+      },
+      "ui_elements": {
+        "score_overlay": "f8860k0 (LinearLayout) - muestra score, ID, nombre, imagen",
+        "quiz_name": "l0 (TextView)",
+        "id_value": "f8861m0 (TextView)",
+        "student_name": "f8863n0 (TextView)",
+        "score_value": "f8864o0 (TextView)",
+        "name_image": "f8865p0 (ImageView)",
+        "progress_bar": "f8866q0 (ProgressBar, max=2500, color=zipgrade_dark_green)",
+        "mult_mark": "f8867r0 (TextView)",
+        "blank_questions": "f8868s0 (TextView)",
+        "buttons": ["reviewPaper (d3.h)", "erasePaper (d3.i)", "changeStudent (d3.j)", "glareWarning (d3.k)"]
+      }
+    },
+
+    "frame_analyzer_callback": {
+      "file": "t/I.java (523 lines)",
+      "purpose": "ImageAnalysis.Analyzer - procesa cada frame de la camara",
+      "yuv_extraction": {
+        "lines_280_311": "extrae planos Y,U,V del ImageProxy y compacta sin padding",
+        "cases": [
+          {"condition": "pixelStride > width && border", "action": "copia fila por fila con H1.b.k, ultima fila especial"},
+          {"condition": "rowStride <= width", "action": "put directo en posiciones fijas"},
+          {"condition": "rowStride > width", "action": "removePaddingCompact: copia fila por fila omitiendo padding"}
+        ]
+      },
+      "grading_flow": {
+        "lines_315_319": "obtiene ScanningFragment del contexto, extrae dimensiones del frame (i21=width, i22=height) y del PreviewView",
+        "lines_320_429": "bloque synchronized sobre ScanningFragment",
+        "cooldown_check": {
+          "lines_322_333": "si f8870u0=true (scanning en progreso): calcula 2500 - (now - f8871v0). Si <0: resetea a false. Muestra progress bar en UI"
+        },
+        "frame_logging": {
+          "lines_340_360": "primeros 4 frames (f8839B0<4): log detallado con dimensiones, rotacion, rect. Despues del 4to: silencio"
+        },
+        "grading_call": {
+          "line_366": "int result = SheetReader.ProcessByteFrame(width, height, bArr, iArr, focusReq, rotation, brightDetect, strictMode, rect.left, rect.top, rect.right, rect.bottom)"
+        },
+        "success_branch": {
+          "lines_373_399": "if result==1: resetea contadores (f8873y0=0, f8874z0=0). Marca scanning=true. Guarda timestamp. CompleteProcess(). ReturnGradedPaper(quiz). Segun isForKey flag, crea paper en DB o notifica UI"
+        },
+        "failure_branch": {
+          "lines_401_425": "if result!=1: obtiene mensaje via h(result). Muestra en UI",
+          "bad_paper_counter": {
+            "line_406": "if result==30: f8873y0++",
+            "threshold": "if f8873y0>=45 && !f8837A0: f8837A0=true, muestra advertencia (d3.e(1))"
+          },
+          "out_of_focus_counter": {
+            "line_416": "if result==1001: f8874z0++",
+            "threshold": "if f8874z0>=50: resetea a 0, marca scanning=true, muestra advertencia (d3.e(2))"
+          }
+        }
+      }
+    },
+
+    "image_processing": {
+      "file": "ImageProcessingUtil.java (183 lines)",
+      "purpose": "conversion de formatos de imagen via JNI (libimage_processing_util_jni.so)",
+      "format_constant": "YUV_420_888 = 35, requiere 3 planos",
+      "methods": {
+        "convertYUV420toBitmap": {
+          "line": 61,
+          "signature": "static Bitmap c(X yuvImage)",
+          "native_call": "nativeConvertAndroid420ToBitmap(Y_buf, Y_ps, U_buf, U_ps, V_buf, V_ps, U_rs, V_rs, Bitmap, rowBytes, width, height)",
+          "throws": "IllegalArgumentException si format != 35, UnsupportedOperationException si falla"
+        },
+        "convertYUV420toABGR": {
+          "line": 79,
+          "signature": "static L d(X yuvImage, Z surfaceMgr, ByteBuffer scratch, int rotation, boolean removePadding)",
+          "native_call": "nativeConvertAndroid420ToABGR(16 params: 3 planos + Surface + scratch + dims + padding + rotation)",
+          "rotation_valid": "0, 90, 180, 270",
+          "performance": "logea duracion si Log.isLoggable('MH', 3)"
+        },
+        "rotateYUV": {
+          "line": 128,
+          "signature": "static L h(X srcImage, Z surfaceMgr, ImageWriter writer, ByteBuffer scratch1, scratch2, scratch3, int rotation)",
+          "native_call": "nativeRotateYUV(22 params: 3 planos src + 3 planos dst + 3 scratch + dims + rotation)",
+          "mechanism": "ImageWriter.dequeueInputImage -> nativeRotateYUV -> queueInputImage -> acquireLatestImage"
+        },
+        "shiftPixel": {
+          "line": 28,
+          "signature": "static void a(X yuvImage)",
+          "purpose": "corrige desalineacion de 1 pixel entre planos YUV en ciertos sensores"
+        },
+        "writeJpegToSurface": {
+          "line": 45,
+          "signature": "static X b(z imageMgr, byte[] jpegBytes)",
+          "purpose": "decodifica JPEG a YUV via Surface"
+        },
+        "copyBitmapToBuffer": {"line": 116, "purpose": "copia Bitmap -> ByteBuffer (direccion=false)"},
+        "copyBufferToBitmap": {"line": 120, "purpose": "copia ByteBuffer -> Bitmap (direccion=true)"},
+        "validateFormat": {"line": 124, "purpose": "verifica que la imagen es YUV_420_888 con 3 planos"}
+      }
     },
 
     "svm_models": {
-      "description": "3 modelos SVM pre-entrenados embebidos como raw resources",
-      "svmsingle": {
-        "file": "svmsingle.model (573 KB)",
-        "purpose": "Clasificacion de burbujas de respuesta unica (A-E, 2 clases: marcada/no marcada)",
-        "loading": "SheetReader.java:204-208. Copia de R.raw.svmsingle al filesystem"
+      "description": "3 modelos Support Vector Machine pre-entrenados, embebidos como raw resources en el APK",
+      "loading": "saveModelAssetToFileSystem() (SheetReader.java:190-236) copia de R.raw al filesystem al crear SheetReader",
+      "models": {
+        "svmsingle": {
+          "file": "svmsingle.model (573,117 bytes)",
+          "classes": 2,
+          "purpose": "burbujas de respuesta unica (A-E). Clasifica: marcada / no marcada"
+        },
+        "svmcombo": {
+          "file": "svmcombo.model (1,054,148 bytes)",
+          "classes": 32,
+          "purpose": "respuestas combinadas (hasta 3 letras). 31 combinaciones validas + clase 'vacia'"
+        },
+        "svmglare": {
+          "file": "svmglare.model (519,494 bytes)",
+          "classes": 2,
+          "purpose": "deteccion de brillo/reflejo por burbuja. glare / no glare"
+        },
+        "testimage": {
+          "file": "testimage (raw resource)",
+          "purpose": "imagen de verificacion del motor OMR"
+        }
       },
-      "svmcombo": {
-        "file": "svmcombo.model (1.05 MB)",
-        "purpose": "Clasificacion de respuestas combinadas (hasta 3 letras, 32 clases: 31 combos + vacio)",
-        "loading": "SheetReader.java:214-221. Copia de R.raw.svmcombo"
-      },
-      "svmglare": {
-        "file": "svmglare.model (519 KB)",
-        "purpose": "Deteccion de brillo/reflejo por burbuja (2 clases: glare/no glare)",
-        "loading": "SheetReader.java:225-233. Copia de R.raw.svmglare"
-      },
-      "test_image": {
-        "file": "testimage (raw resource)",
-        "purpose": "Imagen de verificacion del modelo",
-        "loading": "SheetReader.java:192-201"
-      },
-      "training": "SaveRawMat guarda imagenes raw para re-entrenar modelos offline (SheetReader.java:190-236)",
-      "code_ref": "SheetReader.java:190-236 (saveModelAssetToFileSystem)"
+      "training": "SaveRawMat guarda imagenes raw para re-entrenar SVM offline. Activado si shareDebugImages=true",
+      "features_probables": ["densidad de pixeles oscuros en ROI de burbuja (primary)", "varianza de grises en ROI", "contraste centro vs borde", "relacion de aspecto de la marca", "posicion relativa de la marca dentro de la burbuja"]
     },
 
-    "graded_result_format": {
-      "encoding": "GetEncodedGrade() retorna CSV: 'respuesta1,respuesta2,...,studentId,timestamp,rawScore'",
-      "separator": "',' entre preguntas, '~' dentro de respuesta para marcar correcta",
-      "combination": "Hasta 3 letras por pregunta (ej: 'AB', 'ACE')",
-      "parsing": "ReturnGradedPaper() (SheetReader.java:93-180) parsea y guarda en DB",
-      "image_saving": "SavePaperImage y SavePaperNameImage guardan PNGs del papel y zona de nombre",
-      "code_ref": "SheetReader.java:83 (GetEncodedGrade), SheetReader.java:93-180 (ReturnGradedPaper)"
+    "auto_scan_constants": {
+      "cooldown_ms": 2500,
+      "progress_bar_max": 2500,
+      "bad_paper_threshold": 45,
+      "out_of_focus_threshold": 50,
+      "debug_frames_log_count": 4,
+      "vibration_on_scan": true,
+      "shutter_sound": "R.raw.camera via MediaPlayer, audioStream=3 (music)"
     },
 
-    "preferences": {
-      "focusReq": {"default": 50, "range": "1-100", "type": "int"},
-      "strictReq": {"default": 0, "type": "int"},
-      "brightDetect": {"default": true, "type": "boolean"},
-      "resolutionSelection": {"default": "0", "options": ["0=auto", "1=2576x2576"], "type": "string"},
-      "playShutterSound": {"default": true, "type": "boolean"},
-      "vibrateOnScan": {"default": true, "type": "boolean"},
-      "showPaperOnScan": {"default": false, "type": "boolean"},
-      "betweenGrading": {"default": "0", "type": "string"},
-      "onePaperPerStudent": {"default": true, "type": "boolean"},
-      "warnBeforeOverwriting": {"default": true, "type": "boolean"},
-      "shareDebugImages": {"default": false, "type": "boolean"},
-      "code_ref": "ScanningFragment.java:689-698"
-    },
-
-    "status_messages": {
-      "100": "Alinea los 4 cuadrados en los visores",
-      "106": "Esperando foco...",
-      "30": "Verifica el formato de la hoja",
-      "10": "Papel curvado detectado",
-      "5": "Brillo detectado - cambia el angulo",
-      "code_ref": "ScanningFragment.java:444-461 (function h(int))"
+    "preferences_complete": {
+      "focusReq": {"key": "focusReq", "default": "50", "range": "1-100", "type": "string parsed to int"},
+      "strictReq": {"key": "strictReq", "default": "0", "type": "string parsed to int"},
+      "brightDetect": {"key": "brightDetect", "default": true, "type": "boolean", "effect": "0=f8855f0 (on), 1=off"},
+      "resolutionSelection": {"key": "resolutionSelection", "default": "0", "options": ["0=auto", "1=2576x2576"]},
+      "playShutterSound": {"key": "playShutterSound", "default": true},
+      "vibrateOnScan": {"key": "vibrateOnScan", "default": true},
+      "showPaperOnScan": {"key": "showPaperOnScan", "default": false},
+      "betweenGrading": {"key": "betweenGrading", "default": "0", "type": "string parsed to int"},
+      "onePaperPerStudent": {"key": "onePaperPerStudent", "default": true},
+      "warnBeforeOverwriting": {"key": "warnBeforeOverwriting", "default": true},
+      "shareDebugImages": {"key": "shareDebugImages", "default": false}
     },
 
     "answer_sheet_format": {
-      "dimensions": "1200x1650 pixeles (proporcion US Letter)",
-      "corner_marks": "4 cuadrados de doble borde (outer 3px lineWidth, inner 1px). Size 50x50",
-      "student_id_zone": "Rectangulo para nombre escrito. 3 filas x 10 columnas de burbujas numericas (0-9)",
-      "questions": "Hasta 100 preguntas. 5 opciones A-E. Circulo radio 12px. Espaciado vertical 42px",
-      "key_box": "Zona derecha para clave manual",
-      "combinations": "Hasta 3 letras por pregunta"
+      "dimensions": "1200x1650 pixeles (proporcion cercana a US Letter)",
+      "corner_marks": "4 cuadrados doble borde: outer 3px, inner 1px. Tamaño 50x50. Centros en (65,65), (1135,65), (1135,1585), (65,1585)",
+      "name_zone": "rectangulo 400x35 para nombre escrito",
+      "student_id": "3 filas x 10 columnas de burbujas numericas (0-9). Radio 8px. Espaciado 28px",
+      "questions": {
+        "max": 100,
+        "options_per_question": 5,
+        "labels": "A, B, C, D, E",
+        "bubble_radius": 12,
+        "spacing": "42px vertical, 50px horizontal entre opciones",
+        "combination_support": "hasta 3 letras por pregunta (31 combinaciones posibles)"
+      },
+      "key_box": "zona derecha para clave manual, 180px ancho"
     },
 
     "database": {
       "engine": "Couchbase Lite (NoSQL embebido, sync-capable)",
-      "sync": "Couchbase Sync Gateway. Activado en onDestroy() del ScanningFragment",
-      "entities": "Quiz, Paper, Student, AnswerSheet (paquete L2, N2)",
-      "native": "libLiteCore.so + libLiteCoreJNI.so"
+      "native_libs": "libLiteCore.so (~3 MB) + libLiteCoreJNI.so (~200 KB)",
+      "sync": "Couchbase Sync Gateway. Activado en onDestroy() si hay >1 imagen pendiente",
+      "entities": "Quiz, Paper, Student, AnswerSheet (paquetes L2, N2 ofuscados)"
     },
 
-    "architecture_insights": {
-      "performance": "Todo procesamiento pesado en C++ nativo. Java/Kotlin solo UI y DB",
-      "corner_detection": "Morphological close en C++ para unir doble borde de esquinas",
-      "warp": "Homografia mapeando 4 corners a posiciones fijas en 1200x1650",
-      "bubble_positions": "Coordenadas pre-calculadas desde JSON de configuracion de hoja. No hay deteccion dinamica de grilla",
-      "glare_handling": "Deteccion por burbuja individual. Si glare, la burbuja se marca como no confiable",
-      "erase_handling": "SVM entrenado con borrones/borraduras para distinguir marcas validas",
-      "focus_assist": "ProcessByteFrame retorna 1001 si fuera de foco. Muestra 'Waiting for focus' hasta que enfoque"
+    "architecture_principles": {
+      "performance": "todo procesamiento pesado en C++ nativo (3 librerias .so). Java/Kotlin solo UI + DB",
+      "corner_detection": "morphological close en C++ para unir doble borde. Centro de masa de pixeles oscuros en cada cuadrante",
+      "warp": "homografia 8-DOF mapeando 4 esquinas a posiciones fijas (1200x1650 output)",
+      "bubble_positions": "coordenadas pre-calculadas desde JSON de configuracion. Sin deteccion dinamica de grilla",
+      "glare": "deteccion por burbuja individual via SVM. Si glare, burbuja marcada como no confiable",
+      "erase_handling": "SVM entrenado con borrones/borraduras para distinguir marcas validas de artefactos",
+      "focus": "ProcessByteFrame retorna 1001 si fuera de foco. Muestra 'Waiting for focus' hasta enfocar",
+      "training_loop": "SaveRawMat guarda imagenes raw. Modelos re-entrenados offline. Nuevos .model embebidos en siguiente version del APK"
     }
   }
 }
