@@ -5,32 +5,27 @@ import Link from "next/link";
 import { findCorners, warpPerspective, gradeBubbles, readStudentId, DEFAULT_CONFIG, type BubbleResult, type GradeReport } from "@/lib/omr";
 import { createClient } from "@/lib/supabase";
 import { ZIPGRADE_CODES, ZIPGRADE_MESSAGES, ZIPGRADE_THRESHOLDS, ZIPGRADE_PREFS } from "@/lib/zipgrade";
+import { warpAsync, terminateWorker } from "@/lib/omr_worker";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
 
-// ─── detector de foco (Laplacian variance) ──────────────────────
+// ─── detector de foco (Laplacian variance, ZipGrade-style) ─────
 function isFrameSharp(imageData: ImageData): boolean {
   const { width, height, data } = imageData;
   const gray = new Float32Array(width * height);
   for (let i = 0; i < gray.length; i++) {
     gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
   }
-  // Laplacian kernel simple
   let sum = 0, count = 0;
   for (let y = 1; y < height - 1; y++) {
     for (let x = 1; x < width - 1; x++) {
       const idx = y * width + x;
-      const lap = Math.abs(
-        -4 * gray[idx] +
-        gray[idx - width] + gray[idx + width] +
-        gray[idx - 1] + gray[idx + 1]
-      );
+      const lap = Math.abs(-4 * gray[idx] + gray[idx - width] + gray[idx + width] + gray[idx - 1] + gray[idx + 1]);
       sum += lap * lap;
       count++;
     }
   }
-  const variance = count > 0 ? sum / count : 0;
-  return variance > 40; // umbral empirico
+  return count > 0 ? (sum / count) > 40 : false;
 }
 
 export default function ScanPage() {
@@ -52,6 +47,8 @@ export default function ScanPage() {
   const badFrameCount = useRef(0);
   const goodFrameCount = useRef(0);
   const stableFrames = useRef(0);
+  const lastFrameTime = useRef(0);
+  const frameSkipMs = 66; // 15fps throttle (ZipGrade-style ImageAnalysis rate)
 
   // Usar constantes exactas de ZipGrade
   const cooldownMs = ZIPGRADE_THRESHOLDS.scanCooldownMs;
@@ -94,6 +91,12 @@ export default function ScanPage() {
       overlay.width = video.videoWidth;
       overlay.height = video.videoHeight;
       const octx = overlay.getContext("2d")!;
+
+      // ZipGrade-style: throttle a 15fps (frameSkipMs = 66ms)
+      const now = performance.now();
+      if (now - lastFrameTime.current < frameSkipMs) { animId = requestAnimationFrame(loop); return; }
+      lastFrameTime.current = now;
+
       octx.drawImage(video, 0, 0);
       const frame = octx.getImageData(0, 0, overlay.width, overlay.height);
 
@@ -191,8 +194,13 @@ export default function ScanPage() {
       addLog(`Frame: ${canvas.width}x${canvas.height}`);
       addLog(`Corners: TL=(${corners[0][0]},${corners[0][1]}) TR=(${corners[1][0]},${corners[1][1]}) BR=(${corners[2][0]},${corners[2][1]}) BL=(${corners[3][0]},${corners[3][1]})`);
 
-      const warped = warpPerspective(ctx, corners, config);
-      addLog(`Warped: ${warped.width}x${warped.height}  dark%=${((warped.data.reduce((c,v,i)=>i%4===0&&(v*0.299+warped.data[i+1]*0.587+warped.data[i+2]*0.114)<128?c+1:c,0)/warped.data.length*4)*100).toFixed(1)}%`);
+      // ZipGrade-style: warp en Web Worker (no bloquea el UI thread)
+      const srcImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const warped = await warpAsync(
+        srcImageData, corners,
+        { sheetWidth: config.sheetWidth, sheetHeight: config.sheetHeight, margin: config.margin, cornerSize: config.cornerSize }
+      );
+      addLog(`Warped: ${warped.width}x${warped.height}`);
 
       const report = gradeBubbles(warped, config, corners);
       const idRows = readStudentId(warped, config);
@@ -240,14 +248,19 @@ export default function ScanPage() {
       setScanCount((c) => c + 1);
       setPhase("result");
 
-      // Enviar log a Supabase para debug remoto
+      // Enviar log a Supabase para debug remoto + datos de entrenamiento
       try {
         const supabase = createClient();
         await supabase.from("scan_logs").insert({
           user_agent: navigator.userAgent,
-          log: { corners, scores: bubbleResults.map(r => ({ q: r.question, a: r.answer, s: r.scores })), id: idRows, frameW: canvas.width, frameH: canvas.height }
+          log: { 
+            corners, 
+            scores: bubbleResults.map(r => ({ q: r.question, a: r.answer, s: r.scores })), 
+            id: idRows, 
+            frameW: canvas.width, frameH: canvas.height 
+          }
         });
-      } catch { /* silencioso - no interrumpe el flujo */ }
+      } catch { /* silencioso */ }
 
       // Vibrar si disponible (feedback tactil como ZipGrade)
       if (navigator.vibrate) navigator.vibrate(100);

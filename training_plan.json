@@ -1,0 +1,84 @@
+{
+  "training_plan": {
+    "goal": "Entrenar un clasificador de burbujas que iguale o supere los 3 SVMs de ZipGrade",
+    "zipgrade_reference": {
+      "method": "SaveRawMat() guarda imagenes raw para entrenar SVMs offline (SheetReader.java:190-236)",
+      "models": ["svmsingle (573KB)", "svmcombo (1.05MB)", "svmglare (519KB)"],
+      "estimated_training_data": "Miles de hojas reales escaneadas por profesores durante 10+ años",
+      "training_process": "Offline, fuera de la app. Los modelos se embeben como recursos raw (R.raw.svmsingle, etc.)"
+    },
+    "our_approach": {
+      "phase_1_collection": {
+        "name": "Recoleccion masiva de datos etiquetados",
+        "method": "Cada escaneo guarda en Supabase (scan_logs ampliado): imagen warped base64, features por burbuja (4 features del clasificador), answer detectada, answer corregida por el profesor",
+        "table": "training_data: id, school_id, image_base64, bubble_features JSONB (100 burbujas x 4 features), detected_answers JSONB, corrected_answers JSONB, glare_map JSONB, created_at",
+        "trigger": "El profesor corrige manualmente en el dashboard. Cada correccion genera una fila de training data con la etiqueta correcta.",
+        "volume_target": "10,000 hojas etiquetadas = convergencia aceptable. 50,000+ = precision comparable a ZipGrade"
+      },
+      "phase_2_labeling": {
+        "name": "Etiquetado asistido por IA",
+        "method": [
+          "1. El profesor escanea una hoja. El sistema detecta respuestas.",
+          "2. Si el profesor corrige alguna respuesta en el dashboard, esa correccion se guarda como ground truth.",
+          "3. Si el profesor NO corrige (resultado perfecto), se asume etiqueta correcta (weak label).",
+          "4. Un LLM analiza las features por burbuja y sugiere si la clasificacion fue correcta o dudosa. Las dudosas se marcan para revision humana."
+        ],
+        "ai_role": "El LLM no clasifica burbujas. Analiza la distribucion de features recolectados y sugiere: (a) que features son mas discriminativas, (b) pesos optimos iniciales, (c) umbrales de confianza por tipo de marcacion (lapiz duro, lapiz blando, lapicera)."
+      },
+      "phase_3_training": {
+        "name": "Entrenamiento del clasificador",
+        "method": [
+          "1. Exportar training_data como CSV (100 burbujas x N hojas = N*100 filas).",
+          "2. Cada fila: [darkRatio, contrast, variance, edgeDensity, label(0/1)].",
+          "3. Entrenar logistic regression (simple, funciona en JS sin dependencias). Los pesos se serializan como JSON.",
+          "4. Validacion: 80% train, 20% test. Target: >95% accuracy en test set.",
+          "5. Si accuracy < 95%, recolectar mas datos (volver a fase 1)."
+        ],
+        "model_format": "JSON: { weights: [w1,w2,w3,w4], bias: b, threshold: t }. ~200 bytes. Se embebe en la app via import.",
+        "no_binary": "A diferencia de ZipGrade (modelos .model binarios de 500KB-1MB), nuestro modelo es un vector de 5 numeros. Se actualiza via API sin redeploy de la app."
+      },
+      "phase_4_continuous_improvement": {
+        "name": "Mejora continua (ZipGrade no tiene esto)",
+        "method": [
+          "1. El modelo se re-entrena semanalmente con los nuevos datos recolectados.",
+          "2. Los nuevos pesos se publican via API. La app los descarga y actualiza sin redeploy.",
+          "3. A/B testing: el 5% de usuarios recibe el modelo nuevo. Si mejora accuracy, se despliega al 100%.",
+          "4. Metricas en dashboard: precision/recall por tipo de marcacion, por tipo de papel, por iluminacion."
+        ]
+      }
+    },
+    "implementation_now": {
+      "what_to_build": "Ampliar scan_logs para guardar features por burbuja + imagen warped base64. Agregar UI de correccion en dashboard.",
+      "table_sql": "ALTER TABLE scan_logs ADD COLUMN training_data JSONB;",
+      "training_data_json_structure": {
+        "bubbles": [
+          {"q": 1, "o": 0, "features": [0.92, 0.45, 2345, 0.78], "detected": "A", "corrected": "A", "glare": false}
+        ],
+        "warped_base64": "...",
+        "corners": [[65,65],[1135,65],[1135,1585],[65,1585]]
+      }
+    },
+    "timeline": {
+      "week_1_2": "Ampliar scan_logs + UI correccion en dashboard",
+      "week_3_4": "Recolectar 500+ hojas etiquetadas (beta testers)",
+      "week_5_6": "Entrenar primer modelo logistic regression",
+      "week_7_8": "Desplegar modelo en app + A/B testing",
+      "ongoing": "Re-entrenar semanalmente, mejorar con mas datos"
+    }
+  },
+
+  "comparison_zipgrade_training": {
+    "zipgrade": {
+      "data_collection": "SaveRawMat en dispositivo. Offline. Requiere que el desarrollador recolecte manualmente.",
+      "training": "Offline con herramientas externas (probablemente libSVM o similar).",
+      "deployment": "Modelos .model embebidos en el APK. Nuevo modelo = nueva version de la app.",
+      "feedback_loop": "No existe. Los modelos son estaticos entre versiones de la app."
+    },
+    "tulector": {
+      "data_collection": "Automatica via Supabase. Cada escaneo es un dato de entrenamiento potencial.",
+      "training": "Automatizado con script. Los pesos se calculan con los datos mas recientes.",
+      "deployment": "API devuelve pesos actualizados. La app los descarga sin redeploy.",
+      "feedback_loop": "Continuo. El modelo mejora cada semana con datos frescos."
+    }
+  }
+}
