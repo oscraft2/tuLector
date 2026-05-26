@@ -55,36 +55,52 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
     [0, h * 0.92, w * 0.08, h, 0, h],             // BL: expected near (0,h)
   ];
   const corners: [number, number][] = [];
+  // Validar que cada zona tenga pixeles oscuros concentrados (esquina real, no ruido)
   for (const [x0, y0, x1, y1, ex, ey] of zones) {
-    let sx = 0, sy = 0, c = 0;
+    let sx = 0, sy = 0, c = 0, sxx = 0, syy = 0;
     for (let y = y0; y < y1; y++) {
       for (let x = x0; x < x1; x++) {
-        if (gray[y * w + x] < 80) { sx += x; sy += y; c++; }
+        if (gray[y * w + x] < 80) { sx += x; sy += y; c++; sxx += x * x; syy += y * y; }
       }
     }
-    // Cada zona debe tener suficientes pixeles oscuros (el corner square)
-    if (c < 50) return null;
-    corners.push([Math.round(sx / c), Math.round(sy / c)]);
+    // Minimo de pixeles oscuros: el corner square tiene ~400 pixeles de borde
+    if (c < 150) return null;
+
+    const cx = Math.round(sx / c), cy = Math.round(sy / c);
+    // Varianza espacial baja = pixeles concentrados (no dispersos)
+    const varX = sxx / c - cx * cx;
+    const varY = syy / c - cy * cy;
+    if (varX > 300 || varY > 300) return null; // demasiado dispersos
+
+    corners.push([cx, cy]);
   }
 
   // Validar que las 4 esquinas formen un cuadrilatero valido
   const [tl, tr, br, bl] = corners;
+
+  // Alineacion horizontal: top corners Y similar, bottom corners Y similar
+  if (Math.abs(tl[1] - tr[1]) > h * 0.05) return null;
+  if (Math.abs(bl[1] - br[1]) > h * 0.05) return null;
+  // Alineacion vertical: left corners X similar, right corners X similar
+  if (Math.abs(tl[0] - bl[0]) > w * 0.05) return null;
+  if (Math.abs(tr[0] - br[0]) > w * 0.05) return null;
+
   const topW = Math.hypot(tr[0] - tl[0], tr[1] - tl[1]);
   const botW = Math.hypot(br[0] - bl[0], br[1] - bl[1]);
   const leftH = Math.hypot(bl[0] - tl[0], bl[1] - tl[1]);
   const rightH = Math.hypot(br[0] - tr[0], br[1] - tr[1]);
 
-  // Ratio de aspecto debe ser cercano a 3:4 (~0.72)
+  // Ratio de aspecto cercano a 3:4 (~0.72)
   const avgW = (topW + botW) / 2;
   const avgH = (leftH + rightH) / 2;
   const aspectRatio = avgW / Math.max(avgH, 1);
-  if (aspectRatio < 0.4 || aspectRatio > 2.0) return null;
+  if (aspectRatio < 0.5 || aspectRatio > 2.0) return null;
 
-  // Los lados paralelos deben ser similares (no deformados)
-  if (topW / Math.max(botW, 1) < 0.3 || botW / Math.max(topW, 1) < 0.3) return null;
-  if (leftH / Math.max(rightH, 1) < 0.3 || rightH / Math.max(leftH, 1) < 0.3) return null;
+  // Lados paralelos similares
+  if (topW / Math.max(botW, 1) < 0.5 || botW / Math.max(topW, 1) < 0.5) return null;
+  if (leftH / Math.max(rightH, 1) < 0.5 || rightH / Math.max(leftH, 1) < 0.5) return null;
 
-  // Area minima del cuadrilatero
+  // Area minima
   const area = Math.abs((tr[0] - tl[0]) * (br[1] - tl[1]) - (tr[1] - tl[1]) * (br[0] - tl[0]));
   if (area < 50000) return null;
 
