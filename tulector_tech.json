@@ -5,13 +5,13 @@
     "repository": "https://github.com/oscraft2/tuLector",
     "production": "https://tulector.vercel.app",
     "stack": ["Next.js 16", "TypeScript", "Tailwind CSS", "Supabase", "Vercel"],
-    "inspiration": "ZipGrade (OMR scanner for education)"
+    "inspiration": "sistema de referencia (OMR scanner for education)"
   },
 
   "omr_technology": {
 
-    "zipgrade_analysis": {
-      "package": "com.zipgradellc.android.zipgrade",
+    "sistema de referencia_analysis": {
+      "package": "com.sistema de referenciallc.android.sistema de referencia",
       "version_analyzed": "3.79.616",
       "size": "21.25 MB",
       "architecture": "Native Android (Kotlin/Java + C++ JNI)",
@@ -230,46 +230,46 @@
   "comparative_analysis": {
     "approaches": {
       "corner_detection": {
-        "zipgrade": "Native C++ contour detection with morphological close",
+        "sistema de referencia": "Native C++ contour detection with morphological close",
         "tulector": "Pure JS flood-fill connected components with quadrant scoring",
-        "pros_zipgrade": "More robust to noise, handles double-border corners",
+        "pros_sistema de referencia": "More robust to noise, handles double-border corners",
         "pros_tulector": "Zero dependencies, runs in browser, 15ms per frame"
       },
       "perspective_correction": {
-        "zipgrade": "Native C++ homography (probably OpenCV cv::getPerspectiveTransform)",
+        "sistema de referencia": "Native C++ homography (probably OpenCV cv::getPerspectiveTransform)",
         "tulector": "Pure TypeScript 8x8 Gaussian elimination",
-        "pros_zipgrade": "SIMD-optimized, sub-millisecond",
+        "pros_sistema de referencia": "SIMD-optimized, sub-millisecond",
         "pros_tulector": "Educational clarity, fully auditable code"
       },
       "bubble_classification": {
-        "zipgrade": "3 SVM models trained on thousands of real answer sheets",
+        "sistema de referencia": "3 SVM models trained on thousands of real answer sheets",
         "tulector": "Adaptive threshold with dark pixel ratio",
-        "pros_zipgrade": "Handles partial erasures, faint marks, different lighting, pen vs pencil",
+        "pros_sistema de referencia": "Handles partial erasures, faint marks, different lighting, pen vs pencil",
         "pros_tulector": "Deterministic, no training data needed, 3ms per bubble"
       },
       "platform": {
-        "zipgrade": "Native Android only, requires APK install",
+        "sistema de referencia": "Native Android only, requires APK install",
         "tulector_web": "Any browser, install-free, iOS + Android + Desktop",
         "tulector_flutter": "APK/IPA nativo, camara optimizada, mismo layout 1200x1650 que web"
       },
-      "flutter_vs_web_vs_zipgrade": {
+      "flutter_vs_web_vs_sistema de referencia": {
         "capture": {
-          "zipgrade": "CameraX YUV_420_888",
+          "sistema de referencia": "CameraX YUV_420_888",
           "tulector_web": "getUserMedia → Canvas RGBA",
           "tulector_flutter": "camera plugin → NV21 → FFI"
         },
         "corners": {
-          "zipgrade": "C++ contornos + morfologia",
+          "sistema de referencia": "C++ contornos + morfologia",
           "tulector_web": "Flood-fill + cuadrantes (JSON describe Otsu; codigo usa Y<80)",
           "tulector_flutter": "C++ centro de masa Y<80 (alineado a omr.ts actual)"
         },
         "bubbles": {
-          "zipgrade": "3 modelos SVM",
+          "sistema de referencia": "3 modelos SVM",
           "tulector_web": "Umbral adaptativo gray<128",
           "tulector_flutter": "Umbral adaptativo RGB avg<80, ROI 16x16"
         },
         "performance": {
-          "zipgrade": "Sub-ms warp SIMD",
+          "sistema de referencia": "Sub-ms warp SIMD",
           "tulector_web": "~15ms/frame en navegador",
           "tulector_flutter": "Isolate + nativo; objetivo gama media Snapdragon 600"
         }
@@ -341,3 +341,4 @@
     "supabase/migrations/20260525000000_init.sql": "Database schema with RLS policies"
   }
 }
+
