@@ -329,7 +329,131 @@
       "entities": "Quiz, Paper, Student, AnswerSheet (paquetes L2, N2 ofuscados)"
     },
 
-    "architecture_principles": {
+    
+  "app_initialization": {
+    "description": "Secuencia de inicializacion de la aplicacion",
+    "libraries": {
+      "crash_reporting": {"library": "Bugsnag", "config": "via ApplicationInfo metaData, flag 128", "native_libs": ["libbugsnag-ndk.so", "libbugsnag-plugin-android-anr.so", "libbugsnag-root-detection.so"]},
+      "local_database": {"library": "CouchbaseLite", "type": "NoSQL embebido", "native_libs": ["libLiteCore.so (~3MB)", "libLiteCoreJNI.so (~200KB)"]},
+      "support": {"library": "Zendesk", "url": "https://soporte.zendesk.com", "appId": "b0795c26ec90c02e4614551d2f87d5a1f35e39f95adaef82", "clientId": "mobile_sdk_client_8c22479896f3701887ae"}
+    },
+    "session_loading": {
+      "file": "j.o (filename constant)",
+      "delimiter": "j.f825n",
+      "parsed_fields_in_order": ["token", "serverUrl", "userEmail", "password", "expiryDate(long)", "premiumUser(T/F)", "keepSignedIn(T/F)", "scanCount", "quizCount", "studentCount", "opt_apiKey"],
+      "fallback": "si no hay sesion, usa j.k()"
+    },
+    "sync": {
+      "auto_sync_interval_ms": 180000,
+      "timer_type": "java.util.Timer",
+      "time_source": "TrueTime (SNTP via NTP, AtomicLong para timestamp preciso, SystemClock.elapsedRealtime() para offset)",
+      "network_check": "ConnectivityManager.getActiveNetworkInfo() antes de sincronizar"
+    }
+  },
+
+  "navigation_structure": {
+    "description": "Estructura de navegacion de la app",
+    "bottom_nav_fragments": [
+      {"id": "quizListFragment", "purpose": "lista de examenes"},
+      {"id": "subjectListFragment", "purpose": "lista de materias"},
+      {"id": "studentListFragment", "purpose": "lista de estudiantes"},
+      {"id": "tagListFragment", "purpose": "lista de etiquetas"},
+      {"id": "accountFragment", "purpose": "cuenta de usuario"}
+    ],
+    "action_bar": {
+      "button_id": "R.id.actionBar_button",
+      "icon": "R.drawable.ic_outline_settings_24",
+      "sync_indicator": "R.id.actionBar_syncIndicator (CircularProgressIndicator)",
+      "behavior": "se oculta en scanning (visibility=4)"
+    }
+  },
+
+  "viewfinder_overlay": {
+    "description": "Sistema de overlay del visor durante el escaneo",
+    "squares_view": {
+      "class": "ScanningSquaresView",
+      "purpose": "Dibuja 4 cuadrados guia verdes sobre las esquinas detectadas",
+      "paint": {"style": "STROKE", "color": "0xFF00FF00 (verde)", "stroke_width": 6.0, "anti_alias": true},
+      "scaling": "scaleX = surfaceWidth / previewWidth, scaleY = surfaceHeight / previewHeight",
+      "default_square_data": [100, 100, 10, 10, 200, 200, 10, 10, 300, 300, 10, 10, 400, 400, 10, 10],
+      "data_structure": "4 cuadrados x 4 ints (x, y, width, height)"
+    },
+    "viewfinder_view": {
+      "class": "ScanningViewfinderView",
+      "purpose": "Dibuja mascara oscura con 4 regiones recortadas",
+      "mask_color": "R.color.viewfinder_mask",
+      "base_width": 320.0,
+      "regions": [
+        {"name": "left_bar", "coords": [0, 70, 70, 325]},
+        {"name": "top_bar", "coords": [70, 0, 250, 405]},
+        {"name": "right_bar", "coords": [250, 70, 320, 325]},
+        {"name": "bottom_zone", "coords": [0, 405, 320, 700]}
+      ],
+      "scaling": "1) multiplica por previewHeight/320, 2) escala X por surfaceW/previewW, 3) escala Y por surfaceH/previewH"
+    }
+  },
+
+  "camera_pipeline_detailed": {
+    "description": "Detalles adicionales del pipeline de camara",
+    "use_case_group": {
+      "preview": {"class": "C0821a0(1)", "purpose": "Preview use case"},
+      "image_analysis": {"class": "S", "purpose": "ImageAnalysis use case", "backpressure": "STRATEGY_KEEP_ONLY_LATEST (S.f11147I=1)", "target_rotation": 0},
+      "binding": "eVar.c(this, cameraSelector, useCaseGroup) - CameraX.bindToLifecycle"
+    },
+    "analyzer_callback": {
+      "class": "androidx.camera.camera2.internal.compat.j(17, this)",
+      "method": "c(X imageProxy) - frame processing entry point",
+      "rotation_source": "i0Var.f10933I.d() - sensor rotation degrees",
+      "crop_rect_transform": "g(int,int,int,int) - transforma crop rect via rotation matrix chain ScaleToFit.FILL + postRotate + postConcat"
+    },
+    "buffer_management": {
+      "yuv_mode": {"Y_buffer": "w*h bytes", "U_buffer": "w*h/4 bytes", "V_buffer": "w*h/4 bytes"},
+      "rgba_mode": {"RGBA_buffer": "w*h*4 bytes"},
+      "allocation_trigger": "e(X imageProxy) - asigna buffers segun modo (1=YUV, 2=RGBA)",
+      "total_yuv_bytes": "(w*h*3)/2"
+    },
+    "scanner_binding": {
+      "target_resolution": "X.f11167t = Size(width,height) via C0839j0.b",
+      "focus_config": "S.f11144A = Integer.valueOf(0) (auto-focus mode)",
+      "rotation_correction": "si Math.abs(AbstractC0507r0.R(rotation) - AbstractC0507r0.R(iO2)) % 180 == 90: intercambia width/height del target resolution"
+    }
+  },
+
+  "deduplication_and_limits": {
+    "description": "Logica de deduplicacion de estudiantes y limites de escaneo",
+    "student_dedup": {
+      "query": "QueryBuilder.select(Meta.id, studentId) FROM DataSource.database WHERE type='student' AND markedDeleted=false",
+      "id_normalization": "AbstractC0507r0.J(result.getString('studentId'), session.f829d) - elimina prefijo de URL del servidor",
+      "match": "compara studentId normalizado con paper.o (owner ID)"
+    },
+    "overwrite_policies": {
+      "no_existing": "guarda sin preguntar",
+      "duplicate_no_limit": "guarda sin preguntar (onePaperPerStudent=false)",
+      "duplicate_no_warning": "elimina anterior, guarda nuevo, muestra Snackbar 'Previous paper overwritten'",
+      "duplicate_with_warning": "muestra PaperOverwriteFragment con 3 opciones: keep both, keep old, keep new"
+    },
+    "trial_limits": {
+      "remaining_scans": "App.f8626B.d() - AtomicLong con contador de escaneos",
+      "decrement": "cada escaneo exitoso resta 1",
+      "low_warning_trigger": "remaining < 25 AND remaining % 5 == 0",
+      "exhausted": "remaining <= 0, muestra pantalla de compra"
+    }
+  },
+
+  "paper_overwrite_dialog": {
+    "description": "Dialogo de confirmacion al sobrescribir un papel existente",
+    "layout": "R.layout.fragment_paper_overwrite",
+    "fields": {
+      "fullName": "R.id.overwrite_fullNameText (TextView)",
+      "nameImage": "R.id.overwrite_nameImage (ImageView)",
+      "keepBoth": "R.id.overwrite_keepBothButton",
+      "keepOld": "R.id.overwrite_keepOldButton",
+      "keepNew": "R.id.overwrite_keepNewButton"
+    },
+    "loading": "carga quiz y paper desde DB via App.f8626B.c().n(paperId)",
+    "navigation_back": "NavHostFragment.g(this).d() - navega hacia atras"
+  }
+},  "architecture_principles": {
       "performance": "todo procesamiento pesado en C++ nativo (3 librerias .so). Java/Kotlin solo UI + DB",
       "corner_detection": "morphological close en C++ para unir doble borde. Centro de masa de pixeles oscuros en cada cuadrante",
       "warp": "homografia 8-DOF mapeando 4 esquinas a posiciones fijas (1200x1650 output)",
@@ -341,3 +465,4 @@
     }
   }
 }
+
