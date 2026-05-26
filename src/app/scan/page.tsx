@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { findCorners, warpPerspective, gradeBubbles, readStudentId, DEFAULT_CONFIG, type BubbleResult, type GradeReport } from "@/lib/omr";
 import { createClient } from "@/lib/supabase";
+import { ZIPGRADE_CODES, ZIPGRADE_MESSAGES, ZIPGRADE_THRESHOLDS, ZIPGRADE_PREFS } from "@/lib/zipgrade";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
 
@@ -50,12 +51,17 @@ export default function ScanPage() {
   const [showDebug, setShowDebug] = useState(false);
   const badFrameCount = useRef(0);
   const goodFrameCount = useRef(0);
-
-  const cooldownMs = 3000;
-  const stableFramesNeeded = 12;
-  const badFrameThreshold = 45;
-
   const stableFrames = useRef(0);
+
+  // Usar constantes exactas de ZipGrade
+  const cooldownMs = ZIPGRADE_THRESHOLDS.scanCooldownMs;
+  const stableFramesNeeded = 12;
+  const badFrameThreshold = ZIPGRADE_THRESHOLDS.badPaperThreshold;
+  const focusThreshold = ZIPGRADE_THRESHOLDS.outOfFocusThreshold;
+
+  // Preferencias de ZipGrade
+  const focusReq = ZIPGRADE_PREFS.focusReq.default;
+  const brightDetect = ZIPGRADE_PREFS.brightDetect.default;
 
   const config = DEFAULT_CONFIG;
 
@@ -191,39 +197,34 @@ export default function ScanPage() {
       const report = gradeBubbles(warped, config);
       const idRows = readStudentId(warped, config);
 
-      // ZipGrade-style error codes
+      // Usar codigos de error de ZipGrade (SheetReader.java ProcessByteFrame)
       if (!report.valid) {
-        addLog(`ERR: ${report.reason}`);
+        addLog(`ERR[${ZIPGRADE_CODES.WRONG_FORMAT}]: ${report.reason}`);
         setDebugLog(logs);
         setPhase("detecting");
-        if (report.reason?.includes("Warp vacio")) {
-          setError("Hoja no detectada. Alinea las 4 esquinas en los visores.");
-        } else {
-          setError(report.reason || "Resultado no valido. Reposiciona la hoja.");
-        }
+        setError(ZIPGRADE_MESSAGES[ZIPGRADE_CODES.WRONG_FORMAT] || report.reason || "Error");
         return;
       }
 
       const bubbleResults = report.results;
 
-      // ZipGrade: validar que hay respuestas reales (no ruido)
-      const answeredCount = bubbleResults.filter(r => r.answer !== "-").length;
+      // ZipGrade: validar respuestas (ProcessByteFrame return 1 solo si es valido)
+      const answeredCount = bubbleResults.filter(r => r.answer !== "-" && r.answer !== "?").length;
       if (answeredCount === 0) {
-        addLog("ERR: 0 respuestas detectadas");
+        addLog(`ERR[${ZIPGRADE_CODES.OUT_OF_FOCUS}]: Sin respuestas`);
         setDebugLog(logs);
-        setError("No se detectaron respuestas. Asegurate que las burbujas esten rellenas con lapiz grueso.");
         setPhase("detecting");
+        setError(ZIPGRADE_MESSAGES[ZIPGRADE_CODES.OUT_OF_FOCUS]);
         return;
       }
 
-      // ZipGrade: validar que hay variedad en las respuestas
-      const answerSet = new Set(bubbleResults.filter(r => r.answer !== "-").map(r => r.answer));
+      const answerSet = new Set(bubbleResults.filter(r => r.answer !== "-" && r.answer !== "?").map(r => r.answer));
       if (answerSet.size === 1 && answeredCount > 3) {
         const singleAns = [...answerSet][0];
-        addLog(`WARN: ${answeredCount}/${bubbleResults.length} respuestas son "${singleAns}"`);
+        addLog(`WARN[${ZIPGRADE_CODES.CURVE_FAIL}]: ${answeredCount} respuestas "${singleAns}"`);
         setDebugLog(logs);
-        setError(`Resultado sospechoso: ${answeredCount} respuestas iguales. Asegurate de rellenar bien las burbujas.`);
         setPhase("detecting");
+        setError(ZIPGRADE_MESSAGES[ZIPGRADE_CODES.CURVE_FAIL]);
         return;
       }
 
