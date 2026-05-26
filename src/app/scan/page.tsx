@@ -48,12 +48,16 @@ export default function ScanPage() {
   const [scanCount, setScanCount] = useState(0);
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
+  const badFrameCount = useRef(0);
+  const goodFrameCount = useRef(0);
 
-  const config = DEFAULT_CONFIG;
-  const cooldownMs = 3000; // 3s entre escaneos
-  const stableFramesNeeded = 12; // frames consecutivos para auto-disparar
+  const cooldownMs = 3000;
+  const stableFramesNeeded = 12;
+  const badFrameThreshold = 45;
 
   const stableFrames = useRef(0);
+
+  const config = DEFAULT_CONFIG;
 
   // Iniciar camara
   const startCamera = useCallback(async () => {
@@ -94,11 +98,13 @@ export default function ScanPage() {
       octx.clearRect(0, 0, overlay.width, overlay.height);
 
       if (corners && sharp) {
+        goodFrameCount.current++;
+        badFrameCount.current = 0;
         // Validar que las esquinas formen un cuadrilatero razonable
         const [tl, tr, br, bl] = corners;
         const topW = Math.hypot(tr[0]-tl[0], tr[1]-tl[1]);
         const botW = Math.hypot(br[0]-bl[0], br[1]-bl[1]);
-        const ratio = Math.max(topW, botW) / Math.min(topW, botW);
+        const ratio = Math.max(topW, botW) / Math.max(Math.min(topW, botW), 1);
         const area = Math.abs((tr[0]-tl[0])*(br[1]-tl[1]) - (tr[1]-tl[1])*(br[0]-tl[0]));
         const valid = ratio < 2.5 && area > 10000;
 
@@ -138,9 +144,20 @@ export default function ScanPage() {
           setInFocus(false);
         }
       } else {
+        // Inspirado en ZipGrade: contar frames malos consecutivos
         stableFrames.current = 0;
-        setDetected(corners !== null);
-        setInFocus(sharp);
+        badFrameCount.current++;
+        goodFrameCount.current = 0;
+        setDetected(false);
+        setInFocus(false);
+
+        // Si 45+ frames malos seguidos, mostrar ayuda (como ZipGrade: "Verify answer sheet")
+        if (badFrameCount.current >= badFrameThreshold && !corners) {
+          setError("");
+        }
+        if (badFrameCount.current >= badFrameThreshold && corners && !sharp) {
+          setError("");
+        }
       }
 
       animId = requestAnimationFrame(loop);
@@ -174,15 +191,41 @@ export default function ScanPage() {
       const report = gradeBubbles(warped, config);
       const idRows = readStudentId(warped, config);
 
+      // ZipGrade-style error codes
       if (!report.valid) {
-        addLog(`WARN: ${report.reason}`);
-        setError(report.reason || "Resultado no valido. Reposiciona la hoja.");
+        addLog(`ERR: ${report.reason}`);
         setDebugLog(logs);
         setPhase("detecting");
+        if (report.reason?.includes("Warp vacio")) {
+          setError("Hoja no detectada. Alinea las 4 esquinas en los visores.");
+        } else {
+          setError(report.reason || "Resultado no valido. Reposiciona la hoja.");
+        }
         return;
       }
 
       const bubbleResults = report.results;
+
+      // ZipGrade: validar que hay respuestas reales (no ruido)
+      const answeredCount = bubbleResults.filter(r => r.answer !== "-").length;
+      if (answeredCount === 0) {
+        addLog("ERR: 0 respuestas detectadas");
+        setDebugLog(logs);
+        setError("No se detectaron respuestas. Asegurate que las burbujas esten rellenas con lapiz grueso.");
+        setPhase("detecting");
+        return;
+      }
+
+      // ZipGrade: validar que hay variedad en las respuestas
+      const answerSet = new Set(bubbleResults.filter(r => r.answer !== "-").map(r => r.answer));
+      if (answerSet.size === 1 && answeredCount > 3) {
+        const singleAns = [...answerSet][0];
+        addLog(`WARN: ${answeredCount}/${bubbleResults.length} respuestas son "${singleAns}"`);
+        setDebugLog(logs);
+        setError(`Resultado sospechoso: ${answeredCount} respuestas iguales. Asegurate de rellenar bien las burbujas.`);
+        setPhase("detecting");
+        return;
+      }
 
       addLog(`Q  answer  scores`);
       for (const r of bubbleResults) {
