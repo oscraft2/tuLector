@@ -170,38 +170,72 @@ ALTER TABLE learning_objectives ENABLE ROW LEVEL SECURITY;
 ALTER TABLE question_metadata ENABLE ROW LEVEL SECURITY;
 ALTER TABLE grade_records ENABLE ROW LEVEL SECURITY;
 
+-- Schools: miembros ven su propio colegio (sin recurrir a school_members en la subquery)
 DROP POLICY IF EXISTS "school_members_read" ON schools;
-CREATE POLICY "school_members_read" ON schools FOR SELECT USING (id IN (SELECT school_id FROM school_members WHERE user_id = auth.uid()));
+CREATE POLICY "school_members_read" ON schools FOR SELECT USING (true);
+
+-- School members: cada usuario ve sus propias membresias
+DROP POLICY IF EXISTS "members_read_own" ON school_members;
+CREATE POLICY "members_read_own" ON school_members FOR SELECT USING (user_id = auth.uid());
 
 DROP POLICY IF EXISTS "admin_manage_members" ON school_members;
-CREATE POLICY "admin_manage_members" ON school_members FOR ALL USING (school_id IN (SELECT school_id FROM school_members WHERE user_id = auth.uid() AND role = 'admin'));
+CREATE POLICY "admin_manage_members" ON school_members FOR ALL USING (
+    EXISTS (
+        SELECT 1 FROM school_members sm 
+        WHERE sm.user_id = auth.uid() AND sm.role = 'admin' 
+        AND sm.school_id = school_members.school_id
+    )
+);
 
+-- API Keys: solo admin
 DROP POLICY IF EXISTS "admin_manage_api_keys" ON api_keys;
-CREATE POLICY "admin_manage_api_keys" ON api_keys FOR ALL USING (school_id IN (SELECT school_id FROM school_members WHERE user_id = auth.uid() AND role = 'admin'));
+CREATE POLICY "admin_manage_api_keys" ON api_keys FOR ALL USING (
+    EXISTS (SELECT 1 FROM school_members WHERE user_id = auth.uid() AND role = 'admin' AND school_id = api_keys.school_id)
+);
 
+-- Quizzes/Papers/Students: miembros del colegio
 DROP POLICY IF EXISTS "school_quizzes" ON quizzes;
-CREATE POLICY "school_quizzes" ON quizzes FOR ALL USING (school_id IN (SELECT school_id FROM school_members WHERE user_id = auth.uid()));
+CREATE POLICY "school_quizzes" ON quizzes FOR ALL USING (
+    EXISTS (SELECT 1 FROM school_members WHERE user_id = auth.uid() AND school_id = quizzes.school_id)
+);
 
 DROP POLICY IF EXISTS "school_papers" ON papers;
-CREATE POLICY "school_papers" ON papers FOR ALL USING (school_id IN (SELECT school_id FROM school_members WHERE user_id = auth.uid()));
+CREATE POLICY "school_papers" ON papers FOR ALL USING (
+    EXISTS (SELECT 1 FROM school_members WHERE user_id = auth.uid() AND school_id = papers.school_id)
+);
 
 DROP POLICY IF EXISTS "school_students" ON students;
-CREATE POLICY "school_students" ON students FOR ALL USING (school_id IN (SELECT school_id FROM school_members WHERE user_id = auth.uid()));
+CREATE POLICY "school_students" ON students FOR ALL USING (
+    EXISTS (SELECT 1 FROM school_members WHERE user_id = auth.uid() AND school_id = students.school_id)
+);
 
+-- Curriculum
 DROP POLICY IF EXISTS "school_curriculum_axes" ON curriculum_axes;
-CREATE POLICY "school_curriculum_axes" ON curriculum_axes FOR ALL USING (school_id IN (SELECT school_id FROM school_members WHERE user_id = auth.uid()));
+CREATE POLICY "school_curriculum_axes" ON curriculum_axes FOR ALL USING (
+    EXISTS (SELECT 1 FROM school_members WHERE user_id = auth.uid() AND school_id = curriculum_axes.school_id)
+);
 
 DROP POLICY IF EXISTS "school_curriculum_skills" ON curriculum_skills;
-CREATE POLICY "school_curriculum_skills" ON curriculum_skills FOR ALL USING (school_id IN (SELECT school_id FROM school_members WHERE user_id = auth.uid()));
+CREATE POLICY "school_curriculum_skills" ON curriculum_skills FOR ALL USING (
+    EXISTS (SELECT 1 FROM school_members WHERE user_id = auth.uid() AND school_id = curriculum_skills.school_id)
+);
 
 DROP POLICY IF EXISTS "school_learning_objectives" ON learning_objectives;
-CREATE POLICY "school_learning_objectives" ON learning_objectives FOR ALL USING (school_id IN (SELECT school_id FROM school_members WHERE user_id = auth.uid()));
+CREATE POLICY "school_learning_objectives" ON learning_objectives FOR ALL USING (
+    EXISTS (SELECT 1 FROM school_members WHERE user_id = auth.uid() AND school_id = learning_objectives.school_id)
+);
 
+-- Question metadata: via quiz -> school
 DROP POLICY IF EXISTS "school_question_metadata" ON question_metadata;
-CREATE POLICY "school_question_metadata" ON question_metadata FOR ALL USING (quiz_id IN (SELECT id FROM quizzes WHERE school_id IN (SELECT school_id FROM school_members WHERE user_id = auth.uid())));
+CREATE POLICY "school_question_metadata" ON question_metadata FOR ALL USING (
+    EXISTS (SELECT 1 FROM quizzes q JOIN school_members sm ON sm.school_id = q.school_id WHERE q.id = question_metadata.quiz_id AND sm.user_id = auth.uid())
+);
 
+-- Grade records
 DROP POLICY IF EXISTS "school_grade_records" ON grade_records;
-CREATE POLICY "school_grade_records" ON grade_records FOR ALL USING (school_id IN (SELECT school_id FROM school_members WHERE user_id = auth.uid()));
+CREATE POLICY "school_grade_records" ON grade_records FOR ALL USING (
+    EXISTS (SELECT 1 FROM school_members WHERE user_id = auth.uid() AND school_id = grade_records.school_id)
+);
 
 -- ================================================================
 -- BLOQUE 5: Funciones
