@@ -1,6 +1,6 @@
 /**
  * Motor OMR - TuLector
- * Inspirado en el pipeline de ZipGrade:
+ * Pipeline de escaneo OMR:
  *   1. Deteccion de 4 esquinas (centro de masa por cuadrante)
  *   2. Correccion de perspectiva (homografia 8x8)
  *   3. Analisis de grilla de burbujas (umbral adaptativo)
@@ -166,7 +166,7 @@ function solve8x8(A: number[][], b: number[]): number[] | null {
 const DARK_THRESH = 70;
 const GLARE_THRESH = 220;
 
-/** ZipGrade-style multi-feature bubble classifier */
+/**  multi-feature bubble classifier */
 function classifyBubble(gray: Float32Array, w: number, cx: number, cy: number, r: number): { score: number; glare: boolean; features: number[] } {
   let dark = 0, total = 0, bright = 0;
   let sum = 0, sumSq = 0;
@@ -204,7 +204,7 @@ function classifyBubble(gray: Float32Array, w: number, cx: number, cy: number, r
   return { score, glare, features: [darkRatio, contrast, variance, edgeDensity] };
 }
 
-// ZipGrade Curve Check (return code 10): detecta papel doblado/curvado
+// Scanner Curve Check (return code 10): detecta papel doblado/curvado
 function checkCurve(corners: [number, number][]): boolean {
   const [tl, tr, br, bl] = corners;
   const topLen = Math.hypot(tr[0] - tl[0], tr[1] - tl[1]);
@@ -226,7 +226,7 @@ function checkCurve(corners: [number, number][]): boolean {
   return false;
 }
 
-// ZipGrade Format Validation (return code 30): verifica que la hoja sea la correcta
+// Scanner Format Validation (return code 30): verifica que la hoja sea la correcta
 function validateFormat(gray: Float32Array, w: number, h: number, config: OMRConfig): { valid: boolean; reason?: string } {
   const { margin: M } = config;
   const { Q_TOP } = getLayout(config);
@@ -320,12 +320,12 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
   let td = 0; for (let i = 0; i < gray.length; i++) { if (gray[i] < DARK_THRESH) td++; }
   if (td / gray.length < 0.003) return { results: [], valid: false, reason: "Warp vacio" };
 
-  // ZipGrade Curve Check (codigo 10): detecta papel doblado/curvado
+  // Scanner Curve Check: detecta papel doblado/curvado
   if (corners && checkCurve(corners)) {
     return { results: [], valid: false, reason: "Papel curvado - alisa la hoja" };
   }
 
-  // ZipGrade Format Validation (codigo 30): verifica que la hoja sea correcta
+  // Scanner Format Validation: verifica que la hoja sea correcta
   const formatCheck = validateFormat(gray, width, height, config);
   if (!formatCheck.valid) {
     return { results: [], valid: false, reason: formatCheck.reason };
@@ -348,7 +348,7 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
       if (glare) glareWarnings++;
     }
 
-    // ZipGrade-style: umbral adaptativo + deteccion de marcas multiples
+    // : umbral adaptativo + deteccion de marcas multiples
     const maxS = Math.max(...scores);
     const minValidScore = 0.18; // minimo absoluto para considerar marcado
     const thresh = Math.max(minValidScore, maxS * 0.35);
@@ -363,7 +363,7 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
     } else if (marked.length === 0 && maxS > 0.12) {
       answer = labels[scores.indexOf(maxS)];
     } else if (marked.length > 0 && marked.length <= 3) {
-      // Soporte combinado: hasta 3 letras (como ZipGrade combo)
+      // Soporte combinado: hasta 3 letras (como Scanner combo)
       answer = marked.map(i => labels[i]).join("");
     }
 
@@ -421,3 +421,4 @@ export function readStudentId(imageData: ImageData, config: OMRConfig = DEFAULT_
 }
 
 export { DEFAULT_CONFIG };
+

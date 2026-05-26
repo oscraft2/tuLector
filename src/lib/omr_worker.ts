@@ -1,5 +1,5 @@
 /**
- * OMR Web Worker - Corre el warp en thread separado (ZipGrade-style performance).
+ * OMR Web Worker - Corre el warp en thread separado para no bloquear UI.
  * Evita bloquear el UI thread durante el procesamiento pesado.
  */
 
@@ -126,3 +126,4 @@ export function warpAsync(
 export function terminateWorker() {
   if (worker) { worker.terminate(); worker = null; }
 }
+
