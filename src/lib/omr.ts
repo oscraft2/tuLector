@@ -41,30 +41,53 @@ function getLayout(config: OMRConfig) {
 }
 
 // ─── 1. Deteccion de esquinas ──────────────────────────────────
-export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CONFIG): [number, number][] {
+export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CONFIG): [number, number][] | null {
   const w = imageData.width, h = imageData.height;
   const gray = new Uint8Array(w * h);
   for (let i = 0; i < gray.length; i++) {
     const j = i * 4;
     gray[i] = Math.round(imageData.data[j] * 0.299 + imageData.data[j + 1] * 0.587 + imageData.data[j + 2] * 0.114);
   }
-  const zones: [number, number, number, number][] = [
-    [0, 0, w * 0.08, h * 0.06],
-    [w * 0.92, 0, w, h * 0.06],
-    [w * 0.92, h * 0.92, w, h],
-    [0, h * 0.92, w * 0.08, h],
+  const zones: [number, number, number, number, number, number][] = [
+    [0, 0, w * 0.08, h * 0.06, 0, 0],           // TL: expected near (0,0)
+    [w * 0.92, 0, w, h * 0.06, w, 0],             // TR: expected near (w,0)
+    [w * 0.92, h * 0.92, w, h, w, h],             // BR: expected near (w,h)
+    [0, h * 0.92, w * 0.08, h, 0, h],             // BL: expected near (0,h)
   ];
   const corners: [number, number][] = [];
-  for (const [x0, y0, x1, y1] of zones) {
+  for (const [x0, y0, x1, y1, ex, ey] of zones) {
     let sx = 0, sy = 0, c = 0;
     for (let y = y0; y < y1; y++) {
       for (let x = x0; x < x1; x++) {
         if (gray[y * w + x] < 80) { sx += x; sy += y; c++; }
       }
     }
-    if (c > 20) corners.push([Math.round(sx / c), Math.round(sy / c)]);
-    else corners.push([Math.round((x0 + x1) / 2), Math.round((y0 + y1) / 2)]);
+    // Cada zona debe tener suficientes pixeles oscuros (el corner square)
+    if (c < 50) return null;
+    corners.push([Math.round(sx / c), Math.round(sy / c)]);
   }
+
+  // Validar que las 4 esquinas formen un cuadrilatero valido
+  const [tl, tr, br, bl] = corners;
+  const topW = Math.hypot(tr[0] - tl[0], tr[1] - tl[1]);
+  const botW = Math.hypot(br[0] - bl[0], br[1] - bl[1]);
+  const leftH = Math.hypot(bl[0] - tl[0], bl[1] - tl[1]);
+  const rightH = Math.hypot(br[0] - tr[0], br[1] - tr[1]);
+
+  // Ratio de aspecto debe ser cercano a 3:4 (~0.72)
+  const avgW = (topW + botW) / 2;
+  const avgH = (leftH + rightH) / 2;
+  const aspectRatio = avgW / Math.max(avgH, 1);
+  if (aspectRatio < 0.4 || aspectRatio > 2.0) return null;
+
+  // Los lados paralelos deben ser similares (no deformados)
+  if (topW / Math.max(botW, 1) < 0.3 || botW / Math.max(topW, 1) < 0.3) return null;
+  if (leftH / Math.max(rightH, 1) < 0.3 || rightH / Math.max(leftH, 1) < 0.3) return null;
+
+  // Area minima del cuadrilatero
+  const area = Math.abs((tr[0] - tl[0]) * (br[1] - tl[1]) - (tr[1] - tl[1]) * (br[0] - tl[0]));
+  if (area < 50000) return null;
+
   return corners;
 }
 

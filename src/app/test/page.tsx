@@ -63,6 +63,7 @@ export default function TestPage() {
 
       // ─── Esquinas ───
       const corners = findCorners(imageData);
+      if (!corners) { addLog("[CORNERS] NULL - no detectadas"); setRunning(false); return; }
       addLog(`[CORNERS] TL=(${corners[0][0]},${corners[0][1]})  TR=(${corners[1][0]},${corners[1][1]})  BR=(${corners[2][0]},${corners[2][1]})  BL=(${corners[3][0]},${corners[3][1]})`);
       addLog(`[CORNERS] Esperado: TL=(65,65) TR=(1135,65) BR=(1135,1585) BL=(65,1585)`);
 
