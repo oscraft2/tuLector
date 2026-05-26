@@ -179,8 +179,9 @@
 
     "tulector_flutter_mobile": {
       "location": "mobile/",
+      "reference": "omr_reference.json + port 1:1 de src/lib/omr.ts (NO copia codigo del APK)",
       "runtime": "Flutter 3 + Dart FFI + C++17 (libomr_engine.so / iOS static link)",
-      "no_external_dependencies": "Sin OpenCV. Otsu, homografia 8x8, centro de masa en C++ puro",
+      "no_external_dependencies": "Sin OpenCV. Misma logica que omr.ts: classifyBubble multi-feature, validateFormat, checkCurve, codigos SCAN_CODES",
       "pipeline": {
         "step_1_capture": {
           "name": "Camera frame capture",
