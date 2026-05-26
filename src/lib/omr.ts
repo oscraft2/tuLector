@@ -182,8 +182,6 @@ function classifyBubble(gray: Float32Array, w: number, cx: number, cy: number, r
         sum += v; sumSq += v * v;
         if (v < DARK_THRESH) dark++;
         if (v > GLARE_THRESH) bright++;
-
-        // Separar centro vs borde
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < r * 0.45) centerVals.push(v);
         else if (dist > r * 0.65) edgeVals.push(v);
@@ -193,31 +191,122 @@ function classifyBubble(gray: Float32Array, w: number, cx: number, cy: number, r
 
   if (total === 0) return { score: 0, glare: false, features: [0, 0, 0, 0] };
 
-  // Feature 1: Dark pixel ratio (como el SVM single de ZipGrade)
   const darkRatio = dark / total;
-
-  // Feature 2: Center darkness contrast (marcas tienden a ser mas oscuras en el centro)
   const centerAvg = centerVals.length > 0 ? centerVals.reduce((a, b) => a + b, 0) / centerVals.length : 255;
   const edgeAvg = edgeVals.length > 0 ? edgeVals.reduce((a, b) => a + b, 0) / edgeVals.length : 255;
   const contrast = edgeAvg > 0 ? (edgeAvg - centerAvg) / edgeAvg : 0;
-
-  // Feature 3: Variance (burbuja vacia = baja varianza, llena = alta)
   const mean = sum / total;
   const variance = sumSq / total - mean * mean;
-
-  // Feature 4: Edge density (circulo relleno tiene borde definido)
   const edgeDensity = edgeVals.length > 0 ? edgeVals.filter(v => v < 100).length / edgeVals.length : 0;
-
-  // Score combinado (SVM-like weighted sum)
   const score = darkRatio * 0.40 + contrast * 0.25 + Math.min(variance / 10000, 1) * 0.15 + edgeDensity * 0.20;
-
-  // Glare detection: demasiados pixeles brillantes = reflejo
   const glare = bright / total > 0.25;
 
   return { score, glare, features: [darkRatio, contrast, variance, edgeDensity] };
 }
 
-export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_CONFIG): GradeReport {
+// ZipGrade Curve Check (return code 10): detecta papel doblado/curvado
+function checkCurve(corners: [number, number][]): boolean {
+  const [tl, tr, br, bl] = corners;
+  const topLen = Math.hypot(tr[0] - tl[0], tr[1] - tl[1]);
+  const botLen = Math.hypot(br[0] - bl[0], br[1] - bl[1]);
+  const leftLen = Math.hypot(bl[0] - tl[0], bl[1] - tl[1]);
+  const rightLen = Math.hypot(br[0] - tr[0], br[1] - tr[1]);
+
+  // Papel curvado: lados opuestos muy diferentes (>40% diferencia)
+  const hRatio = Math.max(topLen, botLen) / Math.max(Math.min(topLen, botLen), 1);
+  const vRatio = Math.max(leftLen, rightLen) / Math.max(Math.min(leftLen, rightLen), 1);
+  if (hRatio > 1.4 || vRatio > 1.4) return true;
+
+  // Verificar que las diagonales son similares (papel plano = diagonales iguales)
+  const diag1 = Math.hypot(br[0] - tl[0], br[1] - tl[1]);
+  const diag2 = Math.hypot(tr[0] - bl[0], tr[1] - bl[1]);
+  const dRatio = Math.max(diag1, diag2) / Math.max(Math.min(diag1, diag2), 1);
+  if (dRatio > 1.3) return true;
+
+  return false;
+}
+
+// ZipGrade Format Validation (return code 30): verifica que la hoja sea la correcta
+function validateFormat(gray: Float32Array, w: number, h: number, config: OMRConfig): { valid: boolean; reason?: string } {
+  const { margin: M } = config;
+  const { Q_TOP } = getLayout(config);
+
+  // 1. Verificar que las esquinas tienen marcas oscuras (corner squares)
+  const cornersToCheck: [number, number][] = [
+    [M + 25, M + 25],
+    [w - M - 25, M + 25],
+    [w - M - 25, h - M - 25],
+    [M + 25, h - M - 25],
+  ];
+  for (const [cx, cy] of cornersToCheck) {
+    let dark = 0, total = 0;
+    for (let dy = -15; dy <= 15; dy++) {
+      for (let dx = -15; dx <= 15; dx++) {
+        const px = cx + dx, py = cy + dy;
+        if (px >= 0 && px < w && py >= 0 && py < h) {
+          total++;
+          if (gray[py * w + px] < DARK_THRESH) dark++;
+        }
+      }
+    }
+    if (total > 0 && dark / total < 0.08) return { valid: false, reason: `Falta marca de esquina en (${cx},${cy})` };
+  }
+
+  // 2. Verificar que hay burbujas en las posiciones esperadas (grid pattern)
+  // Muestrear 5 posiciones de burbujas distribuidas
+  const sampleQuestions = [0, 5, 10, 15, 19]; // Q1, Q6, Q11, Q16, Q20
+  let bubbleChecks = 0, bubblePassed = 0;
+  for (const q of sampleQuestions) {
+    const qy = Q_TOP + q * 42;
+    for (let o = 0; o < 5; o++) {
+      const cx = M + 50 + o * 50, cy = qy + 16;
+      let ring = 0, total = 0;
+      // Verificar que hay un anillo (circulo vacio) en la posicion de la burbuja
+      for (let dy = -12; dy <= 12; dy++) {
+        for (let dx = -12; dx <= 12; dx++) {
+          const px = cx + dx, py = cy + dy;
+          if (px >= 0 && px < w && py >= 0 && py < h) {
+            total++;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            // El borde del circulo (anillo) debe tener pixeles oscuros
+            if (dist > 9 && dist < 13 && gray[py * w + px] < 100) ring++;
+          }
+        }
+      }
+      bubbleChecks++;
+      if (total > 0 && ring / total > 0.01) bubblePassed++;
+    }
+  }
+  const bubbleRatio = bubblePassed / bubbleChecks;
+  if (bubbleRatio < 0.5) return { valid: false, reason: `Solo ${Math.round(bubbleRatio * 100)}% burbujas detectadas - formato incorrecto` };
+
+  // 3. Verificar que el area de ID tiene estructura de burbujas
+  const { ID_START } = getLayout(config);
+  let idChecks = 0, idPassed = 0;
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 5; col++) { // solo primeras 5 columnas
+      const cx = M + 30 + col * 28, cy = ID_START + 10 + row * 28;
+      let ring = 0, total = 0;
+      for (let dy = -8; dy <= 8; dy++) {
+        for (let dx = -8; dx <= 8; dx++) {
+          const px = cx + dx, py = cy + dy;
+          if (px >= 0 && px < w && py >= 0 && py < h) {
+            total++;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > 6 && dist < 9 && gray[py * w + px] < 100) ring++;
+          }
+        }
+      }
+      idChecks++;
+      if (total > 0 && ring / total > 0.005) idPassed++;
+    }
+  }
+  if (idChecks > 0 && idPassed / idChecks < 0.3) return { valid: false, reason: "Zona de ID no detectada - formato incorrecto" };
+
+  return { valid: true };
+}
+
+export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_CONFIG, corners?: [number, number][]): GradeReport {
   const { width, height, data } = imageData;
   const { numQuestions, numOptions, margin: M } = config;
   const labels = config.optionLabels.split("");
@@ -230,6 +319,17 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
   // Validacion pre: el warp debe tener pixeles oscuros
   let td = 0; for (let i = 0; i < gray.length; i++) { if (gray[i] < DARK_THRESH) td++; }
   if (td / gray.length < 0.003) return { results: [], valid: false, reason: "Warp vacio" };
+
+  // ZipGrade Curve Check (codigo 10): detecta papel doblado/curvado
+  if (corners && checkCurve(corners)) {
+    return { results: [], valid: false, reason: "Papel curvado - alisa la hoja" };
+  }
+
+  // ZipGrade Format Validation (codigo 30): verifica que la hoja sea correcta
+  const formatCheck = validateFormat(gray, width, height, config);
+  if (!formatCheck.valid) {
+    return { results: [], valid: false, reason: formatCheck.reason };
+  }
 
   const results: BubbleResult[] = [];
   let sameCount: Record<string, number> = {};

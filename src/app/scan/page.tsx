@@ -194,7 +194,7 @@ export default function ScanPage() {
       const warped = warpPerspective(ctx, corners, config);
       addLog(`Warped: ${warped.width}x${warped.height}  dark%=${((warped.data.reduce((c,v,i)=>i%4===0&&(v*0.299+warped.data[i+1]*0.587+warped.data[i+2]*0.114)<128?c+1:c,0)/warped.data.length*4)*100).toFixed(1)}%`);
 
-      const report = gradeBubbles(warped, config);
+      const report = gradeBubbles(warped, config, corners);
       const idRows = readStudentId(warped, config);
 
       // Usar codigos de error de ZipGrade (SheetReader.java ProcessByteFrame)
