@@ -453,6 +453,117 @@
     "loading": "carga quiz y paper desde DB via App.f8626B.c().n(paperId)",
     "navigation_back": "NavHostFragment.g(this).d() - navega hacia atras"
   }
+},  
+  "viewfinder_overlay_exact": {
+    "squares_view": {
+      "canvas_draw": "canvas.drawRect(left, top, right, bottom, paint) con Paint.Style.STROKE",
+      "color": {"value": -16711936, "hex": "0xFF00FF00", "description": "verde puro"},
+      "stroke_width_px": 6.0,
+      "anti_alias": true,
+      "scale_formula": {
+        "horizontal": "d5 = (previewWidth > 0) ? surfaceWidth / previewHeight : 1.0",
+        "vertical": "d6 = (previewHeight > 0) ? surfaceHeight / previewWidth : 1.0"
+      },
+      "per_square_loop": "for i5 in 0..3: x=f8879P[i5*4], y=f8879P[i5*4+1], w=f8879P[i5*4+2], h=f8879P[i5*4+3]; rect.left=x*d5, rect.top=y*d6, rect.right=(x+w)*d5, rect.bottom=(y+h)*d6",
+      "data_array_size": 16,
+      "rect_count": 4
+    },
+    "viewfinder_view": {
+      "base_reference_width": 320.0,
+      "mask_regions_base320": {
+        "region_0": [70.0, 0.0, 250.0, 405.0],
+        "region_1": [0.0, 70.0, 70.0, 325.0],
+        "region_2": [250.0, 70.0, 320.0, 325.0],
+        "region_3": [0.0, 405.0, 320.0, 700.0]
+      },
+      "scaling_step_1": "todos los valores * (previewHeight / 320.0)",
+      "scaling_step_2_x": "coordenadas X * (surfaceWidth / previewHeight)",
+      "scaling_step_2_y": "coordenadas Y * (surfaceHeight / previewWidth)",
+      "draw": "4 rects filled con mMaskColor (de R.color.viewfinder_mask)",
+      "note": "la mascara se escala uniformemente primero, luego se estira por separado X e Y para ajustarse al aspect ratio real del preview"
+    }
+  },
+
+  "paper_overwrite_dialog_exact": {
+    "layout_id": "R.layout.fragment_paper_overwrite",
+    "buttons": [
+      {"id": "R.id.overwrite_keepBothButton", "listener": "d3.ViewOnClickListenerC0540a(this)"},
+      {"id": "R.id.overwrite_keepOldButton", "listener": "d3.ViewOnClickListenerC0541b(this)"},
+      {"id": "R.id.overwrite_keepNewButton", "listener": "d3.ViewOnClickListenerC0542c(this)"}
+    ],
+    "paper_loading": "App.f8626B.c().n(paperId) carga el papel desde Couchbase DB",
+    "fullname_display": "paper.t().h() - obtiene nombre completo del estudiante desde el objeto paper",
+    "name_image": "paper.p() - obtiene Bitmap de la imagen del nombre guardada",
+    "update_call": "paper.s() - metodo de actualizacion/refresh del objeto paper",
+    "back_navigation": "NavHostFragment.g(this).d() - pop back stack"
+  },
+
+  "frame_analyzer_exact": {
+    "class_signature": "public abstract class I implements u.Y",
+    "all_fields": [
+      {"name": "f10853A", "type": "volatile int", "purpose": "image width"},
+      {"name": "f10854B", "type": "volatile int", "purpose": "image height"},
+      {"name": "f10855C", "type": "volatile int", "default": 1, "purpose": "processing mode (1=YUV) / state"},
+      {"name": "f10856I", "type": "volatile boolean", "purpose": "rotation set flag"},
+      {"name": "f10857P", "type": "volatile boolean", "purpose": "one-pixel-shift flag (RGBA)"},
+      {"name": "f10858T", "type": "ExecutorService", "purpose": "analysis execution thread"},
+      {"name": "f10859U", "type": "o4.z", "purpose": "target image proxy spec"},
+      {"name": "f10860V", "type": "ImageWriter", "purpose": "image writer (for YUV_420_888 output)"},
+      {"name": "f10861W", "type": "Rect", "default": "new Rect()", "purpose": "crop rect 1"},
+      {"name": "f10862X", "type": "Rect", "default": "new Rect()", "purpose": "crop rect 2"},
+      {"name": "f10863Y", "type": "Matrix", "default": "new Matrix()", "purpose": "input transform matrix"},
+      {"name": "f10864Z", "type": "Matrix", "default": "new Matrix()", "purpose": "output transform matrix"},
+      {"name": "f10865a0", "type": "ByteBuffer", "purpose": "RGBA buffer (w*h*4) or Y buffer"},
+      {"name": "f10866b0", "type": "ByteBuffer", "purpose": "U buffer (w*h/4 in YUV mode)"},
+      {"name": "f10867c0", "type": "ByteBuffer", "purpose": "V buffer (w*h/4 in YUV mode)"},
+      {"name": "f10868d0", "type": "ByteBuffer", "purpose": "extra/scratch buffer"},
+      {"name": "f10869e0", "type": "Object", "purpose": "synchronization lock"},
+      {"name": "f10870f0", "type": "boolean", "default": true, "purpose": "analysis attached flag"},
+      {"name": "f10871n", "type": "C.s", "purpose": "CameraX session/use case reference"}
+    ],
+    "methods": [
+      {"name": "a(Z)", "purpose": "entry point - calls b() for proxy, f() for pre-processing, catches IllegalStateException"},
+      {"name": "b(Z)", "purpose": "abstract - produce image proxy from CameraX"},
+      {"name": "c(X)", "purpose": "main frame pipeline - acquireImage, crop/rotate, YUV->NV21, extract planes, ProcessByteFrame"},
+      {"name": "d()", "purpose": "abstract - cleanup"},
+      {"name": "e(X)", "purpose": "buffer allocation - YUV mode: w*h + w*h/4*2; RGBA mode: w*h*4"},
+      {"name": "f(X)", "purpose": "abstract - pre-processing hook before analyze"},
+      {"name": "g(int,int,int,int)", "purpose": "transform crop rect through rotation matrix chain (ScaleToFit.FILL + postRotate + postConcat)"},
+      {"name": "h(X,int)", "purpose": "recreate target image proxy specification on rotation change"},
+      {"name": "i(ExecutorService,C.s)", "purpose": "set executor and session reference"}
+    ]
+  },
+
+  "native_surface_util": {
+    "file": "SurfaceUtil.java (22 lines)",
+    "jni_library": "surface_util_jni (~4-5 KB)",
+    "native_method": "native int[] nativeGetSurfaceInfo(Surface surface) - retorna int[3] con info de la superficie",
+    "usage": "SurfaceUtil.a(Surface) llama nativeGetSurfaceInfo y crea f(25), los 3 ints se extraen pero no se usan en Java"
+  },
+
+  "app_initialization_exact": {
+    "class": "App extends Application",
+    "static_fields": [
+      {"name": "f8625A", "type": "App", "purpose": "singleton instance"},
+      {"name": "f8626B", "type": "K2.j", "purpose": "data/session manager"},
+      {"name": "f8627C", "type": "B.c", "purpose": "controller with Stack/ArrayList/HashMap cache"},
+      {"name": "f8628I", "type": "MainActivity", "purpose": "main activity reference"},
+      {"name": "f8629P", "type": "Timer", "purpose": "auto-sync timer"},
+      {"name": "f8630T", "type": "int", "purpose": "app state flag"},
+      {"name": "f8631U", "type": "boolean", "purpose": "state boolean"},
+      {"name": "f8632V", "type": "ArrayList<P2.f>", "purpose": "sync notification callbacks"}
+    ],
+    "onCreate_sequence": [
+      "1. Bugsnag.init con ApplicationInfo metaData + flag 128",
+      "2. CouchbaseLite.init",
+      "3. Zendesk.INSTANCE.init con url, appId, clientId",
+      "4. Support.INSTANCE.init con Zendesk.INSTANCE",
+      "5. Session load: parsea j.o archivo delimitado por j.f825n en 11 campos: token, serverUrl, email, password, expiry, premium, keepSignedIn, scanCount, quizCount, studentCount, apiKey",
+      "6. ConnectivityManager.getActiveNetworkInfo() - si conectado y TrueTime no inicializado, lanza K2.c async task"
+    ],
+    "truetime_clock": "TrueTime.b().b() - SNTP via NTP, AtomicLong para timestamp, AtomicLong para device boot time, SystemClock.elapsedRealtime() para offset",
+    "session_file": "archivo en filesystem: nombre=j.o, formato=delimitado por j.f825n"
+  }
 },  "architecture_principles": {
       "performance": "todo procesamiento pesado en C++ nativo (3 librerias .so). Java/Kotlin solo UI + DB",
       "corner_detection": "morphological close en C++ para unir doble borde. Centro de masa de pixeles oscuros en cada cuadrante",
@@ -465,4 +576,5 @@
     }
   }
 }
+
 
