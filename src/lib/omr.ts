@@ -162,7 +162,61 @@ function solve8x8(A: number[][], b: number[]): number[] | null {
   return x;
 }
 
-// ─── 3. Analisis de burbujas ───────────────────────────────────
+// ─── 3. Analisis de burbujas (SVM-like multi-feature classifier) ──
+const DARK_THRESH = 70;
+const GLARE_THRESH = 220;
+
+/** ZipGrade-style multi-feature bubble classifier */
+function classifyBubble(gray: Float32Array, w: number, cx: number, cy: number, r: number): { score: number; glare: boolean; features: number[] } {
+  let dark = 0, total = 0, bright = 0;
+  let sum = 0, sumSq = 0;
+  const centerVals: number[] = [];
+  const edgeVals: number[] = [];
+
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const px = cx + dx, py = cy + dy;
+      if (px >= 0 && px < w && py >= 0 && py < gray.length / w) {
+        const v = gray[py * w + px];
+        total++;
+        sum += v; sumSq += v * v;
+        if (v < DARK_THRESH) dark++;
+        if (v > GLARE_THRESH) bright++;
+
+        // Separar centro vs borde
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < r * 0.45) centerVals.push(v);
+        else if (dist > r * 0.65) edgeVals.push(v);
+      }
+    }
+  }
+
+  if (total === 0) return { score: 0, glare: false, features: [0, 0, 0, 0] };
+
+  // Feature 1: Dark pixel ratio (como el SVM single de ZipGrade)
+  const darkRatio = dark / total;
+
+  // Feature 2: Center darkness contrast (marcas tienden a ser mas oscuras en el centro)
+  const centerAvg = centerVals.length > 0 ? centerVals.reduce((a, b) => a + b, 0) / centerVals.length : 255;
+  const edgeAvg = edgeVals.length > 0 ? edgeVals.reduce((a, b) => a + b, 0) / edgeVals.length : 255;
+  const contrast = edgeAvg > 0 ? (edgeAvg - centerAvg) / edgeAvg : 0;
+
+  // Feature 3: Variance (burbuja vacia = baja varianza, llena = alta)
+  const mean = sum / total;
+  const variance = sumSq / total - mean * mean;
+
+  // Feature 4: Edge density (circulo relleno tiene borde definido)
+  const edgeDensity = edgeVals.length > 0 ? edgeVals.filter(v => v < 100).length / edgeVals.length : 0;
+
+  // Score combinado (SVM-like weighted sum)
+  const score = darkRatio * 0.40 + contrast * 0.25 + Math.min(variance / 10000, 1) * 0.15 + edgeDensity * 0.20;
+
+  // Glare detection: demasiados pixeles brillantes = reflejo
+  const glare = bright / total > 0.25;
+
+  return { score, glare, features: [darkRatio, contrast, variance, edgeDensity] };
+}
+
 export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_CONFIG): GradeReport {
   const { width, height, data } = imageData;
   const { numQuestions, numOptions, margin: M } = config;
@@ -173,42 +227,68 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
   const gray = new Float32Array(width * height);
   for (let i = 0; i < gray.length; i++) gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
 
-  // Validacion: el warp debe tener pixeles oscuros
-  let td = 0; for (let i = 0; i < gray.length; i++) { if (gray[i] < 80) td++; }
+  // Validacion pre: el warp debe tener pixeles oscuros
+  let td = 0; for (let i = 0; i < gray.length; i++) { if (gray[i] < DARK_THRESH) td++; }
   if (td / gray.length < 0.003) return { results: [], valid: false, reason: "Warp vacio" };
 
   const results: BubbleResult[] = [];
-  // @ts-ignore
   let sameCount: Record<string, number> = {};
+  let glareWarnings = 0;
 
   for (let q = 0; q < numQuestions; q++) {
     const qy = Q_TOP + q * qH;
     const scores: number[] = [];
+    const glares: boolean[] = [];
+
     for (let o = 0; o < numOptions; o++) {
-      const cx = M + 50 + o * 50, cy = qy + 16; let dk = 0, tot = 0;
-      for (let dy = -10; dy <= 10; dy++) for (let dx = -10; dx <= 10; dx++) {
-        const px = cx + dx, py = cy + dy;
-        if (px >= 0 && px < width && py >= 0 && py < height) { tot++; if (gray[py * width + px] < 80) dk++; }
-      }
-      scores.push(tot > 0 ? dk / tot : 0);
+      const cx = M + 50 + o * 50, cy = qy + 16;
+      const { score, glare } = classifyBubble(gray, width, cx, cy, 10);
+      scores.push(score);
+      glares.push(glare);
+      if (glare) glareWarnings++;
     }
 
+    // ZipGrade-style: umbral adaptativo + deteccion de marcas multiples
     const maxS = Math.max(...scores);
-    const thresh = Math.max(0.15, maxS * 0.3);
-    const marked = scores.map((s, i) => s > thresh && s > 0.06 ? i : -1).filter(i => i >= 0);
+    const minValidScore = 0.18; // minimo absoluto para considerar marcado
+    const thresh = Math.max(minValidScore, maxS * 0.35);
+    const marked = scores.map((s, i) => (s > thresh && !glares[i]) ? i : -1).filter(i => i >= 0);
+
+    // Si hay glare en varias opciones, la pregunta es no confiable
+    const hasGlare = glares.filter(g => g).length >= 3;
 
     let answer = "-";
-    if (marked.length === 0 && maxS > 0.07) answer = labels[scores.indexOf(maxS)];
-    else if (marked.length > 0) answer = marked.map(i => labels[i]).join("");
+    if (hasGlare) {
+      answer = "?"; // no confiable por brillo
+    } else if (marked.length === 0 && maxS > 0.12) {
+      answer = labels[scores.indexOf(maxS)];
+    } else if (marked.length > 0 && marked.length <= 3) {
+      // Soporte combinado: hasta 3 letras (como ZipGrade combo)
+      answer = marked.map(i => labels[i]).join("");
+    }
 
-    results.push({ question: q + 1, answer, scores: scores.map(s => Math.round(s * 1000) / 1000), correct: null });
+    results.push({
+      question: q + 1, answer,
+      scores: scores.map(s => Math.round(s * 1000) / 1000),
+      correct: null,
+    });
     sameCount[answer] = (sameCount[answer] || 0) + 1;
   }
 
-  // Validacion post: no todas iguales
+  // Validaciones post
+  if (glareWarnings > 10) {
+    return { results, valid: false, reason: `Demasiado brillo: ${glareWarnings} burbujas con reflejo` };
+  }
+
+  const answeredCount = results.filter(r => r.answer !== "-" && r.answer !== "?").length;
+  if (answeredCount === 0) {
+    return { results, valid: false, reason: "Sin respuestas detectadas" };
+  }
+
   const maxSame = Math.max(...Object.values(sameCount));
-  if (maxSame >= 18 && maxSame === results.length) {
-    return { results, valid: false, reason: `Resultado sospechoso: ${maxSame}/20 respuestas iguales` };
+  if (maxSame >= 18 && answeredCount >= 18) {
+    const dominant = Object.entries(sameCount).find(([, v]) => v === maxSame)?.[0];
+    return { results, valid: false, reason: `${maxSame}/20 respuestas "${dominant}" - posible mal warp` };
   }
 
   return { results, valid: true };
@@ -231,7 +311,7 @@ export function readStudentId(imageData: ImageData, config: OMRConfig = DEFAULT_
       const cx = xStart + col * 28, cy = yStart + row * 28; let dk = 0, tot = 0;
       for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) {
         const px = cx + dx, py = cy + dy;
-        if (px >= 0 && px < width && py >= 0 && py < height) { tot++; if (gray[py * width + px] < 80) dk++; }
+        if (px >= 0 && px < width && py >= 0 && py < height) { tot++; if (gray[py * width + px] < DARK_THRESH) dk++; }
       }
       s += (tot > 0 && dk / tot > 0.12) ? "1" : "0";
     }
