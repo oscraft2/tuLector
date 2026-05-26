@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:vibration/vibration.dart';
 
+import '../config/scanner_config.dart';
 import '../models/scan_result.dart';
 import '../services/camera_service.dart';
 import '../services/omr_bridge.dart';
@@ -34,7 +35,7 @@ class ScannerState extends ChangeNotifier {
     if (sheetFound != null) this.sheetFound = sheetFound;
     if (scanCount != null) this.scanCount = scanCount;
     if (statusText != null) this.statusText = statusText;
-    if (error != null) this.error = error;
+    if (error != null) this.error = error.isEmpty ? null : error;
     notifyListeners();
   }
 }
@@ -50,10 +51,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
   final _camera = CameraService();
   bool _processing = false;
   int _stableFrames = 0;
+  int _badFrames = 0;
+  int _oofFrames = 0;
   int _lastScanMs = 0;
+  int _lastFrameMs = 0;
   List<Offset> _corners = [];
-  static const _stableNeeded = 12;
-  static const _cooldownMs = 3000;
 
   @override
   void initState() {
@@ -126,10 +128,15 @@ class _ScannerScreenState extends State<ScannerScreen> {
     final state = context.read<ScannerState>();
     if (state.phase == ScanPhase.result) return;
 
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (nowMs - _lastFrameMs < ScanThresholds.frameSkipMs) return;
+    _lastFrameMs = nowMs;
+
     _processing = true;
     try {
       final nv21 = CameraService.cameraImageToNv21(image);
-      final rotation = _camera.controller?.description.sensorOrientation ?? 0;
+      final sensorRot = _camera.controller?.description.sensorOrientation ?? 0;
+      final rotation = normalizeRotation(sensorRot);
 
       final detect = await OmrBridge.instance.processFrameAsync(
         OmrFrameRequest(
@@ -146,25 +153,22 @@ class _ScannerScreenState extends State<ScannerScreen> {
       final sharp = _isFrameSharp(nv21, image.width, image.height);
 
       if (detect.found && detect.corners.length == 4 && sharp) {
+        _badFrames = 0;
         final stable = _corners.isNotEmpty &&
             _cornersStable(_corners, detect.corners);
         _corners = detect.corners;
-        if (stable) {
-          _stableFrames++;
-        } else {
-          _stableFrames = 1;
-        }
+        _stableFrames = stable ? _stableFrames + 1 : 1;
 
         state.update(
           sheetFound: true,
+          error: '',
           statusText: state.phase == ScanPhase.scanning
               ? 'Calificando...'
               : 'Hoja detectada',
         );
 
-        final now = DateTime.now().millisecondsSinceEpoch;
-        final canScan = now - _lastScanMs > _cooldownMs;
-        if (_stableFrames >= _stableNeeded &&
+        final canScan = nowMs - _lastScanMs > ScanThresholds.scanCooldownMs;
+        if (_stableFrames >= ScanThresholds.stableFramesNeeded &&
             canScan &&
             state.phase == ScanPhase.detecting) {
           _stableFrames = 0;
@@ -173,9 +177,21 @@ class _ScannerScreenState extends State<ScannerScreen> {
       } else {
         _stableFrames = 0;
         _corners = [];
+        _badFrames++;
+        if (!sharp) _oofFrames++;
+        else _oofFrames = 0;
+
+        String? err;
+        if (_badFrames >= ScanThresholds.badPaperThreshold && !detect.found) {
+          err = scanMessages[ScanCodes.wrongFormat];
+        } else if (_oofFrames >= ScanThresholds.outOfFocusThreshold) {
+          err = scanMessages[ScanCodes.outOfFocus];
+        }
+
         state.update(
           sheetFound: false,
           statusText: 'Buscando hoja...',
+          error: err,
         );
       }
     } finally {
@@ -203,7 +219,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
     if (!mounted) return;
 
-    if (graded.graded) {
+    if (graded.graded && graded.valid && graded.resultCode == ScanCodes.graded) {
       _lastScanMs = DateTime.now().millisecondsSinceEpoch;
       HapticFeedback.heavyImpact();
       if (await Vibration.hasVibrator() == true) {
@@ -215,26 +231,29 @@ class _ScannerScreenState extends State<ScannerScreen> {
         lastResult: graded,
         scanCount: state.scanCount + 1,
         statusText: 'Escaneo completado',
+        error: null,
       );
 
-      Future.delayed(const Duration(seconds: 4), () {
+      Future.delayed(const Duration(seconds: 2), () {
         if (!mounted) return;
-        state.update(
-          phase: ScanPhase.cooldown,
-          statusText: 'Enfriando...',
+        state.update(phase: ScanPhase.cooldown, statusText: 'Listo para siguiente');
+        Future.delayed(
+          const Duration(milliseconds: ScanThresholds.scanCooldownMs),
+          () {
+            if (!mounted) return;
+            state.update(
+              phase: ScanPhase.detecting,
+              statusText: 'Buscando hoja...',
+            );
+          },
         );
-        Future.delayed(const Duration(milliseconds: _cooldownMs), () {
-          if (!mounted) return;
-          state.update(
-            phase: ScanPhase.detecting,
-            statusText: 'Buscando hoja...',
-          );
-        });
       });
     } else {
+      final msg = scanMessages[graded.resultCode] ?? graded.reason;
       state.update(
         phase: ScanPhase.detecting,
         statusText: 'Hoja detectada',
+        error: msg.isNotEmpty ? msg : 'Error al calificar',
       );
     }
   }
@@ -413,7 +432,7 @@ class _ResultOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final labels = result.answerLabels;
+    final labels = result.answers;
     return Positioned(
       left: 0,
       right: 0,
@@ -458,7 +477,7 @@ class _ResultOverlay extends StatelessWidget {
               itemCount: labels.length,
               itemBuilder: (context, i) {
                 final letter = labels[i];
-                final marked = letter != '-';
+                final marked = letter != '-' && letter != '?' && letter.isNotEmpty;
                 return Container(
                   alignment: Alignment.center,
                   decoration: BoxDecoration(

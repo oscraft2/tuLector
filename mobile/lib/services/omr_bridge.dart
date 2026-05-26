@@ -9,7 +9,6 @@ import 'package:flutter/foundation.dart';
 
 import '../models/scan_result.dart';
 
-/// Argumentos para procesamiento en isolate (datos serializables).
 class OmrFrameRequest {
   final Uint8List yuv;
   final int width;
@@ -26,9 +25,13 @@ class OmrFrameRequest {
   });
 }
 
+/// Debe coincidir byte-a-byte con OmrResult en native/omr_engine.h
 final class _OmrResultNative extends ffi.Struct {
   @ffi.Int32()
   external int found;
+
+  @ffi.Int32()
+  external int resultCode;
 
   @ffi.Array(4)
   external ffi.Array<ffi.Float> cornersX;
@@ -39,11 +42,20 @@ final class _OmrResultNative extends ffi.Struct {
   @ffi.Int32()
   external int graded;
 
+  @ffi.Int32()
+  external int valid;
+
   @ffi.Array(20)
   external ffi.Array<ffi.Int32> answers;
 
+  @ffi.Array(160)
+  external ffi.Array<ffi.Uint8> answerTextFlat;
+
   @ffi.Array(33)
   external ffi.Array<ffi.Uint8> studentIdFlat;
+
+  @ffi.Array(160)
+  external ffi.Array<ffi.Uint8> reasonBytes;
 }
 
 typedef _OmrProcessFrameNative = ffi.Void Function(
@@ -87,7 +99,7 @@ class OmrBridge {
       } else if (Platform.isIOS) {
         lib = ffi.DynamicLibrary.process();
       } else {
-        _loadError = 'Plataforma no soportada para OMR nativo';
+        _loadError = 'Plataforma no soportada';
         return;
       }
       _processFrame = lib
@@ -95,7 +107,6 @@ class OmrBridge {
           .asFunction();
     } catch (e) {
       _loadError = e.toString();
-      _processFrame = null;
     }
   }
 
@@ -107,9 +118,7 @@ class OmrBridge {
     int doGrade = 0,
   }) {
     _ensureLoaded();
-    if (_processFrame == null) {
-      return ScanResult.empty;
-    }
+    if (_processFrame == null) return ScanResult.empty;
 
     final yuvPtr = calloc<ffi.Uint8>(yuv.length);
     final outPtr = calloc<_OmrResultNative>();
@@ -123,50 +132,63 @@ class OmrBridge {
     }
   }
 
-  ScanResult _mapResult(_OmrResultNative native) {
+  ScanResult _mapResult(_OmrResultNative n) {
     final corners = <Offset>[];
     for (var i = 0; i < 4; i++) {
-      corners.add(Offset(native.cornersX[i], native.cornersY[i]));
+      corners.add(Offset(n.cornersX[i], n.cornersY[i]));
     }
 
-    final answers = <int>[];
-    for (var i = 0; i < 20; i++) {
-      answers.add(native.answers[i]);
+    final answers = <String>[];
+    for (var q = 0; q < 20; q++) {
+      final start = q * 8;
+      final bytes = <int>[];
+      for (var b = 0; b < 8; b++) {
+        final v = n.answerTextFlat[start + b];
+        if (v == 0) break;
+        bytes.add(v);
+      }
+      answers.add(String.fromCharCodes(bytes));
     }
 
     final idRows = <String>[];
-    final flat = native.studentIdFlat;
     for (var row = 0; row < 3; row++) {
-      final chars = <int>[];
+      final bytes = <int>[];
       for (var col = 0; col < 10; col++) {
-        chars.add(flat[row * 11 + col]);
+        bytes.add(n.studentIdFlat[row * 11 + col]);
       }
-      idRows.add(String.fromCharCodes(chars.where((c) => c != 0)));
+      idRows.add(String.fromCharCodes(bytes.where((c) => c != 0)));
+    }
+
+    final reasonBytes = <int>[];
+    for (var i = 0; i < 160; i++) {
+      final v = n.reasonBytes[i];
+      if (v == 0) break;
+      reasonBytes.add(v);
     }
 
     return ScanResult(
-      found: native.found != 0,
+      found: n.found != 0,
+      resultCode: n.resultCode,
       corners: corners,
-      graded: native.graded != 0,
+      graded: n.graded != 0,
+      valid: n.valid != 0,
       answers: answers,
       studentId: idRows,
+      reason: String.fromCharCodes(reasonBytes),
     );
   }
 
-  /// Procesa en isolate para no bloquear el hilo UI.
   Future<ScanResult> processFrameAsync(OmrFrameRequest request) {
-    return Isolate.run(() => _processInIsolate(request));
-  }
-
-  static ScanResult _processInIsolate(OmrFrameRequest request) {
-    final bridge = OmrBridge._();
-    bridge._loadAttempted = false;
-    return bridge.processFrame(
-      request.yuv,
-      request.width,
-      request.height,
-      rotation: request.rotation,
-      doGrade: request.doGrade,
-    );
+    return Isolate.run(() {
+      final bridge = OmrBridge._();
+      bridge._loadAttempted = false;
+      return bridge.processFrame(
+        request.yuv,
+        request.width,
+        request.height,
+        rotation: request.rotation,
+        doGrade: request.doGrade,
+      );
+    });
   }
 }

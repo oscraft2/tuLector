@@ -12,13 +12,25 @@ extern "C" {
 #define OMR_ID_ROWS 3
 #define OMR_ID_COLS 10
 
+/* Codigos alineados con src/lib/scanner_config.ts / omr_reference.json */
+#define OMR_CODE_GRADED 1
+#define OMR_CODE_BRIGHT 5
+#define OMR_CODE_CURVE_FAIL 10
+#define OMR_CODE_WRONG_FORMAT 30
+#define OMR_CODE_ALIGN_START 100
+#define OMR_CODE_OUT_OF_FOCUS 1001
+
 typedef struct {
-  int found;
+  int32_t found;
+  int32_t result_code;
   float corners_x[4];
   float corners_y[4];
-  int graded;
-  int answers[OMR_NUM_QUESTIONS];
+  int32_t graded;
+  int32_t valid;
+  int32_t answers[OMR_NUM_QUESTIONS];
+  char answer_text[OMR_NUM_QUESTIONS][8];
   char student_id[OMR_ID_ROWS][OMR_ID_COLS + 1];
+  char reason[160];
 } OmrResult;
 
 void omr_process_frame(
