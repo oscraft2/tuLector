@@ -117,6 +117,7 @@ export default function ScanPage() {
  const [debugLog, setDebugLog] = useState<string[]>([]);
  const [showDebug, setShowDebug] = useState(false);
  const [lastDiag, setLastDiag] = useState<FrameDiag | null>(null);
+ const [warpedThumb, setWarpedThumb] = useState<string | null>(null);
  const [capturing, setCapturing] = useState(false);
  const badFrameCount = useRef(0);
  const goodFrameCount = useRef(0);
@@ -177,6 +178,16 @@ export default function ScanPage() {
     { sheetWidth: config.sheetWidth, sheetHeight: config.sheetHeight, margin: config.margin, cornerSize: config.cornerSize }
    );
    addLog(`Warped: ${warped.width}x${warped.height}`);
+
+   // Thumbnail del warp para debug (1/8 escala)
+   try {
+    const tw = Math.round(warped.width / 8), th = Math.round(warped.height / 8);
+    const fullC = document.createElement("canvas"); fullC.width = warped.width; fullC.height = warped.height;
+    fullC.getContext("2d")!.putImageData(warped, 0, 0);
+    const thumbC = document.createElement("canvas"); thumbC.width = tw; thumbC.height = th;
+    thumbC.getContext("2d")!.drawImage(fullC, 0, 0, tw, th);
+    setWarpedThumb(thumbC.toDataURL("image/jpeg", 0.75));
+   } catch { /* no crítico */ }
 
    const report = gradeBubbles(warped, config, corners);
    const idRows = readStudentId(warped, config);
@@ -495,6 +506,7 @@ export default function ScanPage() {
   setLastScan(Date.now());
   setLastDiag(null);
   setDebugLog([]);
+  setWarpedThumb(null);
  };
 
  return (
@@ -590,6 +602,29 @@ export default function ScanPage() {
         <div className={`font-bold text-xs mt-2 ${lastDiag.cornersFound ? "text-green-400" : "text-red-400"}`}>
          Corners detectados: {lastDiag.cornersFound ? "SI" : "NO"}
         </div>
+       </div>
+      )}
+
+      {/* ─── WARP PREVIEW ─── */}
+      {warpedThumb && (
+       <div className="mb-4">
+        <div className="text-green-400 font-bold text-xs mb-2">IMAGEN WARPEADA (lo que ve el clasificador)</div>
+        <div className="relative inline-block border border-zinc-700 rounded-lg overflow-hidden">
+         <img src={warpedThumb} alt="warp" className="block" style={{ width: 150, height: "auto" }} />
+         {/* Grid de burbujas superpuesto */}
+         <svg className="absolute inset-0" style={{ width: 150, height: "auto", aspectRatio: "1200/1650" }}
+              viewBox="0 0 1200 1650" preserveAspectRatio="xMidYMid meet">
+          {/* Q_TOP=264, qH=42, cx=90,140,190,240,290, r=10 */}
+          {Array.from({ length: 20 }, (_, q) => {
+           const qy = 264 + q * 42 + 16;
+           return [90, 140, 190, 240, 290].map((cx, o) => (
+            <circle key={`${q}-${o}`} cx={cx} cy={qy} r={10}
+             fill="none" stroke={o < 3 ? "#ef4444" : "#22c55e"} strokeWidth="3" opacity="0.8" />
+           ));
+          })}
+         </svg>
+        </div>
+        <p className="text-[9px] text-zinc-500 mt-1">Rojo = columnas A,B,C (zona de scores 0.60) · Verde = D,E</p>
        </div>
       )}
 
