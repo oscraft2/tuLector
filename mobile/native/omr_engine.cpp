@@ -74,32 +74,53 @@ bool findCorners(const uint8_t* gray, int w, int h, Point2f corners[4]) {
 
   const int winSize = (int)(std::min(w, h) * 0.028f);
   const int stride = std::max(4, winSize / 4);
-  const float minDensity = 0.35f;
-  const float densityWeight = 0.95f;
+  const float minDensity = 0.25f;
+  const float maxDensity = 0.85f;
+  const float densityWeight = 0.8f;
+
+  // Direction to check for white paper outside the corner (per zone)
+  struct { int checkX; int checkY; } cornerDirs[4] = {
+    {0, winSize},      // TL: check below
+    {-20, winSize},    // TR: check below-left
+    {-20, -20},        // BR: check above-left
+    {0, -20},          // BL: check above
+  };
 
   for (int z = 0; z < 4; z++) {
     const auto& zd = zones[z];
-    int bestCount = 0;
+    const auto& dir = cornerDirs[z];
+    float bestScore = -1;
     int bestX = 0, bestY = 0;
 
     for (int y = zd.y0; y <= zd.y1 - winSize; y += stride) {
       for (int x = zd.x0; x <= zd.x1 - winSize; x += stride) {
         const int dark = windowDark(x, y, winSize);
         const float density = (float)dark / (winSize * winSize);
+
+        if (density < minDensity || density > maxDensity) continue;
+
+        const int checkW = 15;
+        const int cx = std::max(0, std::min(w - checkW, (int)(x + dir.checkX)));
+        const int cy = std::max(0, std::min(h - checkW, (int)(y + dir.checkY)));
+        const int neighborDark = windowDark(cx, cy, checkW);
+        const float neighborDensity = (float)neighborDark / (checkW * checkW);
+
+        if (neighborDensity > 0.20f) continue;
+
         const float distToExpected = std::hypot((float)(x + winSize / 2 - zd.ex),
                                                  (float)(y + winSize / 2 - zd.ey)) /
                                       std::max(w, h);
         const float score = density * densityWeight + (1.f - std::min(1.f, distToExpected)) * (1.f - densityWeight);
 
-        if (score > (float)bestCount / (winSize * winSize)) {
-          bestCount = dark;
+        if (score > bestScore) {
+          bestScore = score;
           bestX = x + winSize / 2;
           bestY = y + winSize / 2;
         }
       }
     }
 
-    if ((float)bestCount / (winSize * winSize) < minDensity) return false;
+    if (bestScore < 0) return false;
     corners[z].x = (float)bestX;
     corners[z].y = (float)bestY;
   }

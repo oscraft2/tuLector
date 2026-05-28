@@ -81,13 +81,25 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
 
   const winSize = Math.floor(Math.min(w, h) * 0.028); // ~30px for 1080p
   const stride = Math.max(4, Math.floor(winSize / 4));
-  const minDensity = 0.35;
-  const densityWeight = 0.95; // rely almost entirely on density, not position
+  const minDensity = 0.25;  // center-of-square in window
+  const maxDensity = 0.85;  // reject solid black areas (bezels, shadows)
+  const densityWeight = 0.8;
+
+  // Direction to check for white paper outside the corner square:
+  // Each zone index: 0=TL(check below+right), 1=TR(check below+left), 2=BR(check above+left), 3=BL(check above+right)
+  const cornerDirs: { checkX: number; checkY: number }[] = [
+    { checkX: 0, checkY: winSize },      // TL: check 20px below
+    { checkX: -20, checkY: winSize },     // TR: check 20px below+left
+    { checkX: -20, checkY: -20 },         // BR: check 20px above+left
+    { checkX: 0, checkY: -20 },           // BL: check 20px above
+  ];
 
   const corners: [number, number][] = [];
 
-  for (const zd of zoneDefs) {
-    let bestCount = 0;
+  for (let zi = 0; zi < 4; zi++) {
+    const zd = zoneDefs[zi];
+    const dir = cornerDirs[zi];
+    let bestScore = -1;
     let bestX = 0, bestY = 0;
 
     for (let y = zd.y0; y <= zd.y1 - winSize; y += stride) {
@@ -96,19 +108,33 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
         const total = winSize * winSize;
         const density = dark / total;
 
+        // Skip if too dark (solid black = bezel/shadow) or too light (no corner)
+        if (density < minDensity || density > maxDensity) continue;
+
+        // Verify there's white paper nearby: check a 15x15 window in the direction
+        // away from the corner (e.g., below-left for TR, above for BL)
+        const checkW = 15;
+        const cx = Math.max(0, Math.min(w - checkW, Math.round(x + dir.checkX)));
+        const cy = Math.max(0, Math.min(h - checkW, Math.round(y + dir.checkY)));
+        const neighborDark = windowDarkCount(cx, cy, checkW);
+        const neighborDensity = neighborDark / (checkW * checkW);
+
+        // Real corner square: dark center + LIGHT neighbor (white paper)
+        // Fake (bezel): both are dark → neighbor is dark too
+        if (neighborDensity > 0.20) continue; // neighbor is dark = bezel, not paper
+
         const distToExpected = Math.hypot((x + winSize / 2) - zd.ex, (y + winSize / 2) - zd.ey) / Math.max(w, h);
         const score = density * densityWeight + (1 - Math.min(1, distToExpected)) * (1 - densityWeight);
 
-        if (score > bestCount / (winSize * winSize)) {
-          bestCount = dark;
+        if (score > bestScore) {
+          bestScore = score;
           bestX = x + Math.floor(winSize / 2);
           bestY = y + Math.floor(winSize / 2);
         }
       }
     }
 
-    const density = bestCount / (winSize * winSize);
-    if (density < minDensity) return null;
+    if (bestScore < 0) return null;
     corners.push([bestX, bestY]);
   }
 
