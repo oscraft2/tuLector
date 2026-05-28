@@ -397,7 +397,7 @@ bool validateFormat(const std::vector<float>& gray, int w, int h, std::string& r
     const int q = sampleQ[qi];
     const int qy = Q_TOP + q * Q_H;
     for (int o = 0; o < 5; o++) {
-      const int cx = MARGIN + 150 + o * 50, cy = qy + 16;
+      const int cx = MARGIN + 188 + o * 50, cy = qy + 16;
       int ring = 0, total = 0;
       for (int dy = -12; dy <= 12; dy++) {
         for (int dx = -12; dx <= 12; dx++) {
@@ -479,7 +479,7 @@ int gradeBubblesFull(const std::vector<uint8_t>& rgba, const Point2f corners[4],
     float scores[NUM_OPTIONS];
     bool glares[NUM_OPTIONS];
     for (int o = 0; o < NUM_OPTIONS; o++) {
-      const int cx = MARGIN + 150 + o * 50, cy = qy + 16;
+      const int cx = MARGIN + 188 + o * 50, cy = qy + 16;
       const BubbleClassify bc = classifyBubble(gray, SHEET_W, cx, cy, 10);
       scores[o] = bc.score;
       glares[o] = bc.glare;
