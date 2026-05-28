@@ -79,16 +79,18 @@ function diagnoseFrame(imageData: ImageData): FrameDiag {
   return sum;
  }
 
+ const edgeMargin = 20;
  const zoneDefs: { name: string; x0: number; y0: number; x1: number; y1: number; ex: number; ey: number }[] = [
-  { name: "TL", x0: 0, y0: 0, x1: Math.floor(w * 0.25), y1: Math.floor(h * 0.25), ex: 0, ey: 0 },
-  { name: "TR", x0: Math.floor(w * 0.75), y0: 0, x1: w, y1: Math.floor(h * 0.25), ex: w, ey: 0 },
-  { name: "BR", x0: Math.floor(w * 0.75), y0: Math.floor(h * 0.75), x1: w, y1: h, ex: w, ey: h },
-  { name: "BL", x0: 0, y0: Math.floor(h * 0.75), x1: Math.floor(w * 0.25), y1: h, ex: 0, ey: h },
+  { name: "TL", x0: edgeMargin, y0: edgeMargin, x1: Math.floor(w * 0.40), y1: Math.floor(h * 0.40), ex: edgeMargin, ey: edgeMargin },
+  { name: "TR", x0: Math.floor(w * 0.60), y0: edgeMargin, x1: w - edgeMargin, y1: Math.floor(h * 0.40), ex: w - edgeMargin, ey: edgeMargin },
+  { name: "BR", x0: Math.floor(w * 0.60), y0: Math.floor(h * 0.60), x1: w - edgeMargin, y1: h - edgeMargin, ex: w - edgeMargin, ey: h - edgeMargin },
+  { name: "BL", x0: edgeMargin, y0: Math.floor(h * 0.60), x1: Math.floor(w * 0.40), y1: h - edgeMargin, ex: edgeMargin, ey: h - edgeMargin },
  ];
 
  const winSize = Math.floor(Math.min(w, h) * 0.028);
  const stride = Math.max(4, Math.floor(winSize / 4));
  const minDensity = 0.35;
+ const densityWeight = 0.95;
 
  let totalDark = 0;
  for (let i = 0; i < gray.length; i++) { if (gray[i] < 80) totalDark++; }
@@ -106,7 +108,7 @@ function diagnoseFrame(imageData: ImageData): FrameDiag {
     const dark = windowDarkCount(x, y, winSize);
     const density = dark / (winSize * winSize);
     const distToExpected = Math.hypot((x + winSize / 2) - zd.ex, (y + winSize / 2) - zd.ey) / Math.max(w, h);
-    const score = density * 0.8 + (1 - Math.min(1, distToExpected)) * 0.2;
+    const score = density * densityWeight + (1 - Math.min(1, distToExpected)) * (1 - densityWeight);
     if (score > bestCount / (winSize * winSize)) {
      bestCount = dark;
      bestX = x + Math.floor(winSize / 2);
@@ -141,12 +143,12 @@ function diagnoseFrame(imageData: ImageData): FrameDiag {
   const aspect = avgW / Math.max(avgH, 1);
   const area = Math.abs((tr.cx - tl.cx) * (br.cy - tl.cy) - (tr.cy - tl.cy) * (br.cx - tl.cx));
 
-  cornersFound = Math.abs(tl.cy - tr.cy) <= h * 0.06 &&
-                 Math.abs(bl.cy - br.cy) <= h * 0.06 &&
-                 Math.abs(tl.cx - bl.cx) <= w * 0.06 &&
-                 Math.abs(tr.cx - br.cx) <= w * 0.06 &&
-                 aspect >= 0.4 && aspect <= 2.5 &&
-                 area >= 30000;
+  cornersFound = Math.abs(tl.cy - tr.cy) <= h * 0.08 &&
+                 Math.abs(bl.cy - br.cy) <= h * 0.08 &&
+                 Math.abs(tl.cx - bl.cx) <= w * 0.15 &&
+                 Math.abs(tr.cx - br.cx) <= w * 0.15 &&
+                 aspect >= 0.35 && aspect <= 2.8 &&
+                 area >= 20000;
 
   if (cornersFound) {
    finalCorners = [[tl.cx, tl.cy], [tr.cx, tr.cy], [br.cx, br.cy], [bl.cx, bl.cy]];

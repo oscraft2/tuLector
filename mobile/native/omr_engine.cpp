@@ -63,17 +63,19 @@ bool findCorners(const uint8_t* gray, int w, int h, Point2f corners[4]) {
     return sum;
   };
 
+  const int edgeMargin = 20;
   struct ZoneDef { int x0, y0, x1, y1, ex, ey; };
   const ZoneDef zones[4] = {
-    {0, 0, (int)(w * 0.25f), (int)(h * 0.25f), 0, 0},
-    {(int)(w * 0.75f), 0, w, (int)(h * 0.25f), w, 0},
-    {(int)(w * 0.75f), (int)(h * 0.75f), w, h, w, h},
-    {0, (int)(h * 0.75f), (int)(w * 0.25f), h, 0, h},
+    {edgeMargin, edgeMargin, (int)(w * 0.40f), (int)(h * 0.40f), edgeMargin, edgeMargin},
+    {(int)(w * 0.60f), edgeMargin, w - edgeMargin, (int)(h * 0.40f), w - edgeMargin, edgeMargin},
+    {(int)(w * 0.60f), (int)(h * 0.60f), w - edgeMargin, h - edgeMargin, w - edgeMargin, h - edgeMargin},
+    {edgeMargin, (int)(h * 0.60f), (int)(w * 0.40f), h - edgeMargin, edgeMargin, h - edgeMargin},
   };
 
   const int winSize = (int)(std::min(w, h) * 0.028f);
   const int stride = std::max(4, winSize / 4);
   const float minDensity = 0.35f;
+  const float densityWeight = 0.95f;
 
   for (int z = 0; z < 4; z++) {
     const auto& zd = zones[z];
@@ -87,7 +89,7 @@ bool findCorners(const uint8_t* gray, int w, int h, Point2f corners[4]) {
         const float distToExpected = std::hypot((float)(x + winSize / 2 - zd.ex),
                                                  (float)(y + winSize / 2 - zd.ey)) /
                                       std::max(w, h);
-        const float score = density * 0.8f + (1.f - std::min(1.f, distToExpected)) * 0.2f;
+        const float score = density * densityWeight + (1.f - std::min(1.f, distToExpected)) * (1.f - densityWeight);
 
         if (score > (float)bestCount / (winSize * winSize)) {
           bestCount = dark;
@@ -102,16 +104,16 @@ bool findCorners(const uint8_t* gray, int w, int h, Point2f corners[4]) {
     corners[z].y = (float)bestY;
   }
 
-  // Validate quadrilateral
+  // Validate quadrilateral - relaxed for natural camera angles
   const float tl0 = corners[0].x, tl1 = corners[0].y;
   const float tr0 = corners[1].x, tr1 = corners[1].y;
   const float br0 = corners[2].x, br1 = corners[2].y;
   const float bl0 = corners[3].x, bl1 = corners[3].y;
 
-  if (std::fabs(tl1 - tr1) > h * 0.06f) return false;
-  if (std::fabs(bl1 - br1) > h * 0.06f) return false;
-  if (std::fabs(tl0 - bl0) > w * 0.06f) return false;
-  if (std::fabs(tr0 - br0) > w * 0.06f) return false;
+  if (std::fabs(tl1 - tr1) > h * 0.08f) return false;
+  if (std::fabs(bl1 - br1) > h * 0.08f) return false;
+  if (std::fabs(tl0 - bl0) > w * 0.15f) return false;
+  if (std::fabs(tr0 - br0) > w * 0.15f) return false;
 
   const float topW = std::hypot(tr0 - tl0, tr1 - tl1);
   const float botW = std::hypot(br0 - bl0, br1 - bl1);
@@ -120,12 +122,12 @@ bool findCorners(const uint8_t* gray, int w, int h, Point2f corners[4]) {
   const float avgW = (topW + botW) / 2.f;
   const float avgH = (leftH + rightH) / 2.f;
   const float aspect = avgW / std::max(avgH, 1.f);
-  if (aspect < 0.4f || aspect > 2.5f) return false;
-  if (topW / std::max(botW, 1.f) < 0.4f || botW / std::max(topW, 1.f) < 0.4f) return false;
-  if (leftH / std::max(rightH, 1.f) < 0.4f || rightH / std::max(leftH, 1.f) < 0.4f) return false;
+  if (aspect < 0.35f || aspect > 2.8f) return false;
+  if (topW / std::max(botW, 1.f) < 0.35f || botW / std::max(topW, 1.f) < 0.35f) return false;
+  if (leftH / std::max(rightH, 1.f) < 0.35f || rightH / std::max(leftH, 1.f) < 0.35f) return false;
 
   const float area = std::fabs((tr0 - tl0) * (br1 - tl1) - (tr1 - tl1) * (br0 - tl0));
-  if (area < 30000.f) return false;
+  if (area < 20000.f) return false;
 
   return true;
 }
