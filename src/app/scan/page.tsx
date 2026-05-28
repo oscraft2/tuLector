@@ -286,113 +286,100 @@ export default function ScanPage() {
  };
 
  return (
-  <div className="min-h-screen bg-zinc-950 text-white">
-   <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-    <Link href="/sheet" className="text-sm text-zinc-400 hover:text-white">Hoja</Link>
-    <h1 className="text-lg font-bold">TuLector</h1>
-    <div className="flex items-center gap-2 text-xs text-zinc-500">
-     {scanCount > 0 && <span>{scanCount} escaneos</span>}
+  <div className="min-h-screen bg-black text-white flex flex-col overflow-hidden font-sans">
+   <header className="flex items-center justify-between px-4 py-2 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-900 z-20">
+    <Link href="/dashboard" className="p-2 -ml-2 text-zinc-500 hover:text-white transition">
+     <ArrowLeftIcon />
+    </Link>
+    <div className="flex flex-col items-center">
+     <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Escaneando</span>
+     <span className="text-xs font-bold">{scanCount} hojas</span>
     </div>
+    <div className="w-8" />
    </header>
 
-   {/* Camara */}
-   <div className="relative max-w-lg mx-auto">
-    <video ref={videoRef} playsInline muted className="w-full aspect-[3/4] object-cover bg-black" />
-    <canvas ref={overlayRef} className="absolute inset-0 w-full h-full object-cover" />
+   {/* Visor de Cámara */}
+   <div className="relative flex-1 bg-black">
+    <video ref={videoRef} playsInline muted className="absolute inset-0 w-full h-full object-cover" />
+    <canvas ref={overlayRef} className="absolute inset-0 w-full h-full object-cover z-10" />
     <canvas ref={hiddenCanvas} className="hidden" />
 
-    {/* Status + indicadores */}
-    <div className="absolute top-3 left-3 right-3">
-     <div className={`flex items-center gap-2 px-3 py-2 rounded-lg backdrop-blur transition-colors ${
-      phase === "scanning" ? "bg-green-600/80" : "bg-black/60"
+    {/* Overlay de Estado Minimalista */}
+    <div className="absolute top-4 left-0 right-0 flex justify-center z-20 pointer-events-none">
+     <div className={`px-4 py-1.5 rounded-full backdrop-blur-lg border transition-all flex items-center gap-2 ${
+      phase === "scanning" ? "bg-green-600/20 border-green-500/50" : "bg-black/40 border-zinc-800/50"
      }`}>
-      <div className={`w-2.5 h-2.5 rounded-full transition-colors ${
-       phase === "scanning" ? "bg-green-300" : detected && inFocus ? "bg-green-500" : detected ? "bg-yellow-500" : "bg-red-500"
+      <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+       phase === "scanning" ? "bg-green-400" : detected && inFocus ? "bg-green-500" : "bg-zinc-600"
       }`} />
-      <span className="text-sm font-medium">
-       {phase === "scanning" && "Calificando..."}
-       {phase === "detecting" && detected && inFocus && "Hoja lista - acerquese"}
-       {phase === "detecting" && detected && !inFocus && "Enfocando..."}
-       {phase === "detecting" && !detected && "Buscando hoja..."}
-       {phase === "cooldown" && "Listo para siguiente"}
-       {phase === "result" && "Calificado!"}
+      <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-200">
+       {phase === "scanning" ? "Procesando..." : detected && inFocus ? "Capturando" : "Buscando hoja"}
       </span>
      </div>
     </div>
 
     {error && (
-     <div className="absolute bottom-24 left-3 right-3 px-3 py-2 bg-red-600/80 rounded-lg backdrop-blur text-sm">
+     <div className="absolute bottom-6 left-6 right-6 p-3 bg-red-950/80 border border-red-900/50 rounded-xl backdrop-blur-md text-[10px] font-bold text-red-200 z-30">
       {error}
      </div>
     )}
-   </div>
 
-   {/* Resultado overlay */}
-   <div className="max-w-lg mx-auto px-4 py-4 space-y-3">
+    {/* Modal de Resultado Rápido */}
     {phase === "result" && (
-     <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 animate-in fade-in slide-in-from-bottom-4">
-      <div className="flex justify-between items-center mb-3">
-       <h2 className="font-semibold text-lg">Escaneo #{scanCount}</h2>
-       <div className="flex items-center gap-2">
-        <button onClick={() => setShowDebug(!showDebug)}
-         className="text-[10px] px-2 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-white">
-         {showDebug ? "Ocultar log" : "Ver log"}
-        </button>
-        <span className="text-xs text-zinc-500 font-mono">
-         ID: {studentId.join(" ")}
-        </span>
-       </div>
-      </div>
-
-      {showDebug && debugLog.length > 0 && (
-       <div className="mb-3 bg-black/50 rounded-lg p-3 max-h-48 overflow-y-auto">
-        <pre className="text-[10px] text-zinc-400 font-mono leading-relaxed whitespace-pre-wrap break-all">
-         {debugLog.join("\n")}
-        </pre>
-       </div>
-      )}
-
-      <div className="grid grid-cols-5 gap-1">
-       {results.map((r) => (
-        <div key={r.question}
-         className={`text-center py-1.5 rounded text-xs font-mono transition-all ${
-          r.answer === "-" ? "bg-zinc-800/50 text-zinc-500" : "bg-green-900/40 text-green-400 ring-1 ring-green-900/50"
-         }`}>
-         <div className="text-[10px] text-zinc-500">{r.question}</div>
-         <div className="font-bold">{r.answer}</div>
+     <div className="absolute inset-0 flex items-center justify-center p-6 z-40 bg-black/60 backdrop-blur-sm animate-in fade-in zoom-in duration-200">
+      <div className="w-full max-w-xs bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
+       <div className="flex justify-between items-start mb-6">
+        <div>
+         <h2 className="text-2xl font-black text-white">LISTO</h2>
+         <p className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Escaneo #{scanCount}</p>
         </div>
-       ))}
-      </div>
-
-      <button
-       onClick={nextScan}
-       className="w-full mt-3 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-xl font-semibold text-sm transition active:scale-[0.98]"
-      >
-       Siguiente hoja
-      </button>
-     </div>
-    )}
-
-    {(phase === "detecting" || phase === "cooldown") && (
-     <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-4 text-sm text-zinc-400">
-      <div className="flex items-start gap-3">
-       <div className="flex flex-col items-center gap-1 text-green-600">
-        <div className="w-5 h-5 rounded-full border-2 border-current flex items-center justify-center text-[10px]">1</div>
-        <div className="w-px h-4 bg-zinc-700" />
-        <div className="w-5 h-5 rounded-full border-2 border-current flex items-center justify-center text-[10px]">2</div>
-        <div className="w-px h-4 bg-zinc-700" />
-        <div className="w-5 h-5 rounded-full border-2 border-current flex items-center justify-center text-[10px]">3</div>
+        <div className="flex flex-col items-end gap-1">
+         <div className="bg-green-500/10 text-green-500 px-3 py-1 rounded-full text-[10px] font-black border border-green-500/20">
+          ID: {studentId.join("") || "???"}
+         </div>
+         <button onClick={() => setShowDebug(!showDebug)} className="text-[9px] text-zinc-600 underline font-bold">
+           {showDebug ? "Ocultar Log" : "Ver Log"}
+         </button>
+        </div>
        </div>
-       <div className="space-y-4 pt-0.5">
-        <p>Imprime la hoja con marcas de esquina</p>
-        <p>Rellena burbujas con lapiz negro grueso</p>
-        <p>Apunta la camara - <strong className="text-green-500">se escanea solo</strong></p>
+
+       {showDebug && debugLog.length > 0 && (
+         <div className="mb-4 bg-black/40 rounded-xl p-3 max-h-32 overflow-y-auto border border-zinc-800">
+          <pre className="text-[8px] text-zinc-500 font-mono leading-tight whitespace-pre-wrap break-all">
+           {debugLog.join("\n")}
+          </pre>
+         </div>
+       )}
+
+       <div className="grid grid-cols-5 gap-1.5 mb-8">
+        {results.map((r) => (
+         <div key={r.question} className={`h-8 rounded-lg flex items-center justify-center text-[10px] font-bold ${
+          r.answer === "-" ? "bg-zinc-800 text-zinc-600" : "bg-green-500/20 text-green-400 border border-green-500/20"
+         }`}>
+          {r.answer !== "-" ? r.answer : ""}
+         </div>
+        ))}
        </div>
+
+       <button
+        onClick={nextScan}
+        className="w-full py-4 bg-white text-black rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition"
+       >
+        Siguiente
+       </button>
       </div>
      </div>
     )}
    </div>
   </div>
+ );
+}
+
+function ArrowLeftIcon() {
+ return (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+   <path d="m15 18-6-6 6-6"/>
+  </svg>
  );
 }
 
