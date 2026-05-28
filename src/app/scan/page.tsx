@@ -99,6 +99,8 @@ function canvasToDataUrl(canvas: HTMLCanvasElement): string {
  return canvas.toDataURL("image/jpeg", 0.85);
 }
 
+const ANSWER_KEY = ["C","B","B","B","C","E","E","D","C","B","A","B","C","D","E","E","D","C","B","A"];
+
 export default function ScanPage() {
  const videoRef = useRef<HTMLVideoElement>(null);
  const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -661,36 +663,57 @@ export default function ScanPage() {
     {phase === "result" && (
      <div className="absolute inset-0 flex items-center justify-center p-6 z-40 bg-black/60 backdrop-blur-sm animate-in fade-in zoom-in duration-200">
       <div className="w-full max-w-xs bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
-       <div className="flex justify-between items-start mb-6">
-        <div>
-         <h2 className="text-2xl font-black text-white">LISTO</h2>
-         <p className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Escaneo #{scanCount}</p>
-        </div>
-        <div className="flex flex-col items-end gap-1">
-         <div className="bg-green-500/10 text-green-500 px-3 py-1 rounded-full text-[10px] font-black border border-green-500/20">
-          ID: {studentId.join("") || "???"}
-         </div>
-         <button onClick={() => setShowDebug(!showDebug)} className="text-[9px] text-zinc-600 underline font-bold">
-          {showDebug ? "Ocultar Log" : "Ver Log"}
-         </button>
-        </div>
-       </div>
+       {(() => {
+        const correct = results.filter((r, i) => r.answer !== "-" && r.answer === ANSWER_KEY[i]).length;
+        const answered = results.filter(r => r.answer !== "-").length;
+        return (
+         <>
+          <div className="flex justify-between items-start mb-4">
+           <div>
+            <h2 className="text-2xl font-black text-white">{correct}<span className="text-zinc-500 text-lg font-bold">/20</span></h2>
+            <p className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Escaneo #{scanCount} · {answered} respondidas</p>
+           </div>
+           <div className="flex flex-col items-end gap-1">
+            <div className="bg-green-500/10 text-green-500 px-3 py-1 rounded-full text-[10px] font-black border border-green-500/20">
+             ID: {studentId.join("") || "???"}
+            </div>
+            <button onClick={() => setShowDebug(!showDebug)} className="text-[9px] text-zinc-600 underline font-bold">
+             {showDebug ? "Ocultar Log" : "Ver Log"}
+            </button>
+           </div>
+          </div>
 
-       {showDebug && debugLog.length > 0 && (
-        <div className="mb-4 bg-black/40 rounded-xl p-3 max-h-32 overflow-y-auto border border-zinc-800">
-         <pre className="text-[8px] text-zinc-500 font-mono leading-tight whitespace-pre-wrap break-all">
-          {debugLog.join("\n")}
-         </pre>
-        </div>
-       )}
+          {showDebug && debugLog.length > 0 && (
+           <div className="mb-4 bg-black/40 rounded-xl p-3 max-h-32 overflow-y-auto border border-zinc-800">
+            <pre className="text-[8px] text-zinc-500 font-mono leading-tight whitespace-pre-wrap break-all">
+             {debugLog.join("\n")}
+            </pre>
+           </div>
+          )}
 
-       <div className="grid grid-cols-5 gap-1.5 mb-8">
-        {results.map((r) => (
-         <div key={r.question} className={`h-8 rounded-lg flex items-center justify-center text-[10px] font-bold ${r.answer === "-" ? "bg-zinc-800 text-zinc-600" : "bg-green-500/20 text-green-400 border border-green-500/20"}`}>
-          {r.answer !== "-" ? r.answer : ""}
-         </div>
-        ))}
-       </div>
+          <div className="grid grid-cols-5 gap-1.5 mb-2">
+           {results.map((r, i) => {
+            const expected = ANSWER_KEY[i];
+            const isCorrect = r.answer !== "-" && r.answer === expected;
+            const isWrong = r.answer !== "-" && r.answer !== expected;
+            return (
+             <div key={r.question} className={`rounded-lg flex flex-col items-center justify-center py-1 text-[9px] font-bold gap-0.5
+              ${isCorrect ? "bg-green-500/20 text-green-400 border border-green-500/30"
+              : isWrong ? "bg-red-500/20 text-red-400 border border-red-500/30"
+              : "bg-zinc-800 text-zinc-600"}`}>
+              <span className="text-[10px]">{r.answer !== "-" ? r.answer : "–"}</span>
+              <span className="text-[8px] opacity-60">{isWrong ? expected : ""}</span>
+             </div>
+            );
+           })}
+          </div>
+          <div className="flex gap-1 mb-6">
+           <div className="flex items-center gap-1 text-[8px] text-green-500"><span className="w-2 h-2 rounded-sm bg-green-500/30 border border-green-500/40 inline-block"/>{results.filter((r,i)=>r.answer===ANSWER_KEY[i]).length} correctas</div>
+           <div className="flex items-center gap-1 text-[8px] text-red-400 ml-2"><span className="w-2 h-2 rounded-sm bg-red-500/30 border border-red-500/40 inline-block"/>{results.filter((r,i)=>r.answer!=="-"&&r.answer!==ANSWER_KEY[i]).length} incorrectas</div>
+          </div>
+         </>
+        );
+       })()}
 
        <button onClick={nextScan} className="w-full py-4 bg-white text-black rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition">
         Siguiente
