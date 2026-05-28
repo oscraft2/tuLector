@@ -28,7 +28,7 @@ function isFrameSharp(imageData: ImageData): number {
  return count > 0 ? sum / count : 0;
 }
 
-// ─── Full per-zone diagnostic (matches new sliding-window findCorners) ───
+// ─── Simplified diagnostic wrapper around findCorners ───
 interface ZoneDiag {
  name: string;
  bestX: number; bestY: number;
@@ -36,7 +36,7 @@ interface ZoneDiag {
  bestDarkCount: number;
  winSize: number;
  totalWindows: number;
- passed: boolean;   // density >= 0.35
+ passed: boolean;
 }
 
 interface FrameDiag {
@@ -53,158 +53,45 @@ interface FrameDiag {
 
 function diagnoseFrame(imageData: ImageData): FrameDiag {
  const w = imageData.width, h = imageData.height;
- const gray = new Uint8Array(w * h);
- for (let i = 0; i < gray.length; i++) {
-  const j = i * 4;
-  gray[i] = Math.round(imageData.data[j] * 0.299 + imageData.data[j + 1] * 0.587 + imageData.data[j + 2] * 0.114);
- }
 
- // Build integral image
- const integral = new Uint32Array(w * h);
- for (let y = 0; y < h; y++) {
-  let rowSum = 0;
-  for (let x = 0; x < w; x++) {
-   rowSum += (gray[y * w + x] < 80 ? 1 : 0);
-   integral[y * w + x] = (y > 0 ? integral[(y - 1) * w + x] : 0) + rowSum;
-  }
- }
-
- function windowDarkCount(x: number, y: number, size: number): number {
-  const x2 = Math.min(x + size - 1, w - 1);
-  const y2 = Math.min(y + size - 1, h - 1);
-  let sum = integral[y2 * w + x2];
-  if (x > 0) sum -= integral[y2 * w + (x - 1)];
-  if (y > 0) sum -= integral[(y - 1) * w + x2];
-  if (x > 0 && y > 0) sum += integral[(y - 1) * w + (x - 1)];
-  return sum;
- }
-
- const edgeMargin = 20;
- const zoneDefs: { name: string; x0: number; y0: number; x1: number; y1: number; ex: number; ey: number }[] = [
-  { name: "TL", x0: edgeMargin, y0: edgeMargin, x1: Math.floor(w * 0.40), y1: Math.floor(h * 0.40), ex: edgeMargin, ey: edgeMargin },
-  { name: "TR", x0: Math.floor(w * 0.60), y0: edgeMargin, x1: w - edgeMargin, y1: Math.floor(h * 0.40), ex: w - edgeMargin, ey: edgeMargin },
-  { name: "BR", x0: Math.floor(w * 0.60), y0: Math.floor(h * 0.60), x1: w - edgeMargin, y1: h - edgeMargin, ex: w - edgeMargin, ey: h - edgeMargin },
-  { name: "BL", x0: edgeMargin, y0: Math.floor(h * 0.60), x1: Math.floor(w * 0.40), y1: h - edgeMargin, ex: edgeMargin, ey: h - edgeMargin },
- ];
-
- const winSize = Math.floor(Math.min(w, h) * 0.028);
- const stride = Math.max(4, Math.floor(winSize / 4));
- const minDensity = 0.25;
- const maxDensity = 0.85;
- const densityWeight = 0.8;
-
- const cornerDirs: { checkX: number; checkY: number }[] = [
-  { checkX: 0, checkY: winSize },
-  { checkX: -20, checkY: winSize },
-  { checkX: -20, checkY: -20 },
-  { checkX: 0, checkY: -20 },
- ];
-
+ // Overall dark pixel count
+ const data = imageData.data;
  let totalDark = 0;
- for (let i = 0; i < gray.length; i++) { if (gray[i] < 80) totalDark++; }
-
- const zones: ZoneDiag[] = [];
- const rawCorners: { cx: number; cy: number }[] = [];
-
- for (let zi = 0; zi < 4; zi++) {
-  const zd = zoneDefs[zi];
-  const dir = cornerDirs[zi];
-  let bestScore = -1;
-  let bestX = 0, bestY = 0, bestCount = 0;
-
-  for (let y = zd.y0; y <= zd.y1 - winSize; y += stride) {
-   for (let x = zd.x0; x <= zd.x1 - winSize; x += stride) {
-    const dark = windowDarkCount(x, y, winSize);
-    const density = dark / (winSize * winSize);
-
-    if (density < minDensity || density > maxDensity) continue;
-
-    const checkW = 15;
-    const cx = Math.max(0, Math.min(w - checkW, Math.round(x + dir.checkX)));
-    const cy = Math.max(0, Math.min(h - checkW, Math.round(y + dir.checkY)));
-    const neighborDark = windowDarkCount(cx, cy, checkW);
-    const neighborDensity = neighborDark / (checkW * checkW);
-
-    if (neighborDensity > 0.20) continue;
-
-    const distToExpected = Math.hypot((x + winSize / 2) - zd.ex, (y + winSize / 2) - zd.ey) / Math.max(w, h);
-    const score = density * densityWeight + (1 - Math.min(1, distToExpected)) * (1 - densityWeight);
-
-    if (score > bestScore) {
-     bestScore = score;
-     bestCount = dark;
-     bestX = x + Math.floor(winSize / 2);
-     bestY = y + Math.floor(winSize / 2);
-    }
-   }
-  }
-
-  const bestDensity = bestCount / (winSize * winSize);
-  const passed = bestScore >= 0;
-  if (passed) {
-   // Refine: center-of-mass around best window
-   const refineMargin = Math.floor(winSize * 0.5);
-   const rx0 = Math.max(0, bestX - winSize - refineMargin);
-   const ry0 = Math.max(0, bestY - winSize - refineMargin);
-   const rx1 = Math.min(w - 1, bestX + refineMargin);
-   const ry1 = Math.min(h - 1, bestY + refineMargin);
-   let sx = 0, sy = 0, c = 0;
-   for (let ry = ry0; ry <= ry1; ry++) {
-    for (let rx = rx0; rx <= rx1; rx++) {
-     if (gray[ry * w + rx] < 80) { sx += rx; sy += ry; c++; }
-    }
-   }
-   bestX = c > 0 ? Math.round(sx / c) : bestX;
-   bestY = c > 0 ? Math.round(sy / c) : bestY;
-  }
-  zones.push({
-   name: zd.name,
-   bestX, bestY,
-   bestDensity: Math.round(bestDensity * 100) / 100,
-   bestDarkCount: bestCount,
-   winSize,
-   totalWindows: 0,
-   passed,
-  });
-  if (passed) rawCorners.push({ cx: bestX, cy: bestY });
- }
-
- let cornersFound = false;
- let finalCorners: [number, number][] | null = null;
-
- if (rawCorners.length === 4) {
-  const [tl, tr, br, bl] = rawCorners;
-  const topW = Math.hypot(tr.cx - tl.cx, tr.cy - tl.cy);
-  const botW = Math.hypot(br.cx - bl.cx, br.cy - bl.cy);
-  const avgW = (topW + botW) / 2;
-  const avgH = (Math.hypot(bl.cx - tl.cx, bl.cy - tl.cy) + Math.hypot(br.cx - tr.cx, br.cy - tr.cy)) / 2;
-  const aspect = avgW / Math.max(avgH, 1);
-  const area = Math.abs((tr.cx - tl.cx) * (br.cy - tl.cy) - (tr.cy - tl.cy) * (br.cx - tl.cx));
-
-  cornersFound = Math.abs(tl.cy - tr.cy) <= h * 0.08 &&
-                 Math.abs(bl.cy - br.cy) <= h * 0.08 &&
-                 Math.abs(tl.cx - bl.cx) <= w * 0.15 &&
-                 Math.abs(tr.cx - br.cx) <= w * 0.15 &&
-                 aspect >= 0.35 && aspect <= 2.8 &&
-                 area >= 20000;
-
-  if (cornersFound) {
-   finalCorners = [[tl.cx, tl.cy], [tr.cx, tr.cy], [br.cx, br.cy], [bl.cx, bl.cy]];
-  }
+ for (let i = 0; i < data.length; i += 4) {
+  const g = Math.round(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+  if (g < 80) totalDark++;
  }
 
  const sharp = isFrameSharp(imageData);
+ const corners = findCorners(imageData);
 
  return {
-  w, h, totalPixels: gray.length,
+  w, h, totalPixels: w * h,
   darkPixels: totalDark,
-  darkRatio: gray.length > 0 ? totalDark / gray.length : 0,
+  darkRatio: (w * h) > 0 ? totalDark / (w * h) : 0,
   sharpScore: sharp,
   sharpPassed: sharp > 40,
-  zones,
-  cornersFound,
-  corners: finalCorners,
+  zones: corners ? [
+   { name: "TL", bestX: corners[0][0], bestY: corners[0][1], bestDensity: 0, bestDarkCount: 0, winSize: 0, totalWindows: 0, passed: true },
+   { name: "TR", bestX: corners[1][0], bestY: corners[1][1], bestDensity: 0, bestDarkCount: 0, winSize: 0, totalWindows: 0, passed: true },
+   { name: "BR", bestX: corners[2][0], bestY: corners[2][1], bestDensity: 0, bestDarkCount: 0, winSize: 0, totalWindows: 0, passed: true },
+   { name: "BL", bestX: corners[3][0], bestY: corners[3][1], bestDensity: 0, bestDarkCount: 0, winSize: 0, totalWindows: 0, passed: true },
+  ] : [],
+  cornersFound: corners !== null,
+  corners,
  };
+}
+
+interface FrameDiag {
+ w: number; h: number;
+ totalPixels: number;
+ darkPixels: number;
+  darkRatio: number;
+  sharpScore: number;
+  sharpPassed: boolean;
+  zones: ZoneDiag[];
+  cornersFound: boolean;
+  corners: [number, number][] | null;
 }
 
 // ─── Convert canvas to data URL for frame saving ───
