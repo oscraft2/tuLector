@@ -192,11 +192,22 @@ export default function ScanPage() {
    const report = gradeBubbles(warped, config, corners);
    const idRows = readStudentId(warped, config);
 
+   const logFailure = async (reason: string, scores?: {q:number,a:string,s:number[]}[]) => {
+    try {
+     const supabase = createClient();
+     await supabase.from("scan_logs").insert({
+      user_agent: navigator.userAgent,
+      log: { type: "scan_fail", reason, corners, frameW: canvas.width, frameH: canvas.height, warpThumb: warpedThumb, scores }
+     });
+    } catch { /* offline */ }
+   };
+
    if (!report.valid) {
     addLog(`ERR[${SCAN_CODES.WRONG_FORMAT}]: ${report.reason}`);
     setDebugLog(logs);
     setPhase("detecting");
     setError(SCAN_MESSAGES[SCAN_CODES.WRONG_FORMAT] || report.reason || "Error");
+    await logFailure(report.reason ?? "invalid", report.results?.map(r => ({ q: r.question, a: r.answer, s: r.scores })));
     return;
    }
 
@@ -208,6 +219,7 @@ export default function ScanPage() {
     setDebugLog(logs);
     setPhase("detecting");
     setError(SCAN_MESSAGES[SCAN_CODES.OUT_OF_FOCUS]);
+    await logFailure("Sin respuestas (scores todos bajos)", bubbleResults.map(r => ({ q: r.question, a: r.answer, s: r.scores })));
     return;
    }
 
@@ -218,6 +230,7 @@ export default function ScanPage() {
     setDebugLog(logs);
     setPhase("detecting");
     setError(SCAN_MESSAGES[SCAN_CODES.CURVE_FAIL]);
+    await logFailure(`Todas iguales: ${answeredCount}x"${singleAns}"`, bubbleResults.map(r => ({ q: r.question, a: r.answer, s: r.scores })));
     return;
    }
 

@@ -307,33 +307,7 @@ function validateFormat(gray: Float32Array, w: number, h: number, config: OMRCon
     if (total > 0 && dark / total < 0.08) return { valid: false, reason: `Falta marca de esquina en (${cx},${cy})` };
   }
 
-  // 2. Verificar que hay burbujas en las posiciones esperadas (grid pattern)
-  // Muestrear 5 posiciones de burbujas distribuidas
-  const sampleQuestions = [0, 5, 10, 15, 19]; // Q1, Q6, Q11, Q16, Q20
-  let bubbleChecks = 0, bubblePassed = 0;
-  for (const q of sampleQuestions) {
-    const qy = Q_TOP + q * 42;
-    for (let o = 0; o < 5; o++) {
-      const cx = M + 188 + o * 50, cy = qy + 16;
-      let ring = 0, total = 0;
-      // Verificar que hay un anillo (circulo vacio) en la posicion de la burbuja
-      for (let dy = -12; dy <= 12; dy++) {
-        for (let dx = -12; dx <= 12; dx++) {
-          const px = cx + dx, py = cy + dy;
-          if (px >= 0 && px < w && py >= 0 && py < h) {
-            total++;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            // El borde del circulo (anillo) debe tener pixeles oscuros
-            if (dist > 9 && dist < 13 && gray[py * w + px] < 100) ring++;
-          }
-        }
-      }
-      bubbleChecks++;
-      if (total > 0 && ring / total > 0.01) bubblePassed++;
-    }
-  }
-  const bubbleRatio = bubblePassed / bubbleChecks;
-  if (bubbleRatio < 0.5) return { valid: false, reason: `Solo ${Math.round(bubbleRatio * 100)}% burbujas detectadas - formato incorrecto` };
+  // 2. (bubble grid check omitido durante calibracion — solo esquinas)
 
   // 3. Verificar que el area de ID tiene estructura de burbujas
   const { ID_START } = getLayout(config);
@@ -405,7 +379,7 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
 
     // : umbral adaptativo + deteccion de marcas multiples
     const maxS = Math.max(...scores);
-    const minValidScore = 0.25; // minimo absoluto para considerar marcado
+    const minValidScore = 0.15; // minimo absoluto para considerar marcado
     const thresh = Math.max(minValidScore, maxS * 0.55);
     const marked = scores.map((s, i) => (s > thresh && !glares[i]) ? i : -1).filter(i => i >= 0);
 
