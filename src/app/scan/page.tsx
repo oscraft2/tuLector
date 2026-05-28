@@ -89,8 +89,16 @@ function diagnoseFrame(imageData: ImageData): FrameDiag {
 
  const winSize = Math.floor(Math.min(w, h) * 0.028);
  const stride = Math.max(4, Math.floor(winSize / 4));
- const minDensity = 0.35;
- const densityWeight = 0.95;
+ const minDensity = 0.25;
+ const maxDensity = 0.85;
+ const densityWeight = 0.8;
+
+ const cornerDirs: { checkX: number; checkY: number }[] = [
+  { checkX: 0, checkY: winSize },
+  { checkX: -20, checkY: winSize },
+  { checkX: -20, checkY: -20 },
+  { checkX: 0, checkY: -20 },
+ ];
 
  let totalDark = 0;
  for (let i = 0; i < gray.length; i++) { if (gray[i] < 80) totalDark++; }
@@ -98,18 +106,32 @@ function diagnoseFrame(imageData: ImageData): FrameDiag {
  const zones: ZoneDiag[] = [];
  const rawCorners: { cx: number; cy: number }[] = [];
 
- for (const zd of zoneDefs) {
-  let bestCount = 0, bestX = 0, bestY = 0;
-  let windowCount = 0;
+ for (let zi = 0; zi < 4; zi++) {
+  const zd = zoneDefs[zi];
+  const dir = cornerDirs[zi];
+  let bestScore = -1;
+  let bestX = 0, bestY = 0, bestCount = 0;
 
   for (let y = zd.y0; y <= zd.y1 - winSize; y += stride) {
    for (let x = zd.x0; x <= zd.x1 - winSize; x += stride) {
-    windowCount++;
     const dark = windowDarkCount(x, y, winSize);
     const density = dark / (winSize * winSize);
+
+    if (density < minDensity || density > maxDensity) continue;
+
+    const checkW = 15;
+    const cx = Math.max(0, Math.min(w - checkW, Math.round(x + dir.checkX)));
+    const cy = Math.max(0, Math.min(h - checkW, Math.round(y + dir.checkY)));
+    const neighborDark = windowDarkCount(cx, cy, checkW);
+    const neighborDensity = neighborDark / (checkW * checkW);
+
+    if (neighborDensity > 0.20) continue;
+
     const distToExpected = Math.hypot((x + winSize / 2) - zd.ex, (y + winSize / 2) - zd.ey) / Math.max(w, h);
     const score = density * densityWeight + (1 - Math.min(1, distToExpected)) * (1 - densityWeight);
-    if (score > bestCount / (winSize * winSize)) {
+
+    if (score > bestScore) {
+     bestScore = score;
      bestCount = dark;
      bestX = x + Math.floor(winSize / 2);
      bestY = y + Math.floor(winSize / 2);
@@ -118,14 +140,14 @@ function diagnoseFrame(imageData: ImageData): FrameDiag {
   }
 
   const bestDensity = bestCount / (winSize * winSize);
-  const passed = bestDensity >= minDensity;
+  const passed = bestScore >= 0;
   zones.push({
    name: zd.name,
    bestX, bestY,
    bestDensity: Math.round(bestDensity * 100) / 100,
    bestDarkCount: bestCount,
    winSize,
-   totalWindows: windowCount,
+   totalWindows: 0,
    passed,
   });
   if (passed) rawCorners.push({ cx: bestX, cy: bestY });
