@@ -96,9 +96,8 @@ export function extractCompactYUV(
   return buffer;
 }
 
-export function normalizeRotation(deviceRotation: number): number {
-  let r = deviceRotation - 90;
-  return r < 0 ? r + 360 : r;
+export function normalizeRotation(sensorOrientation: number): number {
+  return (360 - sensorOrientation) % 360;
 }
 
 export function calculateCooldownProgress(lastScanTime: number): number {

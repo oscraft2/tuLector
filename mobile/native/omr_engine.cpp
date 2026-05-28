@@ -70,7 +70,7 @@ bool findCorners(const uint8_t* gray, int w, int h, Point2f corners[4]) {
     const double cx = sx / c, cy = sy / c;
     const double varX = sxx / c - cx * cx;
     const double varY = syy / c - cy * cy;
-    if (varX > 300 || varY > 300) return false;
+    if (varX > 1500 || varY > 1500) return false;
     pts[z][0] = (float)std::round(cx);
     pts[z][1] = (float)std::round(cy);
   }
@@ -496,11 +496,12 @@ void applyRotationY(const std::vector<uint8_t>& in, int w, int h, int rotation,
     return;
   }
   if (rotation == 90) {
+    // 90° CW: input (x,y) → output col=(h-1-y), row=x; outW=h, outH=w
     outW = h;
     outH = w;
     out.resize(outW * outH);
     for (int y = 0; y < h; y++)
-      for (int x = 0; x < w; x++) out[x * outH + (outH - 1 - y)] = in[y * w + x];
+      for (int x = 0; x < w; x++) out[(h - 1 - y) + x * h] = in[y * w + x];
     return;
   }
   if (rotation == 180) {
@@ -510,11 +511,12 @@ void applyRotationY(const std::vector<uint8_t>& in, int w, int h, int rotation,
     for (int i = 0; i < w * h; i++) out[i] = in[w * h - 1 - i];
     return;
   }
+  // 270° CW (90° CCW): input (x,y) → output col=y, row=(w-1-x); outW=h, outH=w
   outW = h;
   outH = w;
   out.resize(outW * outH);
   for (int y = 0; y < h; y++)
-    for (int x = 0; x < w; x++) out[(outW - 1 - x) * outH + y] = in[y * w + x];
+    for (int x = 0; x < w; x++) out[y + (w - 1 - x) * h] = in[y * w + x];
 }
 
 }  // namespace

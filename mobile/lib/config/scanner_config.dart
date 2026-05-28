@@ -26,8 +26,7 @@ const Map<int, String> scanMessages = {
   1001: 'Fuera de foco - ajusta la distancia',
 };
 
-int normalizeRotation(int deviceRotation) {
-  var r = deviceRotation - 90;
-  if (r < 0) r += 360;
-  return r;
+int normalizeRotation(int sensorOrientation) {
+  // Para cámara trasera en portrait: sensorOrientation=90 → rotar 270° CW para rectificar
+  return (360 - sensorOrientation) % 360;
 }

@@ -1,6 +1,5 @@
 import 'dart:ffi' as ffi;
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:typed_data';
 import 'dart:ui';
 
@@ -179,16 +178,19 @@ class OmrBridge {
   }
 
   Future<ScanResult> processFrameAsync(OmrFrameRequest request) {
-    return Isolate.run(() {
-      final bridge = OmrBridge._();
-      bridge._loadAttempted = false;
-      return bridge.processFrame(
-        request.yuv,
-        request.width,
-        request.height,
-        rotation: request.rotation,
-        doGrade: request.doGrade,
-      );
-    });
+    _ensureLoaded();
+    if (_processFrame == null) return Future.value(ScanResult.empty);
+    return compute(_processFrameInIsolate, request);
   }
+}
+
+ScanResult _processFrameInIsolate(OmrFrameRequest request) {
+  final bridge = OmrBridge._();
+  return bridge.processFrame(
+    request.yuv,
+    request.width,
+    request.height,
+    rotation: request.rotation,
+    doGrade: request.doGrade,
+  );
 }
