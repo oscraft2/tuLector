@@ -335,7 +335,45 @@ export default function ScanPage() {
 
   // Build diagnostic log
   const logs: string[] = [];
-  logs.push(`=== CAPTURA MANUAL ===`);
+
+  // Helper to send diagnostics to Supabase (fire-and-forget)
+  const sendDiag = () => {
+   try {
+    const s = createClient();
+    s.from("scan_logs").insert({
+     user_agent: navigator.userAgent,
+     log: {
+      type: "diagnostic",
+      timestamp: new Date().toISOString(),
+      frameW: diag.w,
+      frameH: diag.h,
+      darkRatio: Math.round(diag.darkRatio * 10000) / 100,
+      sharpScore: Math.round(diag.sharpScore * 10) / 10,
+      sharpPassed: diag.sharpPassed,
+      cornersFound: diag.cornersFound,
+      zones: diag.zones.map(z => ({
+       name: z.name,
+       darkPixels: z.darkPixels,
+       darkRatio: Math.round(z.darkRatio * 10000) / 100,
+       cx: z.cx, cy: z.cy,
+       varX: Math.round(z.varX), varY: Math.round(z.varY),
+       passed: z.passedDarkCount && z.passedVariance,
+      })),
+      geometry: diag.geometricChecks.map(g => ({
+       name: g.name,
+       value: typeof g.value === "number" ? Math.round(g.value * 10) / 10 : g.value,
+       threshold: g.threshold,
+       passed: g.passed,
+      })),
+      corners: diag.corners,
+      logText: logs.join("\n"),
+     },
+    }).then(
+     () => { console.log("[DIAG] Enviado a Supabase OK"); },
+     (e: unknown) => { console.warn("[DIAG] Supabase error:", e); }
+    );
+   } catch { /* offline / no auth */ }
+  };
   logs.push(`Frame: ${diag.w}x${diag.h} | Total px: ${diag.totalPixels} | Dark px: ${diag.darkPixels} (${(diag.darkRatio * 100).toFixed(1)}%)`);
   logs.push(`Sharpness: ${diag.sharpScore.toFixed(1)} (min 40) → ${diag.sharpPassed ? "OK" : "FAIL"}`);
   logs.push(``);
@@ -378,6 +416,7 @@ export default function ScanPage() {
     hCtx.putImageData(octx.getImageData(0, 0, overlay.width, overlay.height), 0, 0);
    }
    setDebugLog(logs);
+   sendDiag();
    setCapturing(false);
    await processScan(frame, diag.corners);
    return;
@@ -391,6 +430,7 @@ export default function ScanPage() {
    logs.push(`Relaxed corners found! Trying scan...`);
    setPhase("scanning");
    setDebugLog(logs);
+   sendDiag();
    setCapturing(false);
    await processScan(frame, relaxed);
    return;
@@ -398,6 +438,7 @@ export default function ScanPage() {
   logs.push(`Relaxed fallback tambien fallo.`);
 
   setDebugLog(logs);
+  sendDiag();
   setCapturing(false);
  };
 
