@@ -44,10 +44,10 @@ void setReason(OmrResult* out, const char* msg) {
 // --- findCorners (omr.ts) ---
 bool findCorners(const uint8_t* gray, int w, int h, Point2f corners[4]) {
   const float zones[4][6] = {
-      {0, 0, w * 0.08f, h * 0.06f, 0, 0},
-      {w * 0.92f, 0, (float)w, h * 0.06f, (float)w, 0},
-      {w * 0.92f, h * 0.92f, (float)w, (float)h, (float)w, (float)h},
-      {0, h * 0.92f, w * 0.08f, (float)h, 0, (float)h},
+      {0, 0, w * 0.35f, h * 0.30f, 0, 0},
+      {w * 0.65f, 0, (float)w, h * 0.30f, (float)w, 0},
+      {w * 0.65f, h * 0.70f, (float)w, (float)h, (float)w, (float)h},
+      {0, h * 0.70f, w * 0.35f, (float)h, 0, (float)h},
   };
 
   float pts[4][2];
