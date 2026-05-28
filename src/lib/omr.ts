@@ -69,17 +69,20 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
     return sum;
   }
 
-  // Search zones: 25% from each edge (catches corners at typical distances)
+  // Ignore first 20px from edges (phone bezel shadow, camera vignette)
+  const edgeMargin = 20;
+  // Search zones: 40% from each edge
   const zoneDefs: { x0: number; y0: number; x1: number; y1: number; ex: number; ey: number }[] = [
-    { x0: 0, y0: 0, x1: Math.floor(w * 0.25), y1: Math.floor(h * 0.25), ex: 0, ey: 0 },
-    { x0: Math.floor(w * 0.75), y0: 0, x1: w, y1: Math.floor(h * 0.25), ex: w, ey: 0 },
-    { x0: Math.floor(w * 0.75), y0: Math.floor(h * 0.75), x1: w, y1: h, ex: w, ey: h },
-    { x0: 0, y0: Math.floor(h * 0.75), x1: Math.floor(w * 0.25), y1: h, ex: 0, ey: h },
+    { x0: edgeMargin, y0: edgeMargin, x1: Math.floor(w * 0.40), y1: Math.floor(h * 0.40), ex: edgeMargin, ey: edgeMargin },
+    { x0: Math.floor(w * 0.60), y0: edgeMargin, x1: w - edgeMargin, y1: Math.floor(h * 0.40), ex: w - edgeMargin, ey: edgeMargin },
+    { x0: Math.floor(w * 0.60), y0: Math.floor(h * 0.60), x1: w - edgeMargin, y1: h - edgeMargin, ex: w - edgeMargin, ey: h - edgeMargin },
+    { x0: edgeMargin, y0: Math.floor(h * 0.60), x1: Math.floor(w * 0.40), y1: h - edgeMargin, ex: edgeMargin, ey: h - edgeMargin },
   ];
 
   const winSize = Math.floor(Math.min(w, h) * 0.028); // ~30px for 1080p
   const stride = Math.max(4, Math.floor(winSize / 4));
-  const minDensity = 0.35; // at least 35% dark in window
+  const minDensity = 0.35;
+  const densityWeight = 0.95; // rely almost entirely on density, not position
 
   const corners: [number, number][] = [];
 
@@ -93,9 +96,8 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
         const total = winSize * winSize;
         const density = dark / total;
 
-        // Score: prioritize high density + proximity to expected corner
         const distToExpected = Math.hypot((x + winSize / 2) - zd.ex, (y + winSize / 2) - zd.ey) / Math.max(w, h);
-        const score = density * 0.8 + (1 - Math.min(1, distToExpected)) * 0.2;
+        const score = density * densityWeight + (1 - Math.min(1, distToExpected)) * (1 - densityWeight);
 
         if (score > bestCount / (winSize * winSize)) {
           bestCount = dark;
@@ -110,13 +112,13 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
     corners.push([bestX, bestY]);
   }
 
-  // Validate quadrilateral
+  // Validate quadrilateral - relaxed for natural camera angles
   const [tl, tr, br, bl] = corners;
 
-  if (Math.abs(tl[1] - tr[1]) > h * 0.06) return null;
-  if (Math.abs(bl[1] - br[1]) > h * 0.06) return null;
-  if (Math.abs(tl[0] - bl[0]) > w * 0.06) return null;
-  if (Math.abs(tr[0] - br[0]) > w * 0.06) return null;
+  if (Math.abs(tl[1] - tr[1]) > h * 0.08) return null;
+  if (Math.abs(bl[1] - br[1]) > h * 0.08) return null;
+  if (Math.abs(tl[0] - bl[0]) > w * 0.15) return null;
+  if (Math.abs(tr[0] - br[0]) > w * 0.15) return null;
 
   const topW = Math.hypot(tr[0] - tl[0], tr[1] - tl[1]);
   const botW = Math.hypot(br[0] - bl[0], br[1] - bl[1]);
@@ -126,13 +128,13 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
   const avgW = (topW + botW) / 2;
   const avgH = (leftH + rightH) / 2;
   const aspectRatio = avgW / Math.max(avgH, 1);
-  if (aspectRatio < 0.4 || aspectRatio > 2.5) return null;
+  if (aspectRatio < 0.35 || aspectRatio > 2.8) return null;
 
-  if (topW / Math.max(botW, 1) < 0.4 || botW / Math.max(topW, 1) < 0.4) return null;
-  if (leftH / Math.max(rightH, 1) < 0.4 || rightH / Math.max(leftH, 1) < 0.4) return null;
+  if (topW / Math.max(botW, 1) < 0.35 || botW / Math.max(topW, 1) < 0.35) return null;
+  if (leftH / Math.max(rightH, 1) < 0.35 || rightH / Math.max(leftH, 1) < 0.35) return null;
 
   const area = Math.abs((tr[0] - tl[0]) * (br[1] - tl[1]) - (tr[1] - tl[1]) * (br[0] - tl[0]));
-  if (area < 30000) return null;
+  if (area < 20000) return null;
 
   return corners;
 }
