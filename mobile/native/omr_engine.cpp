@@ -41,29 +41,94 @@ void setReason(OmrResult* out, const char* msg) {
   out->reason[sizeof(out->reason) - 1] = '\0';
 }
 
-// --- findCorners (omr.ts) ---
+// --- findCorners: sliding window + integral image (omr.ts parity) ---
 bool findCorners(const uint8_t* gray, int w, int h, Point2f corners[4]) {
-  const float zones[4][6] = {
-      {0, 0, w * 0.35f, h * 0.30f, 0, 0},
-      {w * 0.65f, 0, (float)w, h * 0.30f, (float)w, 0},
-      {w * 0.65f, h * 0.70f, (float)w, (float)h, (float)w, (float)h},
-      {0, h * 0.70f, w * 0.35f, (float)h, 0, (float)h},
+  // Build integral image
+  std::vector<uint32_t> integral(w * h);
+  for (int y = 0; y < h; y++) {
+    uint32_t rowSum = 0;
+    for (int x = 0; x < w; x++) {
+      rowSum += (gray[y * w + x] < 80 ? 1 : 0);
+      integral[y * w + x] = (y > 0 ? integral[(y - 1) * w + x] : 0) + rowSum;
+    }
+  }
+
+  auto windowDark = [&](int x, int y, int size) -> int {
+    const int x2 = std::min(x + size - 1, w - 1);
+    const int y2 = std::min(y + size - 1, h - 1);
+    int sum = integral[y2 * w + x2];
+    if (x > 0) sum -= integral[y2 * w + (x - 1)];
+    if (y > 0) sum -= integral[(y - 1) * w + x2];
+    if (x > 0 && y > 0) sum += integral[(y - 1) * w + (x - 1)];
+    return sum;
   };
 
-  float pts[4][2];
+  struct ZoneDef { int x0, y0, x1, y1, ex, ey; };
+  const ZoneDef zones[4] = {
+    {0, 0, (int)(w * 0.25f), (int)(h * 0.25f), 0, 0},
+    {(int)(w * 0.75f), 0, w, (int)(h * 0.25f), w, 0},
+    {(int)(w * 0.75f), (int)(h * 0.75f), w, h, w, h},
+    {0, (int)(h * 0.75f), (int)(w * 0.25f), h, 0, h},
+  };
+
+  const int winSize = (int)(std::min(w, h) * 0.028f);
+  const int stride = std::max(4, winSize / 4);
+  const float minDensity = 0.35f;
+
   for (int z = 0; z < 4; z++) {
-    const int x0 = (int)zones[z][0], y0 = (int)zones[z][1];
-    const int x1 = (int)zones[z][2], y1 = (int)zones[z][3];
-    double sx = 0, sy = 0, c = 0, sxx = 0, syy = 0;
-    for (int y = y0; y < y1; y++) {
-      for (int x = x0; x < x1; x++) {
-        if (gray[y * w + x] < 80) {
-          sx += x;
-          sy += y;
-          c++;
-          sxx += x * x;
-          syy += y * y;
+    const auto& zd = zones[z];
+    int bestCount = 0;
+    int bestX = 0, bestY = 0;
+
+    for (int y = zd.y0; y <= zd.y1 - winSize; y += stride) {
+      for (int x = zd.x0; x <= zd.x1 - winSize; x += stride) {
+        const int dark = windowDark(x, y, winSize);
+        const float density = (float)dark / (winSize * winSize);
+        const float distToExpected = std::hypot((float)(x + winSize / 2 - zd.ex),
+                                                 (float)(y + winSize / 2 - zd.ey)) /
+                                      std::max(w, h);
+        const float score = density * 0.8f + (1.f - std::min(1.f, distToExpected)) * 0.2f;
+
+        if (score > (float)bestCount / (winSize * winSize)) {
+          bestCount = dark;
+          bestX = x + winSize / 2;
+          bestY = y + winSize / 2;
         }
+      }
+    }
+
+    if ((float)bestCount / (winSize * winSize) < minDensity) return false;
+    corners[z].x = (float)bestX;
+    corners[z].y = (float)bestY;
+  }
+
+  // Validate quadrilateral
+  const float tl0 = corners[0].x, tl1 = corners[0].y;
+  const float tr0 = corners[1].x, tr1 = corners[1].y;
+  const float br0 = corners[2].x, br1 = corners[2].y;
+  const float bl0 = corners[3].x, bl1 = corners[3].y;
+
+  if (std::fabs(tl1 - tr1) > h * 0.06f) return false;
+  if (std::fabs(bl1 - br1) > h * 0.06f) return false;
+  if (std::fabs(tl0 - bl0) > w * 0.06f) return false;
+  if (std::fabs(tr0 - br0) > w * 0.06f) return false;
+
+  const float topW = std::hypot(tr0 - tl0, tr1 - tl1);
+  const float botW = std::hypot(br0 - bl0, br1 - bl1);
+  const float leftH = std::hypot(bl0 - tl0, bl1 - tl1);
+  const float rightH = std::hypot(br0 - tr0, br1 - tr1);
+  const float avgW = (topW + botW) / 2.f;
+  const float avgH = (leftH + rightH) / 2.f;
+  const float aspect = avgW / std::max(avgH, 1.f);
+  if (aspect < 0.4f || aspect > 2.5f) return false;
+  if (topW / std::max(botW, 1.f) < 0.4f || botW / std::max(topW, 1.f) < 0.4f) return false;
+  if (leftH / std::max(rightH, 1.f) < 0.4f || rightH / std::max(leftH, 1.f) < 0.4f) return false;
+
+  const float area = std::fabs((tr0 - tl0) * (br1 - tl1) - (tr1 - tl1) * (br0 - tl0));
+  if (area < 30000.f) return false;
+
+  return true;
+}
       }
     }
     if (c < 150) return false;

@@ -28,17 +28,15 @@ function isFrameSharp(imageData: ImageData): number {
  return count > 0 ? sum / count : 0;
 }
 
-// ─── Full per-zone diagnostic (mirrors findCorners step by step) ───
+// ─── Full per-zone diagnostic (matches new sliding-window findCorners) ───
 interface ZoneDiag {
  name: string;
- x0: number; y0: number; x1: number; y1: number;
- darkPixels: number;
- zonePixels: number;
- darkRatio: number;
- cx: number; cy: number;
- varX: number; varY: number;
- passedDarkCount: boolean;  // c >= 150
- passedVariance: boolean;   // varX <= 1500 && varY <= 1500
+ bestX: number; bestY: number;
+ bestDensity: number;
+ bestDarkCount: number;
+ winSize: number;
+ totalWindows: number;
+ passed: boolean;   // density >= 0.35
 }
 
 interface FrameDiag {
@@ -49,9 +47,6 @@ interface FrameDiag {
  sharpScore: number;
  sharpPassed: boolean;
  zones: ZoneDiag[];
- geometricChecks: {
-  name: string; value: number; threshold: string; passed: boolean;
- }[];
  cornersFound: boolean;
  corners: [number, number][] | null;
 }
@@ -64,14 +59,37 @@ function diagnoseFrame(imageData: ImageData): FrameDiag {
   gray[i] = Math.round(imageData.data[j] * 0.299 + imageData.data[j + 1] * 0.587 + imageData.data[j + 2] * 0.114);
  }
 
- const zoneDefs: { name: string; x0: number; y0: number; x1: number; y1: number }[] = [
-  { name: "TL", x0: 0, y0: 0, x1: Math.floor(w * 0.35), y1: Math.floor(h * 0.30) },
-  { name: "TR", x0: Math.floor(w * 0.65), y0: 0, x1: w, y1: Math.floor(h * 0.30) },
-  { name: "BR", x0: Math.floor(w * 0.65), y0: Math.floor(h * 0.70), x1: w, y1: h },
-  { name: "BL", x0: 0, y0: Math.floor(h * 0.70), x1: Math.floor(w * 0.35), y1: h },
+ // Build integral image
+ const integral = new Uint32Array(w * h);
+ for (let y = 0; y < h; y++) {
+  let rowSum = 0;
+  for (let x = 0; x < w; x++) {
+   rowSum += (gray[y * w + x] < 80 ? 1 : 0);
+   integral[y * w + x] = (y > 0 ? integral[(y - 1) * w + x] : 0) + rowSum;
+  }
+ }
+
+ function windowDarkCount(x: number, y: number, size: number): number {
+  const x2 = Math.min(x + size - 1, w - 1);
+  const y2 = Math.min(y + size - 1, h - 1);
+  let sum = integral[y2 * w + x2];
+  if (x > 0) sum -= integral[y2 * w + (x - 1)];
+  if (y > 0) sum -= integral[(y - 1) * w + x2];
+  if (x > 0 && y > 0) sum += integral[(y - 1) * w + (x - 1)];
+  return sum;
+ }
+
+ const zoneDefs: { name: string; x0: number; y0: number; x1: number; y1: number; ex: number; ey: number }[] = [
+  { name: "TL", x0: 0, y0: 0, x1: Math.floor(w * 0.25), y1: Math.floor(h * 0.25), ex: 0, ey: 0 },
+  { name: "TR", x0: Math.floor(w * 0.75), y0: 0, x1: w, y1: Math.floor(h * 0.25), ex: w, ey: 0 },
+  { name: "BR", x0: Math.floor(w * 0.75), y0: Math.floor(h * 0.75), x1: w, y1: h, ex: w, ey: h },
+  { name: "BL", x0: 0, y0: Math.floor(h * 0.75), x1: Math.floor(w * 0.25), y1: h, ex: 0, ey: h },
  ];
 
- // Overall dark pixel count
+ const winSize = Math.floor(Math.min(w, h) * 0.028);
+ const stride = Math.max(4, Math.floor(winSize / 4));
+ const minDensity = 0.35;
+
  let totalDark = 0;
  for (let i = 0; i < gray.length; i++) { if (gray[i] < 80) totalDark++; }
 
@@ -79,69 +97,57 @@ function diagnoseFrame(imageData: ImageData): FrameDiag {
  const rawCorners: { cx: number; cy: number }[] = [];
 
  for (const zd of zoneDefs) {
-  let sx = 0, sy = 0, c = 0, sxx = 0, syy = 0;
-  let totalInZone = 0;
-  for (let y = zd.y0; y < zd.y1; y++) {
-   for (let x = zd.x0; x < zd.x1; x++) {
-    totalInZone++;
-    if (gray[y * w + x] < 80) { sx += x; sy += y; c++; sxx += x * x; syy += y * y; }
+  let bestCount = 0, bestX = 0, bestY = 0;
+  let windowCount = 0;
+
+  for (let y = zd.y0; y <= zd.y1 - winSize; y += stride) {
+   for (let x = zd.x0; x <= zd.x1 - winSize; x += stride) {
+    windowCount++;
+    const dark = windowDarkCount(x, y, winSize);
+    const density = dark / (winSize * winSize);
+    const distToExpected = Math.hypot((x + winSize / 2) - zd.ex, (y + winSize / 2) - zd.ey) / Math.max(w, h);
+    const score = density * 0.8 + (1 - Math.min(1, distToExpected)) * 0.2;
+    if (score > bestCount / (winSize * winSize)) {
+     bestCount = dark;
+     bestX = x + Math.floor(winSize / 2);
+     bestY = y + Math.floor(winSize / 2);
+    }
    }
   }
-  const cx = c > 0 ? Math.round(sx / c) : 0;
-  const cy = c > 0 ? Math.round(sy / c) : 0;
-  const varX = c > 0 ? sxx / c - cx * cx : 1e9;
-  const varY = c > 0 ? syy / c - cy * cy : 1e9;
-  const passedDark = c >= 150;
-  const passedVar = varX <= 1500 && varY <= 1500;
+
+  const bestDensity = bestCount / (winSize * winSize);
+  const passed = bestDensity >= minDensity;
   zones.push({
-   name: zd.name, x0: zd.x0, y0: zd.y0, x1: zd.x1, y1: zd.y1,
-   darkPixels: c, zonePixels: totalInZone,
-   darkRatio: totalInZone > 0 ? c / totalInZone : 0,
-   cx, cy, varX, varY,
-   passedDarkCount: passedDark, passedVariance: passedVar,
+   name: zd.name,
+   bestX, bestY,
+   bestDensity: Math.round(bestDensity * 100) / 100,
+   bestDarkCount: bestCount,
+   winSize,
+   totalWindows: windowCount,
+   passed,
   });
-  if (passedDark && passedVar) rawCorners.push({ cx, cy });
+  if (passed) rawCorners.push({ cx: bestX, cy: bestY });
  }
 
- // Geometric checks (only if all 4 zones passed)
- const geomChecks: { name: string; value: number; threshold: string; passed: boolean }[] = [];
  let cornersFound = false;
  let finalCorners: [number, number][] | null = null;
 
  if (rawCorners.length === 4) {
   const [tl, tr, br, bl] = rawCorners;
-
-  const topYdelta = Math.abs(tl.cy - tr.cy);
-  geomChecks.push({ name: "top Y delta", value: topYdelta, threshold: `< ${(h * 0.05).toFixed(0)}`, passed: topYdelta <= h * 0.05 });
-
-  const botYdelta = Math.abs(bl.cy - br.cy);
-  geomChecks.push({ name: "bottom Y delta", value: botYdelta, threshold: `< ${(h * 0.05).toFixed(0)}`, passed: botYdelta <= h * 0.05 });
-
-  const leftXdelta = Math.abs(tl.cx - bl.cx);
-  geomChecks.push({ name: "left X delta", value: leftXdelta, threshold: `< ${(w * 0.05).toFixed(0)}`, passed: leftXdelta <= w * 0.05 });
-
-  const rightXdelta = Math.abs(tr.cx - br.cx);
-  geomChecks.push({ name: "right X delta", value: rightXdelta, threshold: `< ${(w * 0.05).toFixed(0)}`, passed: rightXdelta <= w * 0.05 });
-
   const topW = Math.hypot(tr.cx - tl.cx, tr.cy - tl.cy);
   const botW = Math.hypot(br.cx - bl.cx, br.cy - bl.cy);
-  const leftH = Math.hypot(bl.cx - tl.cx, bl.cy - tl.cy);
-  const rightH = Math.hypot(br.cx - tr.cx, br.cy - tr.cy);
   const avgW = (topW + botW) / 2;
-  const avgH = (leftH + rightH) / 2;
+  const avgH = (Math.hypot(bl.cx - tl.cx, bl.cy - tl.cy) + Math.hypot(br.cx - tr.cx, br.cy - tr.cy)) / 2;
   const aspect = avgW / Math.max(avgH, 1);
-  geomChecks.push({ name: "aspect ratio", value: aspect, threshold: "0.5 - 2.0", passed: aspect >= 0.5 && aspect <= 2.0 });
-
-  const hRatio = Math.max(topW, botW) / Math.max(Math.min(topW, botW), 1);
-  geomChecks.push({ name: "horizontal symmetry", value: hRatio, threshold: ">= 0.5 both ways", passed: topW / Math.max(botW, 1) >= 0.5 && botW / Math.max(topW, 1) >= 0.5 });
-
-  const vRatio = Math.max(leftH, rightH) / Math.max(Math.min(leftH, rightH), 1);
-  geomChecks.push({ name: "vertical symmetry", value: vRatio, threshold: ">= 0.5 both ways", passed: leftH / Math.max(rightH, 1) >= 0.5 && rightH / Math.max(leftH, 1) >= 0.5 });
-
   const area = Math.abs((tr.cx - tl.cx) * (br.cy - tl.cy) - (tr.cy - tl.cy) * (br.cx - tl.cx));
-  geomChecks.push({ name: "area", value: area, threshold: ">= 50000", passed: area >= 50000 });
 
-  cornersFound = geomChecks.every(g => g.passed);
+  cornersFound = Math.abs(tl.cy - tr.cy) <= h * 0.06 &&
+                 Math.abs(bl.cy - br.cy) <= h * 0.06 &&
+                 Math.abs(tl.cx - bl.cx) <= w * 0.06 &&
+                 Math.abs(tr.cx - br.cx) <= w * 0.06 &&
+                 aspect >= 0.4 && aspect <= 2.5 &&
+                 area >= 30000;
+
   if (cornersFound) {
    finalCorners = [[tl.cx, tl.cy], [tr.cx, tr.cy], [br.cx, br.cy], [bl.cx, bl.cy]];
   }
@@ -156,7 +162,6 @@ function diagnoseFrame(imageData: ImageData): FrameDiag {
   sharpScore: sharp,
   sharpPassed: sharp > 40,
   zones,
-  geometricChecks: geomChecks,
   cornersFound,
   corners: finalCorners,
  };
@@ -353,19 +358,12 @@ export default function ScanPage() {
       cornersFound: diag.cornersFound,
       zones: diag.zones.map(z => ({
        name: z.name,
-       darkPixels: z.darkPixels,
-       darkRatio: Math.round(z.darkRatio * 10000) / 100,
-       cx: z.cx, cy: z.cy,
-       varX: Math.round(z.varX), varY: Math.round(z.varY),
-       passed: z.passedDarkCount && z.passedVariance,
+       bestX: z.bestX, bestY: z.bestY,
+       bestDensity: z.bestDensity,
+       bestDarkCount: z.bestDarkCount,
+       winSize: z.winSize,
+       passed: z.passed,
       })),
-      geometry: diag.geometricChecks.map(g => ({
-       name: g.name,
-       value: typeof g.value === "number" ? Math.round(g.value * 10) / 10 : g.value,
-       threshold: g.threshold,
-       passed: g.passed,
-      })),
-      corners: diag.corners,
       logText: logs.join("\n"),
      },
     }).then(
@@ -379,20 +377,9 @@ export default function ScanPage() {
   logs.push(``);
 
   // Zone diagnostics
-  logs.push(`--- DIAGNOSTICO POR ZONA ---`);
+  logs.push(`--- DIAGNOSTICO POR ZONA (ventana deslizante ${diag.zones[0]?.winSize}x${diag.zones[0]?.winSize}) ---`);
   for (const z of diag.zones) {
-   const darkOk = z.passedDarkCount ? "OK" : "FAIL";
-   const varOk = z.passedVariance ? "OK" : "FAIL";
-   logs.push(`Zone ${z.name} [${z.x0}-${z.x1}, ${z.y0}-${z.y1}]: dark=${z.darkPixels}(${darkOk}, >=150) | center=(${z.cx},${z.cy}) | varX=${z.varX.toFixed(0)} varY=${z.varY.toFixed(0)}(${varOk}, <=1500)`);
-  }
-
-  // Geometric checks
-  if (diag.geometricChecks.length > 0) {
-   logs.push(``);
-   logs.push(`--- CHECKS GEOMETRICOS ---`);
-   for (const g of diag.geometricChecks) {
-    logs.push(`  ${g.name}: ${typeof g.value === "number" ? g.value.toFixed(1) : g.value} ${g.threshold} → ${g.passed ? "OK" : "FAIL"}`);
-   }
+   logs.push(`Zone ${z.name}: best=(${z.bestX},${z.bestY}) | density=${(z.bestDensity*100).toFixed(0)}%(${z.bestDarkCount}/${z.winSize*z.winSize}) | ${z.passed ? "OK" : "FAIL (min 35%)"}`);
   }
 
   logs.push(``);
@@ -634,46 +621,33 @@ export default function ScanPage() {
         <div>Frame: {lastDiag.w}x{lastDiag.h} | Dark: {(lastDiag.darkRatio * 100).toFixed(1)}%</div>
         <div>Sharpness: {lastDiag.sharpScore.toFixed(1)} (min 40) → <span className={lastDiag.sharpPassed ? "text-green-400" : "text-red-400"}>{lastDiag.sharpPassed ? "OK" : "FAIL"}</span></div>
 
-        <div className="text-green-400 font-bold text-xs mt-2 mb-1">ZONAS</div>
+        <div className="text-green-400 font-bold text-xs mt-2 mb-1">SLIDING WINDOW (win={lastDiag.zones[0]?.winSize}px, min 35% dark)</div>
         <table className="w-full border-collapse text-[9px]">
          <thead>
           <tr className="text-zinc-500">
            <th className="text-left pr-2">Z</th>
+           <th className="text-right px-1">X</th>
+           <th className="text-right px-1">Y</th>
            <th className="text-right px-1">Dark</th>
-           <th className="text-right px-1">VarX</th>
-           <th className="text-right px-1">VarY</th>
-           <th className="text-right px-1">CtrX</th>
-           <th className="text-right px-1">CtrY</th>
-           <th className="text-center">Status</th>
+           <th className="text-right px-1">Dens%</th>
+           <th className="text-center">Ok</th>
           </tr>
          </thead>
          <tbody>
           {lastDiag.zones.map((z, i) => (
            <tr key={i} className="border-t border-zinc-800">
             <td className="text-left pr-2 text-zinc-500">{z.name}</td>
-            <td className={`text-right px-1 ${z.passedDarkCount ? "text-green-400" : "text-red-400"}`}>{z.darkPixels}</td>
-            <td className={`text-right px-1 ${z.passedVariance ? "text-zinc-400" : "text-red-400"}`}>{z.varX.toFixed(0)}</td>
-            <td className={`text-right px-1 ${z.passedVariance ? "text-zinc-400" : "text-red-400"}`}>{z.varY.toFixed(0)}</td>
-            <td className="text-right px-1">{z.cx}</td>
-            <td className="text-right px-1">{z.cy}</td>
-            <td className={`text-center ${z.passedDarkCount && z.passedVariance ? "text-green-400" : "text-red-400"}`}>
-             {z.passedDarkCount && z.passedVariance ? "OK" : "X"}
+            <td className={`text-right px-1 ${z.passed ? "text-green-400" : "text-zinc-400"}`}>{z.bestX}</td>
+            <td className={`text-right px-1 ${z.passed ? "text-green-400" : "text-zinc-400"}`}>{z.bestY}</td>
+            <td className={`text-right px-1 ${z.passed ? "text-green-400" : "text-red-400"}`}>{z.bestDarkCount}</td>
+            <td className={`text-right px-1 ${z.passed ? "text-green-400" : "text-red-400"}`}>{z.bestDensity}</td>
+            <td className={`text-center ${z.passed ? "text-green-400" : "text-red-400"}`}>
+             {z.passed ? "OK" : "X"}
             </td>
            </tr>
           ))}
          </tbody>
         </table>
-
-        {lastDiag.geometricChecks.length > 0 && (
-         <>
-          <div className="text-green-400 font-bold text-xs mt-2 mb-1">GEOMETRIA</div>
-          {lastDiag.geometricChecks.map((g, i) => (
-           <div key={i} className={g.passed ? "text-green-400" : "text-red-400"}>
-            {g.name}: {typeof g.value === "number" ? g.value.toFixed(1) : g.value} {g.threshold} → {g.passed ? "OK" : "FAIL"}
-           </div>
-          ))}
-         </>
-        )}
 
         <div className={`font-bold text-xs mt-2 ${lastDiag.cornersFound ? "text-green-400" : "text-red-400"}`}>
          Corners detectados: {lastDiag.cornersFound ? "SI" : "NO"}

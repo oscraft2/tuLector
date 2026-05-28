@@ -40,7 +40,7 @@ function getLayout(config: OMRConfig) {
   return { NAME_TOP, NAME_BOTTOM, ID_START, Q_TOP };
 }
 
-// ─── 1. Deteccion de esquinas ──────────────────────────────────
+// ─── 1. Deteccion de esquinas (sliding window + integral image) ──
 export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CONFIG): [number, number][] | null {
   const w = imageData.width, h = imageData.height;
   const gray = new Uint8Array(w * h);
@@ -48,61 +48,91 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
     const j = i * 4;
     gray[i] = Math.round(imageData.data[j] * 0.299 + imageData.data[j + 1] * 0.587 + imageData.data[j + 2] * 0.114);
   }
-  const zones: [number, number, number, number, number, number][] = [
-    [0, 0, w * 0.35, h * 0.30, 0, 0],            // TL: search top-left quadrant
-    [w * 0.65, 0, w, h * 0.30, w, 0],             // TR: search top-right quadrant
-    [w * 0.65, h * 0.70, w, h, w, h],             // BR: search bottom-right quadrant
-    [0, h * 0.70, w * 0.35, h, 0, h],             // BL: search bottom-left quadrant
-  ];
-  const corners: [number, number][] = [];
-  // Validar que cada zona tenga pixeles oscuros concentrados (esquina real, no ruido)
-  for (const [x0, y0, x1, y1, ex, ey] of zones) {
-    let sx = 0, sy = 0, c = 0, sxx = 0, syy = 0;
-    for (let y = y0; y < y1; y++) {
-      for (let x = x0; x < x1; x++) {
-        if (gray[y * w + x] < 80) { sx += x; sy += y; c++; sxx += x * x; syy += y * y; }
-      }
+
+  // Build integral image of dark pixels for O(1) window sums
+  const integral = new Uint32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    let rowSum = 0;
+    for (let x = 0; x < w; x++) {
+      rowSum += (gray[y * w + x] < 80 ? 1 : 0);
+      integral[y * w + x] = (y > 0 ? integral[(y - 1) * w + x] : 0) + rowSum;
     }
-    // Minimo de pixeles oscuros: el corner square tiene ~400 pixeles de borde
-    if (c < 150) return null;
-
-    const cx = Math.round(sx / c), cy = Math.round(sy / c);
-    // Varianza espacial baja = pixeles concentrados (no dispersos)
-    const varX = sxx / c - cx * cx;
-    const varY = syy / c - cy * cy;
-    if (varX > 1500 || varY > 1500) return null; // demasiado dispersos
-
-    corners.push([cx, cy]);
   }
 
-  // Validar que las 4 esquinas formen un cuadrilatero valido
+  function windowDarkCount(x: number, y: number, size: number): number {
+    const x2 = Math.min(x + size - 1, w - 1);
+    const y2 = Math.min(y + size - 1, h - 1);
+    let sum = integral[y2 * w + x2];
+    if (x > 0) sum -= integral[y2 * w + (x - 1)];
+    if (y > 0) sum -= integral[(y - 1) * w + x2];
+    if (x > 0 && y > 0) sum += integral[(y - 1) * w + (x - 1)];
+    return sum;
+  }
+
+  // Search zones: 25% from each edge (catches corners at typical distances)
+  const zoneDefs: { x0: number; y0: number; x1: number; y1: number; ex: number; ey: number }[] = [
+    { x0: 0, y0: 0, x1: Math.floor(w * 0.25), y1: Math.floor(h * 0.25), ex: 0, ey: 0 },
+    { x0: Math.floor(w * 0.75), y0: 0, x1: w, y1: Math.floor(h * 0.25), ex: w, ey: 0 },
+    { x0: Math.floor(w * 0.75), y0: Math.floor(h * 0.75), x1: w, y1: h, ex: w, ey: h },
+    { x0: 0, y0: Math.floor(h * 0.75), x1: Math.floor(w * 0.25), y1: h, ex: 0, ey: h },
+  ];
+
+  const winSize = Math.floor(Math.min(w, h) * 0.028); // ~30px for 1080p
+  const stride = Math.max(4, Math.floor(winSize / 4));
+  const minDensity = 0.35; // at least 35% dark in window
+
+  const corners: [number, number][] = [];
+
+  for (const zd of zoneDefs) {
+    let bestCount = 0;
+    let bestX = 0, bestY = 0;
+
+    for (let y = zd.y0; y <= zd.y1 - winSize; y += stride) {
+      for (let x = zd.x0; x <= zd.x1 - winSize; x += stride) {
+        const dark = windowDarkCount(x, y, winSize);
+        const total = winSize * winSize;
+        const density = dark / total;
+
+        // Score: prioritize high density + proximity to expected corner
+        const distToExpected = Math.hypot((x + winSize / 2) - zd.ex, (y + winSize / 2) - zd.ey) / Math.max(w, h);
+        const score = density * 0.8 + (1 - Math.min(1, distToExpected)) * 0.2;
+
+        if (score > bestCount / (winSize * winSize)) {
+          bestCount = dark;
+          bestX = x + Math.floor(winSize / 2);
+          bestY = y + Math.floor(winSize / 2);
+        }
+      }
+    }
+
+    const density = bestCount / (winSize * winSize);
+    if (density < minDensity) return null;
+    corners.push([bestX, bestY]);
+  }
+
+  // Validate quadrilateral
   const [tl, tr, br, bl] = corners;
 
-  // Alineacion horizontal: top corners Y similar, bottom corners Y similar
-  if (Math.abs(tl[1] - tr[1]) > h * 0.05) return null;
-  if (Math.abs(bl[1] - br[1]) > h * 0.05) return null;
-  // Alineacion vertical: left corners X similar, right corners X similar
-  if (Math.abs(tl[0] - bl[0]) > w * 0.05) return null;
-  if (Math.abs(tr[0] - br[0]) > w * 0.05) return null;
+  if (Math.abs(tl[1] - tr[1]) > h * 0.06) return null;
+  if (Math.abs(bl[1] - br[1]) > h * 0.06) return null;
+  if (Math.abs(tl[0] - bl[0]) > w * 0.06) return null;
+  if (Math.abs(tr[0] - br[0]) > w * 0.06) return null;
 
   const topW = Math.hypot(tr[0] - tl[0], tr[1] - tl[1]);
   const botW = Math.hypot(br[0] - bl[0], br[1] - bl[1]);
   const leftH = Math.hypot(bl[0] - tl[0], bl[1] - tl[1]);
   const rightH = Math.hypot(br[0] - tr[0], br[1] - tr[1]);
 
-  // Ratio de aspecto cercano a 3:4 (~0.72)
   const avgW = (topW + botW) / 2;
   const avgH = (leftH + rightH) / 2;
   const aspectRatio = avgW / Math.max(avgH, 1);
-  if (aspectRatio < 0.5 || aspectRatio > 2.0) return null;
+  if (aspectRatio < 0.4 || aspectRatio > 2.5) return null;
 
-  // Lados paralelos similares
-  if (topW / Math.max(botW, 1) < 0.5 || botW / Math.max(topW, 1) < 0.5) return null;
-  if (leftH / Math.max(rightH, 1) < 0.5 || rightH / Math.max(leftH, 1) < 0.5) return null;
+  if (topW / Math.max(botW, 1) < 0.4 || botW / Math.max(topW, 1) < 0.4) return null;
+  if (leftH / Math.max(rightH, 1) < 0.4 || rightH / Math.max(leftH, 1) < 0.4) return null;
 
-  // Area minima
   const area = Math.abs((tr[0] - tl[0]) * (br[1] - tl[1]) - (tr[1] - tl[1]) * (br[0] - tl[0]));
-  if (area < 50000) return null;
+  if (area < 30000) return null;
 
   return corners;
 }
