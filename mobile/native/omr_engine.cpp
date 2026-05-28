@@ -41,7 +41,7 @@ void setReason(OmrResult* out, const char* msg) {
   out->reason[sizeof(out->reason) - 1] = '\0';
 }
 
-// --- findCorners: sliding window + integral image (omr.ts parity) ---
+// --- findCorners: grid-based dense-blob with 2-direction white neighbor check ---
 bool findCorners(const uint8_t* gray, int w, int h, Point2f corners[4]) {
   // Build integral image
   std::vector<uint32_t> integral(w * h);
@@ -52,10 +52,9 @@ bool findCorners(const uint8_t* gray, int w, int h, Point2f corners[4]) {
       integral[y * w + x] = (y > 0 ? integral[(y - 1) * w + x] : 0) + rowSum;
     }
   }
-
-  auto windowDark = [&](int x, int y, int size) -> int {
-    const int x2 = std::min(x + size - 1, w - 1);
-    const int y2 = std::min(y + size - 1, h - 1);
+  auto regionDark = [&](int x, int y, int sx, int sy) -> int {
+    const int x2 = std::min(x + sx - 1, w - 1);
+    const int y2 = std::min(y + sy - 1, h - 1);
     int sum = integral[y2 * w + x2];
     if (x > 0) sum -= integral[y2 * w + (x - 1)];
     if (y > 0) sum -= integral[(y - 1) * w + x2];
@@ -63,92 +62,81 @@ bool findCorners(const uint8_t* gray, int w, int h, Point2f corners[4]) {
     return sum;
   };
 
-  const int edgeMargin = 20;
   struct ZoneDef { int x0, y0, x1, y1, ex, ey; };
   const ZoneDef zones[4] = {
-    {edgeMargin, edgeMargin, (int)(w * 0.40f), (int)(h * 0.40f), edgeMargin, edgeMargin},
-    {(int)(w * 0.60f), edgeMargin, w - edgeMargin, (int)(h * 0.40f), w - edgeMargin, edgeMargin},
-    {(int)(w * 0.60f), (int)(h * 0.60f), w - edgeMargin, h - edgeMargin, w - edgeMargin, h - edgeMargin},
-    {edgeMargin, (int)(h * 0.60f), (int)(w * 0.40f), h - edgeMargin, edgeMargin, h - edgeMargin},
+    {15, 15, (int)(w * 0.45f), (int)(h * 0.45f), 15, 15},
+    {(int)(w * 0.55f), 15, w - 15, (int)(h * 0.45f), w - 15, 15},
+    {(int)(w * 0.55f), (int)(h * 0.55f), w - 15, h - 15, w - 15, h - 15},
+    {15, (int)(h * 0.55f), (int)(w * 0.45f), h - 15, 15, h - 15},
   };
 
-  const int winSize = (int)(std::min(w, h) * 0.028f);
-  const int stride = std::max(4, winSize / 4);
-  const float minDensity = 0.25f;
-  const float maxDensity = 0.85f;
-  const float densityWeight = 0.8f;
+  const int cellSize = (int)(std::min(w, h) * 0.018f);
+  const int stride = std::max(3, cellSize / 3);
+  const float minDensity = 0.35f;
+  const float maxDensity = 0.90f;
+  const int checkGap = (int)(cellSize * 1.2f);
 
-  // Direction to check for white paper outside the corner (per zone)
-  struct { int checkX; int checkY; } cornerDirs[4] = {
-    {0, winSize},      // TL: check below
-    {-20, winSize},    // TR: check below-left
-    {-20, -20},        // BR: check above-left
-    {0, -20},          // BL: check above
+  // 2-direction white neighbor checks per zone: {dx1, dy1, dx2, dy2}
+  const int neighborDirs[4][4] = {
+    {checkGap, 0, 0, checkGap},           // TL: right + below
+    {-checkGap, 0, 0, checkGap},          // TR: left + below
+    {-checkGap, 0, 0, -checkGap},         // BR: left + above
+    {checkGap, 0, 0, -checkGap},          // BL: right + above
   };
 
   for (int z = 0; z < 4; z++) {
     const auto& zd = zones[z];
-    const auto& dir = cornerDirs[z];
+    const int* nd = neighborDirs[z];
     float bestScore = -1;
-    int bestX = 0, bestY = 0;
+    int bestCx = 0, bestCy = 0;
 
-    for (int y = zd.y0; y <= zd.y1 - winSize; y += stride) {
-      for (int x = zd.x0; x <= zd.x1 - winSize; x += stride) {
-        const int dark = windowDark(x, y, winSize);
-        const float density = (float)dark / (winSize * winSize);
-
+    for (int cy = zd.y0; cy <= zd.y1 - cellSize; cy += stride) {
+      for (int cx = zd.x0; cx <= zd.x1 - cellSize; cx += stride) {
+        const int dark = regionDark(cx, cy, cellSize, cellSize);
+        const float density = (float)dark / (cellSize * cellSize);
         if (density < minDensity || density > maxDensity) continue;
 
-        const int checkW = 15;
-        const int cx = std::max(0, std::min(w - checkW, (int)(x + dir.checkX)));
-        const int cy = std::max(0, std::min(h - checkW, (int)(y + dir.checkY)));
-        const int neighborDark = windowDark(cx, cy, checkW);
-        const float neighborDensity = (float)neighborDark / (checkW * checkW);
+        const int n1x = std::max(0, std::min(w - 10, (int)(cx + nd[0])));
+        const int n1y = std::max(0, std::min(h - 10, (int)(cy + nd[1])));
+        if ((float)regionDark(n1x, n1y, 10, 10) / 100.f > 0.20f) continue;
 
-        if (neighborDensity > 0.20f) continue;
+        const int n2x = std::max(0, std::min(w - 10, (int)(cx + nd[2])));
+        const int n2y = std::max(0, std::min(h - 10, (int)(cy + nd[3])));
+        if ((float)regionDark(n2x, n2y, 10, 10) / 100.f > 0.20f) continue;
 
-        const float distToExpected = std::hypot((float)(x + winSize / 2 - zd.ex),
-                                                 (float)(y + winSize / 2 - zd.ey)) /
+        const float distToExpected = std::hypot((float)(cx + cellSize / 2 - zd.ex),
+                                                 (float)(cy + cellSize / 2 - zd.ey)) /
                                       std::max(w, h);
-        const float score = density * densityWeight + (1.f - std::min(1.f, distToExpected)) * (1.f - densityWeight);
+        const float score = density * 0.7f + (1.f - std::min(1.f, distToExpected)) * 0.3f;
 
         if (score > bestScore) {
           bestScore = score;
-          bestX = x + winSize / 2;
-          bestY = y + winSize / 2;
+          bestCx = cx;
+          bestCy = cy;
         }
       }
     }
 
     if (bestScore < 0) return false;
 
-    // Refine: center-of-mass of dark pixels around the best window
-    const int refineMargin = winSize / 2;
-    const int rx0 = std::max(0, bestX - winSize - refineMargin);
-    const int ry0 = std::max(0, bestY - winSize - refineMargin);
-    const int rx1 = std::min(w - 1, bestX + refineMargin);
-    const int ry1 = std::min(h - 1, bestY + refineMargin);
+    // Refine: center-of-mass in region around best cell
     double sx = 0, sy = 0;
     int c = 0;
-    for (int ry = ry0; ry <= ry1; ry++) {
-      for (int rx = rx0; rx <= rx1; rx++) {
+    const int rm = cellSize / 2;
+    for (int ry = std::max(0, bestCy - rm); ry <= std::min(h - 1, bestCy + cellSize + rm); ry++) {
+      for (int rx = std::max(0, bestCx - rm); rx <= std::min(w - 1, bestCx + cellSize + rm); rx++) {
         if (gray[ry * w + rx] < 80) { sx += rx; sy += ry; c++; }
       }
     }
-    corners[z].x = c > 0 ? (float)std::round(sx / c) : (float)bestX;
-    corners[z].y = c > 0 ? (float)std::round(sy / c) : (float)bestY;
+    corners[z].x = c > 0 ? (float)std::round(sx / c) : (float)(bestCx + cellSize / 2);
+    corners[z].y = c > 0 ? (float)std::round(sy / c) : (float)(bestCy + cellSize / 2);
   }
 
-  // Validate quadrilateral - relaxed for natural camera angles
+  // Validate quadrilateral
   const float tl0 = corners[0].x, tl1 = corners[0].y;
   const float tr0 = corners[1].x, tr1 = corners[1].y;
   const float br0 = corners[2].x, br1 = corners[2].y;
   const float bl0 = corners[3].x, bl1 = corners[3].y;
-
-  if (std::fabs(tl1 - tr1) > h * 0.08f) return false;
-  if (std::fabs(bl1 - br1) > h * 0.08f) return false;
-  if (std::fabs(tl0 - bl0) > w * 0.15f) return false;
-  if (std::fabs(tr0 - br0) > w * 0.15f) return false;
 
   const float topW = std::hypot(tr0 - tl0, tr1 - tl1);
   const float botW = std::hypot(br0 - bl0, br1 - bl1);
@@ -158,11 +146,10 @@ bool findCorners(const uint8_t* gray, int w, int h, Point2f corners[4]) {
   const float avgH = (leftH + rightH) / 2.f;
   const float aspect = avgW / std::max(avgH, 1.f);
   if (aspect < 0.35f || aspect > 2.8f) return false;
-  if (topW / std::max(botW, 1.f) < 0.35f || botW / std::max(topW, 1.f) < 0.35f) return false;
-  if (leftH / std::max(rightH, 1.f) < 0.35f || rightH / std::max(leftH, 1.f) < 0.35f) return false;
-
+  if (topW / std::max(botW, 1.f) < 0.3f || botW / std::max(topW, 1.f) < 0.3f) return false;
+  if (leftH / std::max(rightH, 1.f) < 0.3f || rightH / std::max(leftH, 1.f) < 0.3f) return false;
   const float area = std::fabs((tr0 - tl0) * (br1 - tl1) - (tr1 - tl1) * (br0 - tl0));
-  if (area < 20000.f) return false;
+  if (area < 15000.f) return false;
 
   return true;
 }
