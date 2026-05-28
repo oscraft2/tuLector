@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { findCorners, warpPerspective, gradeBubbles, readStudentId, DEFAULT_CONFIG, type BubbleResult, type GradeReport } from "@/lib/omr";
+import { findCorners, gradeBubbles, readStudentId, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
 import { createClient } from "@/lib/supabase";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS, SCAN_PREFS } from "@/lib/scanner_config";
-import { warpAsync, terminateWorker } from "@/lib/omr_worker";
+import { warpAsync } from "@/lib/omr_worker";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
 
@@ -36,8 +36,11 @@ export default function ScanPage() {
  const [phase, setPhase] = useState<ScanPhase>("detecting");
  const [results, setResults] = useState<BubbleResult[]>([]);
  const [studentId, setStudentId] = useState<string[]>([]);
- const [stream, setStream] = useState<MediaStream | null>(null);
- const [error, setError] = useState("");
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const phaseRef = useRef(phase);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  const [error, setError] = useState("");
  const [detected, setDetected] = useState(false);
  const [inFocus, setInFocus] = useState(false);
  const [lastScan, setLastScan] = useState(0);
@@ -62,21 +65,126 @@ export default function ScanPage() {
 
  const config = DEFAULT_CONFIG;
 
- // Iniciar camara
- const startCamera = useCallback(async () => {
-  try {
-   if (stream) stream.getTracks().forEach((t) => t.stop());
-   const ms = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
-    audio: false,
-   });
-   setStream(ms);
-   if (videoRef.current) { videoRef.current.srcObject = ms; await videoRef.current.play(); }
-   setError("");
-  } catch { setError("Permite acceso a la camara en configuracion."); }
- }, [stream]);
+  // Iniciar camara
+  useEffect(() => {
+   let cancelled = false;
+   (async () => {
+    try {
+     if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+     const ms = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false,
+     });
+     if (cancelled) { ms.getTracks().forEach((t) => t.stop()); return; }
+     streamRef.current = ms;
+     setStream(ms);
+     if (videoRef.current) { videoRef.current.srcObject = ms; await videoRef.current.play(); }
+     setError("");
+    } catch { if (!cancelled) setError("Permite acceso a la camara en configuracion."); }
+   })();
+   return () => {
+    cancelled = true;
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+   };
+  }, []);
 
- useEffect(() => { startCamera(); return () => { stream?.getTracks().forEach((t) => t.stop()); }; }, []);
+ // Procesar escaneo (warp + grade)
+ const processScan = async (frame: ImageData, corners: [number, number][]) => {
+  const video = videoRef.current;
+  const canvas = hiddenCanvas.current;
+  if (!video || !canvas) return;
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext("2d")!;
+  ctx.putImageData(frame, 0, 0);
+
+  const logs: string[] = [];
+  const addLog = (msg: string) => { logs.push(msg); console.log("[Scan]", msg); };
+
+  try {
+   addLog(`Frame: ${canvas.width}x${canvas.height}`);
+   addLog(`Corners: TL=(${corners[0][0]},${corners[0][1]}) TR=(${corners[1][0]},${corners[1][1]}) BR=(${corners[2][0]},${corners[2][1]}) BL=(${corners[3][0]},${corners[3][1]})`);
+
+   const srcImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+   const warped = await warpAsync(
+    srcImageData, corners,
+    { sheetWidth: config.sheetWidth, sheetHeight: config.sheetHeight, margin: config.margin, cornerSize: config.cornerSize }
+   );
+   addLog(`Warped: ${warped.width}x${warped.height}`);
+
+   const report = gradeBubbles(warped, config, corners);
+   const idRows = readStudentId(warped, config);
+
+   if (!report.valid) {
+    addLog(`ERR[${SCAN_CODES.WRONG_FORMAT}]: ${report.reason}`);
+    setDebugLog(logs);
+    setPhase("detecting");
+    setError(SCAN_MESSAGES[SCAN_CODES.WRONG_FORMAT] || report.reason || "Error");
+    return;
+   }
+
+   const bubbleResults = report.results;
+
+   const answeredCount = bubbleResults.filter(r => r.answer !== "-" && r.answer !== "?").length;
+   if (answeredCount === 0) {
+    addLog(`ERR[${SCAN_CODES.OUT_OF_FOCUS}]: Sin respuestas`);
+    setDebugLog(logs);
+    setPhase("detecting");
+    setError(SCAN_MESSAGES[SCAN_CODES.OUT_OF_FOCUS]);
+    return;
+   }
+
+   const answerSet = new Set(bubbleResults.filter(r => r.answer !== "-" && r.answer !== "?").map(r => r.answer));
+   if (answerSet.size === 1 && answeredCount > 3) {
+    const singleAns = [...answerSet][0];
+    addLog(`WARN[${SCAN_CODES.CURVE_FAIL}]: ${answeredCount} respuestas "${singleAns}"`);
+    setDebugLog(logs);
+    setPhase("detecting");
+    setError(SCAN_MESSAGES[SCAN_CODES.CURVE_FAIL]);
+    return;
+   }
+
+   addLog(`Q answer scores`);
+   for (const r of bubbleResults) {
+    addLog(`Q${String(r.question).padStart(2)}: ${r.answer.padEnd(5)} [${r.scores.map((s: number) => s.toFixed(2)).join(",")}]`);
+   }
+   addLog(`ID: [${idRows.join(",")}]`);
+
+   setResults(bubbleResults);
+   setStudentId(idRows);
+   setDebugLog(logs);
+   setScanCount((c) => c + 1);
+   setPhase("result");
+
+   try {
+    const supabase = createClient();
+    await supabase.from("scan_logs").insert({
+     user_agent: navigator.userAgent,
+     log: { 
+      corners, 
+      scores: bubbleResults.map(r => ({ q: r.question, a: r.answer, s: r.scores })), 
+      id: idRows, 
+      frameW: canvas.width, frameH: canvas.height 
+     }
+    });
+   } catch { /* silencioso */ }
+
+   if (navigator.vibrate) navigator.vibrate(100);
+
+    setTimeout(() => {
+     setPhase((prev) => prev === "result" ? "cooldown" : prev);
+     setLastScan(Date.now());
+     setTimeout(() => {
+      setPhase("detecting");
+     }, cooldownMs);
+    }, 2000);
+  } catch {
+   setError("Error al procesar. Intenta de nuevo.");
+   setPhase("detecting");
+  }
+ };
 
  // Loop principal: deteccion continua + auto-scan
  useEffect(() => {
@@ -176,114 +284,11 @@ export default function ScanPage() {
   return () => cancelAnimationFrame(animId);
  }, [stream, phase, lastScan, config]);
 
- // Procesar escaneo (warp + grade)
- const processScan = async (frame: ImageData, corners: [number, number][]) => {
-  const video = videoRef.current;
-  const canvas = hiddenCanvas.current;
-  if (!video || !canvas) return;
-
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext("2d")!;
-  ctx.putImageData(frame, 0, 0);
-
-  const logs: string[] = [];
-  const addLog = (msg: string) => { logs.push(msg); console.log("[Scan]", msg); };
-
-  try {
-   addLog(`Frame: ${canvas.width}x${canvas.height}`);
-   addLog(`Corners: TL=(${corners[0][0]},${corners[0][1]}) TR=(${corners[1][0]},${corners[1][1]}) BR=(${corners[2][0]},${corners[2][1]}) BL=(${corners[3][0]},${corners[3][1]})`);
-
-   // : warp en Web Worker (no bloquea el UI thread)
-   const srcImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-   const warped = await warpAsync(
-    srcImageData, corners,
-    { sheetWidth: config.sheetWidth, sheetHeight: config.sheetHeight, margin: config.margin, cornerSize: config.cornerSize }
-   );
-   addLog(`Warped: ${warped.width}x${warped.height}`);
-
-   const report = gradeBubbles(warped, config, corners);
-   const idRows = readStudentId(warped, config);
-
-   // Usar codigos de error de referencia
-   if (!report.valid) {
-    addLog(`ERR[${SCAN_CODES.WRONG_FORMAT}]: ${report.reason}`);
-    setDebugLog(logs);
-    setPhase("detecting");
-    setError(SCAN_MESSAGES[SCAN_CODES.WRONG_FORMAT] || report.reason || "Error");
-    return;
-   }
-
-   const bubbleResults = report.results;
-
-   // referencia: validar respuestas
-   const answeredCount = bubbleResults.filter(r => r.answer !== "-" && r.answer !== "?").length;
-   if (answeredCount === 0) {
-    addLog(`ERR[${SCAN_CODES.OUT_OF_FOCUS}]: Sin respuestas`);
-    setDebugLog(logs);
-    setPhase("detecting");
-    setError(SCAN_MESSAGES[SCAN_CODES.OUT_OF_FOCUS]);
-    return;
-   }
-
-   const answerSet = new Set(bubbleResults.filter(r => r.answer !== "-" && r.answer !== "?").map(r => r.answer));
-   if (answerSet.size === 1 && answeredCount > 3) {
-    const singleAns = [...answerSet][0];
-    addLog(`WARN[${SCAN_CODES.CURVE_FAIL}]: ${answeredCount} respuestas "${singleAns}"`);
-    setDebugLog(logs);
-    setPhase("detecting");
-    setError(SCAN_MESSAGES[SCAN_CODES.CURVE_FAIL]);
-    return;
-   }
-
-   addLog(`Q answer scores`);
-   for (const r of bubbleResults) {
-    addLog(`Q${String(r.question).padStart(2)}: ${r.answer.padEnd(5)} [${r.scores.map((s: number) => s.toFixed(2)).join(",")}]`);
-   }
-   addLog(`ID: [${idRows.join(",")}]`);
-
-   setResults(bubbleResults);
-   setStudentId(idRows);
-   setDebugLog(logs);
-   setScanCount((c) => c + 1);
-   setPhase("result");
-
-   // Enviar log a Supabase para debug remoto + datos de entrenamiento
-   try {
-    const supabase = createClient();
-    await supabase.from("scan_logs").insert({
-     user_agent: navigator.userAgent,
-     log: { 
-      corners, 
-      scores: bubbleResults.map(r => ({ q: r.question, a: r.answer, s: r.scores })), 
-      id: idRows, 
-      frameW: canvas.width, frameH: canvas.height 
-     }
-    });
-   } catch { /* silencioso */ }
-
-   // Vibrar si disponible (feedback tactil como)
-   if (navigator.vibrate) navigator.vibrate(100);
-
-   setTimeout(() => {
-    setPhase("cooldown");
-    setLastScan(Date.now());
-    setTimeout(() => {
-     if (phase !== "result") setPhase("detecting");
-    }, cooldownMs);
-   }, 2000);
-  } catch {
-   setError("Error al procesar. Intenta de nuevo.");
+  // Empezar siguiente escaneo
+  const nextScan = () => {
    setPhase("detecting");
-  }
- };
-
- // Empezar siguiente escaneo
- const nextScan = () => {
-  setPhase("detecting");
-  setLastScan(Date.now());
-  setTimeout(() => { if (phase !== "result") setPhase("detecting"); }, cooldownMs);
- };
+   setLastScan(Date.now());
+  };
 
  return (
   <div className="min-h-screen bg-black text-white flex flex-col overflow-hidden font-sans">

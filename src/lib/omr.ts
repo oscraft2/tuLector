@@ -49,10 +49,10 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
     gray[i] = Math.round(imageData.data[j] * 0.299 + imageData.data[j + 1] * 0.587 + imageData.data[j + 2] * 0.114);
   }
   const zones: [number, number, number, number, number, number][] = [
-    [0, 0, w * 0.08, h * 0.06, 0, 0],           // TL: expected near (0,0)
-    [w * 0.92, 0, w, h * 0.06, w, 0],             // TR: expected near (w,0)
-    [w * 0.92, h * 0.92, w, h, w, h],             // BR: expected near (w,h)
-    [0, h * 0.92, w * 0.08, h, 0, h],             // BL: expected near (0,h)
+    [0, 0, w * 0.35, h * 0.30, 0, 0],            // TL: search top-left quadrant
+    [w * 0.65, 0, w, h * 0.30, w, 0],             // TR: search top-right quadrant
+    [w * 0.65, h * 0.70, w, h, w, h],             // BR: search bottom-right quadrant
+    [0, h * 0.70, w * 0.35, h, 0, h],             // BL: search bottom-left quadrant
   ];
   const corners: [number, number][] = [];
   // Validar que cada zona tenga pixeles oscuros concentrados (esquina real, no ruido)
@@ -70,7 +70,7 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
     // Varianza espacial baja = pixeles concentrados (no dispersos)
     const varX = sxx / c - cx * cx;
     const varY = syy / c - cy * cy;
-    if (varX > 300 || varY > 300) return null; // demasiado dispersos
+    if (varX > 1500 || varY > 1500) return null; // demasiado dispersos
 
     corners.push([cx, cy]);
   }
@@ -332,7 +332,7 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
   }
 
   const results: BubbleResult[] = [];
-  let sameCount: Record<string, number> = {};
+  const sameCount: Record<string, number> = {};
   let glareWarnings = 0;
 
   for (let q = 0; q < numQuestions; q++) {
