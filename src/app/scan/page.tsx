@@ -141,6 +141,22 @@ function diagnoseFrame(imageData: ImageData): FrameDiag {
 
   const bestDensity = bestCount / (winSize * winSize);
   const passed = bestScore >= 0;
+  if (passed) {
+   // Refine: center-of-mass around best window
+   const refineMargin = Math.floor(winSize * 0.5);
+   const rx0 = Math.max(0, bestX - winSize - refineMargin);
+   const ry0 = Math.max(0, bestY - winSize - refineMargin);
+   const rx1 = Math.min(w - 1, bestX + refineMargin);
+   const ry1 = Math.min(h - 1, bestY + refineMargin);
+   let sx = 0, sy = 0, c = 0;
+   for (let ry = ry0; ry <= ry1; ry++) {
+    for (let rx = rx0; rx <= rx1; rx++) {
+     if (gray[ry * w + rx] < 80) { sx += rx; sy += ry; c++; }
+    }
+   }
+   bestX = c > 0 ? Math.round(sx / c) : bestX;
+   bestY = c > 0 ? Math.round(sy / c) : bestY;
+  }
   zones.push({
    name: zd.name,
    bestX, bestY,

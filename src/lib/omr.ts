@@ -135,7 +135,23 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
     }
 
     if (bestScore < 0) return null;
-    corners.push([bestX, bestY]);
+
+    // Refine: compute center-of-mass of dark pixels around the best window
+    // for precise corner position (not just window center)
+    const refineMargin = Math.floor(winSize * 0.5);
+    const rx0 = Math.max(0, bestX - winSize - refineMargin);
+    const ry0 = Math.max(0, bestY - winSize - refineMargin);
+    const rx1 = Math.min(w - 1, bestX + refineMargin);
+    const ry1 = Math.min(h - 1, bestY + refineMargin);
+    let sx = 0, sy = 0, c = 0;
+    for (let ry = ry0; ry <= ry1; ry++) {
+      for (let rx = rx0; rx <= rx1; rx++) {
+        if (gray[ry * w + rx] < 80) { sx += rx; sy += ry; c++; }
+      }
+    }
+    const cx = c > 0 ? Math.round(sx / c) : bestX;
+    const cy = c > 0 ? Math.round(sy / c) : bestY;
+    corners.push([cx, cy]);
   }
 
   // Validate quadrilateral - relaxed for natural camera angles
