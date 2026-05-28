@@ -40,7 +40,7 @@ function getLayout(config: OMRConfig) {
   return { NAME_TOP, NAME_BOTTOM, ID_START, Q_TOP };
 }
 
-// ─── 1. Deteccion de esquinas (sliding window + integral image) ──
+// ─── 1. Corner detection: grid-based dense-blob with 2-direction white neighbor check ──
 export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CONFIG): [number, number][] | null {
   const w = imageData.width, h = imageData.height;
   const gray = new Uint8Array(w * h);
@@ -49,7 +49,7 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
     gray[i] = Math.round(imageData.data[j] * 0.299 + imageData.data[j + 1] * 0.587 + imageData.data[j + 2] * 0.114);
   }
 
-  // Build integral image of dark pixels for O(1) window sums
+  // Build integral image for fast region sums
   const integral = new Uint32Array(w * h);
   for (let y = 0; y < h; y++) {
     let rowSum = 0;
@@ -58,10 +58,9 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
       integral[y * w + x] = (y > 0 ? integral[(y - 1) * w + x] : 0) + rowSum;
     }
   }
-
-  function windowDarkCount(x: number, y: number, size: number): number {
-    const x2 = Math.min(x + size - 1, w - 1);
-    const y2 = Math.min(y + size - 1, h - 1);
+  function regionDark(x: number, y: number, sx: number, sy: number): number {
+    const x2 = Math.min(x + sx - 1, w - 1);
+    const y2 = Math.min(y + sy - 1, h - 1);
     let sum = integral[y2 * w + x2];
     if (x > 0) sum -= integral[y2 * w + (x - 1)];
     if (y > 0) sum -= integral[(y - 1) * w + x2];
@@ -69,114 +68,93 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
     return sum;
   }
 
-  // Ignore first 20px from edges (phone bezel shadow, camera vignette)
-  const edgeMargin = 20;
-  // Search zones: 40% from each edge
+  // Search zones: 45% from each edge
   const zoneDefs: { x0: number; y0: number; x1: number; y1: number; ex: number; ey: number }[] = [
-    { x0: edgeMargin, y0: edgeMargin, x1: Math.floor(w * 0.40), y1: Math.floor(h * 0.40), ex: edgeMargin, ey: edgeMargin },
-    { x0: Math.floor(w * 0.60), y0: edgeMargin, x1: w - edgeMargin, y1: Math.floor(h * 0.40), ex: w - edgeMargin, ey: edgeMargin },
-    { x0: Math.floor(w * 0.60), y0: Math.floor(h * 0.60), x1: w - edgeMargin, y1: h - edgeMargin, ex: w - edgeMargin, ey: h - edgeMargin },
-    { x0: edgeMargin, y0: Math.floor(h * 0.60), x1: Math.floor(w * 0.40), y1: h - edgeMargin, ex: edgeMargin, ey: h - edgeMargin },
+    { x0: 15, y0: 15, x1: Math.floor(w * 0.45), y1: Math.floor(h * 0.45), ex: 15, ey: 15 },
+    { x0: Math.floor(w * 0.55), y0: 15, x1: w - 15, y1: Math.floor(h * 0.45), ex: w - 15, ey: 15 },
+    { x0: Math.floor(w * 0.55), y0: Math.floor(h * 0.55), x1: w - 15, y1: h - 15, ex: w - 15, ey: h - 15 },
+    { x0: 15, y0: Math.floor(h * 0.55), x1: Math.floor(w * 0.45), y1: h - 15, ex: 15, ey: h - 15 },
   ];
 
-  const winSize = Math.floor(Math.min(w, h) * 0.028); // ~30px for 1080p
-  const stride = Math.max(4, Math.floor(winSize / 4));
-  const minDensity = 0.25;  // center-of-square in window
-  const maxDensity = 0.85;  // reject solid black areas (bezels, shadows)
-  const densityWeight = 0.8;
+  const cellSize = Math.floor(Math.min(w, h) * 0.018); // ~20px for 1080p
+  const stride = Math.max(3, Math.floor(cellSize / 3));
+  const minCellDensity = 0.35;
+  const maxCellDensity = 0.90;
+  const checkGap = Math.floor(cellSize * 1.2); // distance to check paper whiteness
 
-  // Direction to check for white paper outside the corner square:
-  // Each zone index: 0=TL(check below+right), 1=TR(check below+left), 2=BR(check above+left), 3=BL(check above+right)
-  const cornerDirs: { checkX: number; checkY: number }[] = [
-    { checkX: 0, checkY: winSize },      // TL: check 20px below
-    { checkX: -20, checkY: winSize },     // TR: check 20px below+left
-    { checkX: -20, checkY: -20 },         // BR: check 20px above+left
-    { checkX: 0, checkY: -20 },           // BL: check 20px above
+  // Directions to check for white paper (2 checks per zone, toward interior of sheet)
+  // For each zone: [check1_dx, check1_dy, check2_dx, check2_dy]
+  const neighborDirs: number[][] = [
+    [checkGap, 0, 0, checkGap],           // TL: check right + below
+    [-checkGap, 0, 0, checkGap],          // TR: check left + below
+    [-checkGap, 0, 0, -checkGap],         // BR: check left + above
+    [checkGap, 0, 0, -checkGap],          // BL: check right + above
   ];
 
   const corners: [number, number][] = [];
 
   for (let zi = 0; zi < 4; zi++) {
     const zd = zoneDefs[zi];
-    const dir = cornerDirs[zi];
+    const nd = neighborDirs[zi];
     let bestScore = -1;
-    let bestX = 0, bestY = 0;
+    let bestCx = 0, bestCy = 0;
 
-    for (let y = zd.y0; y <= zd.y1 - winSize; y += stride) {
-      for (let x = zd.x0; x <= zd.x1 - winSize; x += stride) {
-        const dark = windowDarkCount(x, y, winSize);
-        const total = winSize * winSize;
-        const density = dark / total;
+    for (let cy = zd.y0; cy <= zd.y1 - cellSize; cy += stride) {
+      for (let cx = zd.x0; cx <= zd.x1 - cellSize; cx += stride) {
+        const dark = regionDark(cx, cy, cellSize, cellSize);
+        const density = dark / (cellSize * cellSize);
+        if (density < minCellDensity || density > maxCellDensity) continue;
 
-        // Skip if too dark (solid black = bezel/shadow) or too light (no corner)
-        if (density < minDensity || density > maxDensity) continue;
+        // Check white paper in 2 directions toward sheet interior
+        const n1x = Math.max(0, Math.min(w - 10, Math.round(cx + nd[0])));
+        const n1y = Math.max(0, Math.min(h - 10, Math.round(cy + nd[1])));
+        const n1d = regionDark(n1x, n1y, 10, 10) / 100;
+        if (n1d > 0.20) continue;
 
-        // Verify there's white paper nearby: check a 15x15 window in the direction
-        // away from the corner (e.g., below-left for TR, above for BL)
-        const checkW = 15;
-        const cx = Math.max(0, Math.min(w - checkW, Math.round(x + dir.checkX)));
-        const cy = Math.max(0, Math.min(h - checkW, Math.round(y + dir.checkY)));
-        const neighborDark = windowDarkCount(cx, cy, checkW);
-        const neighborDensity = neighborDark / (checkW * checkW);
+        const n2x = Math.max(0, Math.min(w - 10, Math.round(cx + nd[2])));
+        const n2y = Math.max(0, Math.min(h - 10, Math.round(cy + nd[3])));
+        const n2d = regionDark(n2x, n2y, 10, 10) / 100;
+        if (n2d > 0.20) continue;
 
-        // Real corner square: dark center + LIGHT neighbor (white paper)
-        // Fake (bezel): both are dark → neighbor is dark too
-        if (neighborDensity > 0.20) continue; // neighbor is dark = bezel, not paper
-
-        const distToExpected = Math.hypot((x + winSize / 2) - zd.ex, (y + winSize / 2) - zd.ey) / Math.max(w, h);
-        const score = density * densityWeight + (1 - Math.min(1, distToExpected)) * (1 - densityWeight);
+        // Score: prefer high density + proximity to expected corner
+        const distToExpected = Math.hypot(cx + cellSize / 2 - zd.ex, cy + cellSize / 2 - zd.ey) / Math.max(w, h);
+        const score = density * 0.7 + (1 - Math.min(1, distToExpected)) * 0.3;
 
         if (score > bestScore) {
           bestScore = score;
-          bestX = x + Math.floor(winSize / 2);
-          bestY = y + Math.floor(winSize / 2);
+          bestCx = cx;
+          bestCy = cy;
         }
       }
     }
 
     if (bestScore < 0) return null;
 
-    // Refine: compute center-of-mass of dark pixels around the best window
-    // for precise corner position (not just window center)
-    const refineMargin = Math.floor(winSize * 0.5);
-    const rx0 = Math.max(0, bestX - winSize - refineMargin);
-    const ry0 = Math.max(0, bestY - winSize - refineMargin);
-    const rx1 = Math.min(w - 1, bestX + refineMargin);
-    const ry1 = Math.min(h - 1, bestY + refineMargin);
+    // Refine: center-of-mass in the best cell region
     let sx = 0, sy = 0, c = 0;
-    for (let ry = ry0; ry <= ry1; ry++) {
-      for (let rx = rx0; rx <= rx1; rx++) {
+    for (let ry = Math.max(0, bestCy - Math.floor(cellSize * 0.5)); ry <= Math.min(h - 1, bestCy + cellSize + Math.floor(cellSize * 0.5)); ry++) {
+      for (let rx = Math.max(0, bestCx - Math.floor(cellSize * 0.5)); rx <= Math.min(w - 1, bestCx + cellSize + Math.floor(cellSize * 0.5)); rx++) {
         if (gray[ry * w + rx] < 80) { sx += rx; sy += ry; c++; }
       }
     }
-    const cx = c > 0 ? Math.round(sx / c) : bestX;
-    const cy = c > 0 ? Math.round(sy / c) : bestY;
-    corners.push([cx, cy]);
+    corners.push([c > 0 ? Math.round(sx / c) : bestCx + Math.floor(cellSize / 2),
+                  c > 0 ? Math.round(sy / c) : bestCy + Math.floor(cellSize / 2)]);
   }
 
-  // Validate quadrilateral - relaxed for natural camera angles
+  // Validate quadrilateral
   const [tl, tr, br, bl] = corners;
-
-  if (Math.abs(tl[1] - tr[1]) > h * 0.08) return null;
-  if (Math.abs(bl[1] - br[1]) > h * 0.08) return null;
-  if (Math.abs(tl[0] - bl[0]) > w * 0.15) return null;
-  if (Math.abs(tr[0] - br[0]) > w * 0.15) return null;
-
   const topW = Math.hypot(tr[0] - tl[0], tr[1] - tl[1]);
   const botW = Math.hypot(br[0] - bl[0], br[1] - bl[1]);
   const leftH = Math.hypot(bl[0] - tl[0], bl[1] - tl[1]);
   const rightH = Math.hypot(br[0] - tr[0], br[1] - tr[1]);
-
   const avgW = (topW + botW) / 2;
   const avgH = (leftH + rightH) / 2;
-  const aspectRatio = avgW / Math.max(avgH, 1);
-  if (aspectRatio < 0.35 || aspectRatio > 2.8) return null;
-
-  if (topW / Math.max(botW, 1) < 0.35 || botW / Math.max(topW, 1) < 0.35) return null;
-  if (leftH / Math.max(rightH, 1) < 0.35 || rightH / Math.max(leftH, 1) < 0.35) return null;
-
+  const aspect = avgW / Math.max(avgH, 1);
+  if (aspect < 0.35 || aspect > 2.8) return null;
+  if (topW / Math.max(botW, 1) < 0.3 || botW / Math.max(topW, 1) < 0.3) return null;
+  if (leftH / Math.max(rightH, 1) < 0.3 || rightH / Math.max(leftH, 1) < 0.3) return null;
   const area = Math.abs((tr[0] - tl[0]) * (br[1] - tl[1]) - (tr[1] - tl[1]) * (br[0] - tl[0]));
-  if (area < 20000) return null;
+  if (area < 15000) return null;
 
   return corners;
 }
