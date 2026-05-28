@@ -370,7 +370,7 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
     const glares: boolean[] = [];
 
     for (let o = 0; o < numOptions; o++) {
-      const cx = M + 188 + o * 50, cy = qy + 16;
+      const cx = M + 50 + o * 50, cy = qy + 16;   // A=90, B=140, C=190, D=240, E=290 — igual que sheet/page.tsx
       const { score, glare } = classifyBubble(gray, width, cx, cy, 10);
       scores.push(score);
       glares.push(glare);
