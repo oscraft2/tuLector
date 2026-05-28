@@ -121,8 +121,22 @@ bool findCorners(const uint8_t* gray, int w, int h, Point2f corners[4]) {
     }
 
     if (bestScore < 0) return false;
-    corners[z].x = (float)bestX;
-    corners[z].y = (float)bestY;
+
+    // Refine: center-of-mass of dark pixels around the best window
+    const int refineMargin = winSize / 2;
+    const int rx0 = std::max(0, bestX - winSize - refineMargin);
+    const int ry0 = std::max(0, bestY - winSize - refineMargin);
+    const int rx1 = std::min(w - 1, bestX + refineMargin);
+    const int ry1 = std::min(h - 1, bestY + refineMargin);
+    double sx = 0, sy = 0;
+    int c = 0;
+    for (int ry = ry0; ry <= ry1; ry++) {
+      for (int rx = rx0; rx <= rx1; rx++) {
+        if (gray[ry * w + rx] < 80) { sx += rx; sy += ry; c++; }
+      }
+    }
+    corners[z].x = c > 0 ? (float)std::round(sx / c) : (float)bestX;
+    corners[z].y = c > 0 ? (float)std::round(sy / c) : (float)bestY;
   }
 
   // Validate quadrilateral - relaxed for natural camera angles
