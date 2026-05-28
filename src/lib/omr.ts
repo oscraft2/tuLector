@@ -314,7 +314,7 @@ function validateFormat(gray: Float32Array, w: number, h: number, config: OMRCon
   for (const q of sampleQuestions) {
     const qy = Q_TOP + q * 42;
     for (let o = 0; o < 5; o++) {
-      const cx = M + 50 + o * 50, cy = qy + 16;
+      const cx = M + 150 + o * 50, cy = qy + 16;
       let ring = 0, total = 0;
       // Verificar que hay un anillo (circulo vacio) en la posicion de la burbuja
       for (let dy = -12; dy <= 12; dy++) {
@@ -396,7 +396,7 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
     const glares: boolean[] = [];
 
     for (let o = 0; o < numOptions; o++) {
-      const cx = M + 50 + o * 50, cy = qy + 16;
+      const cx = M + 150 + o * 50, cy = qy + 16;
       const { score, glare } = classifyBubble(gray, width, cx, cy, 10);
       scores.push(score);
       glares.push(glare);

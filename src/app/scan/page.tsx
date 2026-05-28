@@ -236,7 +236,7 @@ export default function ScanPage() {
     const supabase = createClient();
     await supabase.from("scan_logs").insert({
      user_agent: navigator.userAgent,
-     log: { corners, scores: bubbleResults.map(r => ({ q: r.question, a: r.answer, s: r.scores })), id: idRows, frameW: canvas.width, frameH: canvas.height }
+     log: { corners, scores: bubbleResults.map(r => ({ q: r.question, a: r.answer, s: r.scores })), id: idRows, frameW: canvas.width, frameH: canvas.height, warpThumb: warpedThumb }
     });
    } catch { /* silencioso */ }
 
@@ -614,17 +614,17 @@ export default function ScanPage() {
          {/* Grid de burbujas superpuesto */}
          <svg className="absolute inset-0" style={{ width: 150, height: "auto", aspectRatio: "1200/1650" }}
               viewBox="0 0 1200 1650" preserveAspectRatio="xMidYMid meet">
-          {/* Q_TOP=264, qH=42, cx=90,140,190,240,290, r=10 */}
+          {/* Q_TOP=264, qH=42, cx=190,240,290,340,390, r=10 */}
           {Array.from({ length: 20 }, (_, q) => {
            const qy = 264 + q * 42 + 16;
-           return [90, 140, 190, 240, 290].map((cx, o) => (
+           return [190, 240, 290, 340, 390].map((cx, o) => (
             <circle key={`${q}-${o}`} cx={cx} cy={qy} r={10}
-             fill="none" stroke={o < 3 ? "#ef4444" : "#22c55e"} strokeWidth="3" opacity="0.8" />
+             fill="none" stroke={["#ef4444","#f97316","#facc15","#22c55e","#3b82f6"][o]} strokeWidth="3" opacity="0.8" />
            ));
           })}
          </svg>
         </div>
-        <p className="text-[9px] text-zinc-500 mt-1">Rojo = columnas A,B,C (zona de scores 0.60) · Verde = D,E</p>
+        <p className="text-[9px] text-zinc-500 mt-1">A=rojo B=naranja C=amarillo D=verde E=azul · cx=190,240,290,340,390</p>
        </div>
       )}
 
