@@ -155,6 +155,9 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
   if (leftH / Math.max(rightH, 1) < 0.3 || rightH / Math.max(leftH, 1) < 0.3) return null;
   const area = Math.abs((tr[0] - tl[0]) * (br[1] - tl[1]) - (tr[1] - tl[1]) * (br[0] - tl[0]));
   if (area < 15000) return null;
+  // Borde superior e inferior deben ser aproximadamente horizontales (tilt máximo ~12%)
+  if (Math.abs(tl[1] - tr[1]) > h * 0.12) return null;
+  if (Math.abs(bl[1] - br[1]) > h * 0.12) return null;
 
   return corners;
 }
@@ -402,8 +405,8 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
 
     // : umbral adaptativo + deteccion de marcas multiples
     const maxS = Math.max(...scores);
-    const minValidScore = 0.18; // minimo absoluto para considerar marcado
-    const thresh = Math.max(minValidScore, maxS * 0.35);
+    const minValidScore = 0.25; // minimo absoluto para considerar marcado
+    const thresh = Math.max(minValidScore, maxS * 0.55);
     const marked = scores.map((s, i) => (s > thresh && !glares[i]) ? i : -1).filter(i => i >= 0);
 
     // Si hay glare en varias opciones, la pregunta es no confiable

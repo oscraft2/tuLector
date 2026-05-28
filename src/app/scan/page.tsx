@@ -122,10 +122,11 @@ export default function ScanPage() {
  const goodFrameCount = useRef(0);
  const stableFrames = useRef(0);
  const lastFrameTime = useRef(0);
+ const lastCornersRef = useRef<[number, number][] | null>(null);
  const frameSkipMs = 66;
 
  const cooldownMs = SCAN_THRESHOLDS.scanCooldownMs;
- const stableFramesNeeded = 12;
+ const stableFramesNeeded = 8;
  const config = DEFAULT_CONFIG;
 
  // Iniciar camara
@@ -452,7 +453,15 @@ export default function ScanPage() {
       octx.stroke();
      }
 
-     stableFrames.current++;
+     // Solo contar frames estables si las corners no se movieron >25px respecto al frame anterior
+     const prev = lastCornersRef.current;
+     const cornersStable = prev !== null && corners.every((c, i) =>
+       Math.hypot(c[0] - prev[i][0], c[1] - prev[i][1]) < 25
+     );
+     lastCornersRef.current = corners;
+     if (cornersStable) stableFrames.current++;
+     else stableFrames.current = 0;
+
      const canScan = Date.now() - lastScan > cooldownMs;
      if (stableFrames.current >= stableFramesNeeded && canScan && phase === "detecting") {
       stableFrames.current = 0;
@@ -461,11 +470,13 @@ export default function ScanPage() {
      }
     } else {
      stableFrames.current = 0;
+     lastCornersRef.current = null;
      setDetected(false);
      setInFocus(false);
     }
    } else {
     stableFrames.current = 0;
+    lastCornersRef.current = null;
     badFrameCount.current++;
     goodFrameCount.current = 0;
     setDetected(false);
