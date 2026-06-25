@@ -65,7 +65,7 @@ export default function TestPage() {
       const corners = findCorners(imageData);
       if (!corners) { addLog("[CORNERS] NULL - no detectadas"); setRunning(false); return; }
       addLog(`[CORNERS] TL=(${corners[0][0]},${corners[0][1]})  TR=(${corners[1][0]},${corners[1][1]})  BR=(${corners[2][0]},${corners[2][1]})  BL=(${corners[3][0]},${corners[3][1]})`);
-      addLog(`[CORNERS] Esperado: TL=(65,65) TR=(1135,65) BR=(1135,1585) BL=(65,1585)`);
+      addLog(`[CORNERS] Esperado (anclas v2): TL=(70,70) TR=(1130,70) BR=(1130,1580) BL=(70,1580)`);
 
       // ─── Warp ───
       const warped = warpPerspective(ctx, corners);

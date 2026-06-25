@@ -36,3 +36,6 @@ answer_sheet.png
 debug/
 
 .vercel
+
+# build artifact
+tsconfig.tsbuildinfo

@@ -1,11 +1,18 @@
 /**
  * Motor OMR - TuLector
  * Pipeline de escaneo OMR:
- *   1. Deteccion de 4 esquinas (centro de masa por cuadrante)
- *   2. Correccion de perspectiva (homografia 8x8)
- *   3. Analisis de grilla de burbujas (umbral adaptativo)
- *   4. Lectura de ID de estudiante (burbujas binarias)
+ *   1. Deteccion de 4 esquinas (blob denso en grilla via imagen integral,
+ *      fallback a centro de masa por cuadrante).
+ *   2. Correccion de perspectiva (homografia 8-DOF, eliminacion gaussiana 8x8).
+ *   3. Registro local de la grilla (offset dx/dy que maximiza la marca) +
+ *      clasificador multi-feature por burbuja.
+ *   4. Lectura de ID de estudiante (umbral de oscuridad por burbuja).
+ *
+ * Las constantes de calibracion (CALIB) son la UNICA fuente de verdad y deben
+ * mantenerse identicas en el motor nativo (mobile/native/omr_engine.cpp).
  */
+
+import * as L from "./sheet_layout";
 
 export interface OMRConfig {
   numQuestions: number; numOptions: number; optionLabels: string;
@@ -23,21 +30,52 @@ export interface GradeReport {
 }
 
 // ─── Configuracion ─────────────────────────────────────────────
+// Las posiciones canonicas viven en sheet_layout.ts (compartidas con la hoja).
+// margin/cornerSize se conservan para la deteccion de esquinas; el grading usa
+// directamente los helpers de L (optX, rowCY, idX, idY).
 const DEFAULT_CONFIG: OMRConfig = {
-  numQuestions: 20, numOptions: 5, optionLabels: "ABCDE",
-  idRows: 3, idCols: 10,
-  sheetWidth: 1200, sheetHeight: 1650,
-  margin: 40, cornerSize: 50,
+  numQuestions: L.NUM_QUESTIONS, numOptions: L.NUM_OPTIONS, optionLabels: L.OPTION_LABELS,
+  idRows: L.ID_ROWS, idCols: L.ID_COLS,
+  sheetWidth: L.SHEET_W, sheetHeight: L.SHEET_H,
+  margin: 50, cornerSize: L.ANCHOR_SIZE,
 };
+function findCornersByMass(gray: Uint8Array, w: number, h: number): [number, number][] | null {
+  const zones: [number, number, number, number][] = [
+    [0, 0, Math.floor(w * 0.08), Math.floor(h * 0.06)],
+    [Math.floor(w * 0.92), 0, w, Math.floor(h * 0.06)],
+    [Math.floor(w * 0.92), Math.floor(h * 0.92), w, h],
+    [0, Math.floor(h * 0.92), Math.floor(w * 0.08), h],
+  ];
 
-function getLayout(config: OMRConfig) {
-  const { margin: M, cornerSize: CS, idRows } = config;
-  const NAME_TOP = M + CS + 10;
-  const NAME_H = 35;
-  const NAME_BOTTOM = NAME_TOP + NAME_H;
-  const ID_START = NAME_BOTTOM + 15;
-  const Q_TOP = ID_START + idRows * 28 + 30;
-  return { NAME_TOP, NAME_BOTTOM, ID_START, Q_TOP };
+  const corners: [number, number][] = [];
+  for (const [x0, y0, x1, y1] of zones) {
+    let sx = 0, sy = 0, c = 0;
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        if (gray[y * w + x] < 100) { sx += x; sy += y; c++; }
+      }
+    }
+    if (c < 120) return null;
+    corners.push([Math.round(sx / c), Math.round(sy / c)]);
+  }
+
+  const [tl, tr, br, bl] = corners;
+  const topW = Math.hypot(tr[0] - tl[0], tr[1] - tl[1]);
+  const botW = Math.hypot(br[0] - bl[0], br[1] - bl[1]);
+  const leftH = Math.hypot(bl[0] - tl[0], bl[1] - tl[1]);
+  const rightH = Math.hypot(br[0] - tr[0], br[1] - tr[1]);
+  const avgW = (topW + botW) / 2;
+  const avgH = (leftH + rightH) / 2;
+  const aspect = avgW / Math.max(avgH, 1);
+  if (aspect < 0.35 || aspect > 2.8) return null;
+  if (topW / Math.max(botW, 1) < 0.3 || botW / Math.max(topW, 1) < 0.3) return null;
+  if (leftH / Math.max(rightH, 1) < 0.3 || rightH / Math.max(leftH, 1) < 0.3) return null;
+  const area = Math.abs((tr[0] - tl[0]) * (br[1] - tl[1]) - (tr[1] - tl[1]) * (br[0] - tl[0]));
+  if (area < 15000) return null;
+  if (Math.abs(tl[1] - tr[1]) > h * 0.12) return null;
+  if (Math.abs(bl[1] - br[1]) > h * 0.12) return null;
+
+  return corners;
 }
 
 // ─── 1. Corner detection: grid-based dense-blob with 2-direction white neighbor check ──
@@ -79,8 +117,11 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
   const cellSize = Math.floor(Math.min(w, h) * 0.018); // ~20px for 1080p
   const stride = Math.max(3, Math.floor(cellSize / 3));
   const minCellDensity = 0.35;
-  const maxCellDensity = 0.90;
-  const checkGap = Math.floor(cellSize * 1.2); // distance to check paper whiteness
+  const maxCellDensity = 1.0; // anclas SOLIDAS → densidad ~1.0 (antes huecas: 0.90)
+  // Distancia para verificar papel blanco hacia el interior. Debe superar el
+  // tamaño del ancla SOLIDA proyectada, si no caeria dentro de la propia ancla.
+  const anchorPx = (L.ANCHOR_SIZE / L.SHEET_H) * h;
+  const checkGap = Math.floor(Math.max(cellSize * 1.2, anchorPx + cellSize));
 
   // Directions to check for white paper (2 checks per zone, toward interior of sheet)
   // For each zone: [check1_dx, check1_dy, check2_dx, check2_dy]
@@ -128,7 +169,7 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
       }
     }
 
-    if (bestScore < 0) return null;
+    if (bestScore < 0) return findCornersByMass(gray, w, h);
 
     // Refine: center-of-mass in the best cell region
     let sx = 0, sy = 0, c = 0;
@@ -150,27 +191,33 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
   const avgW = (topW + botW) / 2;
   const avgH = (leftH + rightH) / 2;
   const aspect = avgW / Math.max(avgH, 1);
-  if (aspect < 0.35 || aspect > 2.8) return null;
-  if (topW / Math.max(botW, 1) < 0.3 || botW / Math.max(topW, 1) < 0.3) return null;
-  if (leftH / Math.max(rightH, 1) < 0.3 || rightH / Math.max(leftH, 1) < 0.3) return null;
+  if (aspect < 0.35 || aspect > 2.8) return findCornersByMass(gray, w, h);
+  if (topW / Math.max(botW, 1) < 0.3 || botW / Math.max(topW, 1) < 0.3) return findCornersByMass(gray, w, h);
+  if (leftH / Math.max(rightH, 1) < 0.3 || rightH / Math.max(leftH, 1) < 0.3) return findCornersByMass(gray, w, h);
   const area = Math.abs((tr[0] - tl[0]) * (br[1] - tl[1]) - (tr[1] - tl[1]) * (br[0] - tl[0]));
-  if (area < 15000) return null;
+  if (area < 15000) return findCornersByMass(gray, w, h);
   // Borde superior e inferior deben ser aproximadamente horizontales (tilt máximo ~12%)
-  if (Math.abs(tl[1] - tr[1]) > h * 0.12) return null;
-  if (Math.abs(bl[1] - br[1]) > h * 0.12) return null;
+  if (Math.abs(tl[1] - tr[1]) > h * 0.12) return findCornersByMass(gray, w, h);
+  if (Math.abs(bl[1] - br[1]) > h * 0.12) return findCornersByMass(gray, w, h);
 
   return corners;
 }
 
 // ─── 2. Correccion de perspectiva ──────────────────────────────
-export function warpPerspective(
-  sourceCtx: CanvasRenderingContext2D,
+export function warpImageData(
+  sourceData: ImageData,
   corners: [number, number][],
   config: OMRConfig = DEFAULT_CONFIG
 ): ImageData {
-  const { sheetWidth: W, sheetHeight: H, margin: M, cornerSize: CS } = config;
+  const { sheetWidth: W, sheetHeight: H } = config;
   const [tl, tr, br, bl] = corners;
-  const dst = [M + CS / 2, M + CS / 2, W - M - CS / 2, M + CS / 2, W - M - CS / 2, H - M - CS / 2, M + CS / 2, H - M - CS / 2];
+  // Mapea las 4 esquinas detectadas a los centros de ancla canonicos (sheet_layout).
+  const dst = [
+    L.CORNER_CENTERS[0][0], L.CORNER_CENTERS[0][1],
+    L.CORNER_CENTERS[1][0], L.CORNER_CENTERS[1][1],
+    L.CORNER_CENTERS[2][0], L.CORNER_CENTERS[2][1],
+    L.CORNER_CENTERS[3][0], L.CORNER_CENTERS[3][1],
+  ];
   const src = [...tl, ...tr, ...br, ...bl];
   const A: number[][] = [], b: number[] = [];
   for (let i = 0; i < 4; i++) {
@@ -179,25 +226,37 @@ export function warpPerspective(
     b.push(dst[i * 2]); b.push(dst[i * 2 + 1]);
   }
   const h = solve8x8(A, b);
-  if (!h) return sourceCtx.getImageData(0, 0, W, H);
-  const outCtx = document.createElement("canvas").getContext("2d")!;
-  const outCanvas = outCtx.canvas; outCanvas.width = W; outCanvas.height = H;
-  const outData = outCtx.createImageData(W, H);
-  const srcData = sourceCtx.getImageData(0, 0, sourceCtx.canvas.width, sourceCtx.canvas.height);
+  if (!h) return sourceData;
+
+  const outData = new ImageData(W, H);
+  const srcW = sourceData.width, srcH = sourceData.height;
   for (let dy = 0; dy < H; dy++) {
     for (let dx = 0; dx < W; dx++) {
       const denom = h[6] * dx + h[7] * dy + 1;
       const sx = (h[0] * dx + h[1] * dy + h[2]) / denom;
       const sy = (h[3] * dx + h[4] * dy + h[5]) / denom;
-      const si = Math.round(sy) * sourceCtx.canvas.width + Math.round(sx);
+      const six = Math.round(sx), siy = Math.round(sy);
       const di = dy * W + dx;
-      if (sx >= 0 && sx < sourceCtx.canvas.width && sy >= 0 && sy < sourceCtx.canvas.height) {
-        outData.data[di * 4] = srcData.data[si * 4]; outData.data[di * 4 + 1] = srcData.data[si * 4 + 1];
-        outData.data[di * 4 + 2] = srcData.data[si * 4 + 2]; outData.data[di * 4 + 3] = 255;
+      if (six >= 0 && six < srcW && siy >= 0 && siy < srcH) {
+        const si = siy * srcW + six;
+        outData.data[di * 4] = sourceData.data[si * 4]; outData.data[di * 4 + 1] = sourceData.data[si * 4 + 1];
+        outData.data[di * 4 + 2] = sourceData.data[si * 4 + 2]; outData.data[di * 4 + 3] = 255;
+      } else {
+        outData.data[di * 4] = 255; outData.data[di * 4 + 1] = 255;
+        outData.data[di * 4 + 2] = 255; outData.data[di * 4 + 3] = 255;
       }
     }
   }
   return outData;
+}
+
+export function warpPerspective(
+  sourceCtx: CanvasRenderingContext2D,
+  corners: [number, number][],
+  config: OMRConfig = DEFAULT_CONFIG
+): ImageData {
+  const srcData = sourceCtx.getImageData(0, 0, sourceCtx.canvas.width, sourceCtx.canvas.height);
+  return warpImageData(srcData, corners, config);
 }
 
 function solve8x8(A: number[][], b: number[]): number[] | null {
@@ -217,9 +276,23 @@ function solve8x8(A: number[][], b: number[]): number[] | null {
   return x;
 }
 
-// ─── 3. Analisis de burbujas (SVM-like multi-feature classifier) ──
+// ─── 3. Analisis de burbujas (clasificador multi-feature) ──
 const DARK_THRESH = 70;
 const GLARE_THRESH = 220;
+
+/**
+ * Calibracion del clasificador. UNICA fuente de verdad: debe replicarse
+ * byte-a-byte en mobile/native/omr_engine.cpp (constexpr CALIB_*).
+ */
+const CALIB = {
+  bubbleRadius: 10,   // radio de muestreo del ROI por burbuja
+  relThresh: 0.55,    // umbral relativo al mejor score de la pregunta
+  absThresh: 0.15,    // score minimo absoluto para considerar una opcion marcada
+  minPick: 0.12,      // score minimo para elegir el maximo cuando nada supera el umbral
+  gridSearchDx: 6,    // rango +-px de busqueda horizontal de la grilla
+  gridSearchDy: 8,    // rango +-px de busqueda vertical de la grilla
+  gridSearchStep: 2,  // paso de la busqueda de offset
+} as const;
 
 /**  multi-feature bubble classifier */
 function classifyBubble(gray: Float32Array, w: number, cx: number, cy: number, r: number): { score: number; glare: boolean; features: number[] } {
@@ -254,7 +327,8 @@ function classifyBubble(gray: Float32Array, w: number, cx: number, cy: number, r
   const variance = sumSq / total - mean * mean;
   const edgeDensity = edgeVals.length > 0 ? edgeVals.filter(v => v < 100).length / edgeVals.length : 0;
   const score = darkRatio * 0.40 + contrast * 0.25 + Math.min(variance / 10000, 1) * 0.15 + edgeDensity * 0.20;
-  const glare = bright / total > 0.25;
+  const brightRatio = bright / total;
+  const glare = brightRatio > 0.85 && darkRatio < 0.02 && edgeDensity < 0.02;
 
   return { score, glare, features: [darkRatio, contrast, variance, edgeDensity] };
 }
@@ -281,66 +355,126 @@ function checkCurve(corners: [number, number][]): boolean {
   return false;
 }
 
+/** Cuenta pixeles oscuros (gray<thr) en una caja centrada en (cx,cy). */
+function darkInBox(gray: Float32Array, w: number, h: number, cx: number, cy: number, half: number, thr = 100): number {
+  let dark = 0;
+  for (let dy = -half; dy <= half; dy++) {
+    const py = cy + dy;
+    if (py < 0 || py >= h) continue;
+    for (let dx = -half; dx <= half; dx++) {
+      const px = cx + dx;
+      if (px >= 0 && px < w && gray[py * w + px] < thr) dark++;
+    }
+  }
+  return dark;
+}
+
+/**
+ * Lee la pista de temporizacion del margen izquierdo: devuelve el centro Y de
+ * cada marca solida, en orden. En una hoja bien warpeada hay NUM_QUESTIONS
+ * marcas. Es el ancla fisica que da el registro robusto por fila.
+ */
+function readTimingRows(gray: Float32Array, w: number, h: number): number[] {
+  const x0 = Math.max(0, Math.round(L.TIMING_X - L.TIMING_W / 2 - 4));
+  const x1 = Math.min(w - 1, Math.round(L.TIMING_X + L.TIMING_W / 2 + 4));
+  const bandW = x1 - x0 + 1;
+  const minDark = Math.max(6, Math.round(L.TIMING_W * 0.4));
+
+  const centers: number[] = [];
+  let runStart = -1, runSum = 0, runW = 0;
+  for (let y = 0; y < h; y++) {
+    let dark = 0;
+    for (let x = x0; x <= x1; x++) if (gray[y * w + x] < 100) dark++;
+    const isMark = dark >= minDark;
+    if (isMark) {
+      if (runStart < 0) { runStart = y; runSum = 0; runW = 0; }
+      runSum += y * dark; runW += dark;
+    } else if (runStart >= 0) {
+      // fin de una marca: centro ponderado por oscuridad
+      if (y - runStart >= 4) centers.push(Math.round(runSum / Math.max(runW, 1)));
+      runStart = -1;
+    }
+  }
+  if (runStart >= 0 && h - runStart >= 4) centers.push(Math.round(runSum / Math.max(runW, 1)));
+  void bandW;
+  return centers;
+}
+
 // Scanner Format Validation (return code 30): verifica que la hoja sea la correcta
 function validateFormat(gray: Float32Array, w: number, h: number, config: OMRConfig): { valid: boolean; reason?: string } {
-  const { margin: M } = config;
-  const { Q_TOP } = getLayout(config);
-
-  // 1. Verificar que las esquinas tienen marcas oscuras (corner squares)
-  const cornersToCheck: [number, number][] = [
-    [M + 25, M + 25],
-    [w - M - 25, M + 25],
-    [w - M - 25, h - M - 25],
-    [M + 25, h - M - 25],
-  ];
-  for (const [cx, cy] of cornersToCheck) {
-    let dark = 0, total = 0;
-    for (let dy = -15; dy <= 15; dy++) {
-      for (let dx = -15; dx <= 15; dx++) {
-        const px = cx + dx, py = cy + dy;
-        if (px >= 0 && px < w && py >= 0 && py < h) {
-          total++;
-          if (gray[py * w + px] < DARK_THRESH) dark++;
-        }
-      }
-    }
-    if (total > 0 && dark / total < 0.08) return { valid: false, reason: `Falta marca de esquina en (${cx},${cy})` };
-  }
-
-  // 2. (bubble grid check omitido durante calibracion — solo esquinas)
-
-  // 3. Verificar que el area de ID tiene estructura de burbujas
-  const { ID_START } = getLayout(config);
-  let idChecks = 0, idPassed = 0;
-  for (let row = 0; row < 3; row++) {
-    for (let col = 0; col < 5; col++) { // solo primeras 5 columnas
-      const cx = M + 30 + col * 28, cy = ID_START + 10 + row * 28;
-      let ring = 0, total = 0;
-      for (let dy = -8; dy <= 8; dy++) {
-        for (let dx = -8; dx <= 8; dx++) {
-          const px = cx + dx, py = cy + dy;
-          if (px >= 0 && px < w && py >= 0 && py < h) {
-            total++;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist > 6 && dist < 9 && gray[py * w + px] < 100) ring++;
-          }
-        }
-      }
-      idChecks++;
-      if (total > 0 && ring / total > 0.005) idPassed++;
+  // 1. Las 4 anclas de esquina deben ser solidas (blob denso de negro).
+  //    Caja de 25px → ~2500px; una ancla solida de 40px cubre de sobra.
+  for (const [cx, cy] of L.CORNER_CENTERS) {
+    if (darkInBox(gray, w, h, cx, cy, 25) < 800) {
+      return { valid: false, reason: `Falta ancla de esquina en (${cx},${cy})` };
     }
   }
-  if (idChecks > 0 && idPassed / idChecks < 0.3) return { valid: false, reason: "Zona de ID no detectada - formato incorrecto" };
+
+  // 2. La pista de temporizacion debe tener aproximadamente NUM_QUESTIONS marcas.
+  const rows = readTimingRows(gray, w, h);
+  if (rows.length < Math.floor(L.NUM_QUESTIONS * 0.8)) {
+    return { valid: false, reason: `Pista de temporizacion incompleta (${rows.length}/${L.NUM_QUESTIONS})` };
+  }
 
   return { valid: true };
 }
 
+/**
+ * Registro local de la grilla de preguntas.
+ *
+ * La homografia de 4 esquinas solo corrige perspectiva plana; el pandeo del
+ * papel, la distorsion del lente o un error sub-pixel en una esquina desplazan
+ * las burbujas del centro de pagina respecto a las coordenadas teoricas. Esta
+ * busqueda barata prueba un rango de offsets (dx,dy) y elige el que maximiza la
+ * oscuridad concentrada en las posiciones de burbuja esperadas. En una imagen
+ * perfecta el optimo es (0,0), por lo que no degrada el caso ideal.
+ */
+function darkAtBubbles(gray: Float32Array, w: number, h: number, rowY: number[], numOptions: number, dx: number): number {
+  let darkSum = 0;
+  for (const cy of rowY) {
+    for (let o = 0; o < numOptions; o++) {
+      const cx = L.optX(o) + dx;
+      for (let yy = -6; yy <= 6; yy++) {
+        const py = cy + yy;
+        if (py < 0 || py >= h) continue;
+        for (let xx = -6; xx <= 6; xx++) {
+          const px = cx + xx;
+          if (px >= 0 && px < w && gray[py * w + px] < DARK_THRESH) darkSum++;
+        }
+      }
+    }
+  }
+  return darkSum;
+}
+
+/** Fallback software cuando la pista de temporizacion no se lee: offset (dx,dy). */
+function findGridOffset(gray: Float32Array, w: number, h: number, config: OMRConfig): { dx: number; dy: number } {
+  const { numQuestions, numOptions } = config;
+  let bestDx = 0, bestDy = 0, bestDark = -1;
+  for (let dy = -CALIB.gridSearchDy; dy <= CALIB.gridSearchDy; dy += CALIB.gridSearchStep) {
+    const rowY = Array.from({ length: numQuestions }, (_, q) => L.rowCY(q) + dy);
+    for (let dx = -CALIB.gridSearchDx; dx <= CALIB.gridSearchDx; dx += CALIB.gridSearchStep) {
+      const darkSum = darkAtBubbles(gray, w, h, rowY, numOptions, dx);
+      if (darkSum > bestDark) { bestDark = darkSum; bestDx = dx; bestDy = dy; }
+    }
+  }
+  return { dx: bestDx, dy: bestDy };
+}
+
+/** Con los Y de fila ya anclados por la temporizacion, solo refina el offset X. */
+function findColumnOffset(gray: Float32Array, w: number, h: number, rowY: number[], numOptions: number): number {
+  let bestDx = 0, bestDark = -1;
+  for (let dx = -CALIB.gridSearchDx; dx <= CALIB.gridSearchDx; dx += CALIB.gridSearchStep) {
+    const darkSum = darkAtBubbles(gray, w, h, rowY, numOptions, dx);
+    if (darkSum > bestDark) { bestDark = darkSum; bestDx = dx; }
+  }
+  return bestDx;
+}
+
 export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_CONFIG, corners?: [number, number][]): GradeReport {
   const { width, height, data } = imageData;
-  const { numQuestions, numOptions, margin: M } = config;
+  const { numQuestions, numOptions } = config;
   const labels = config.optionLabels.split("");
-  const { Q_TOP } = getLayout(config);
-  const qH = 42;
 
   const gray = new Float32Array(width * height);
   for (let i = 0; i < gray.length; i++) gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
@@ -360,39 +494,55 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
     return { results: [], valid: false, reason: formatCheck.reason };
   }
 
+  // Registro de filas: preferimos los Y fisicos de la pista de temporizacion;
+  // si no se leen las NUM_QUESTIONS marcas, caemos al offset software.
+  const timingRows = readTimingRows(gray, width, height);
+  let rowY: number[];
+  let gridDx: number;
+  if (timingRows.length === numQuestions) {
+    rowY = timingRows;
+    gridDx = findColumnOffset(gray, width, height, rowY, numOptions);
+  } else {
+    const off = findGridOffset(gray, width, height, config);
+    gridDx = off.dx;
+    rowY = Array.from({ length: numQuestions }, (_, q) => L.rowCY(q) + off.dy);
+  }
+
   const results: BubbleResult[] = [];
   const sameCount: Record<string, number> = {};
   let glareWarnings = 0;
 
   for (let q = 0; q < numQuestions; q++) {
-    const qy = Q_TOP + q * qH;
+    const cy = rowY[q];
     const scores: number[] = [];
     const glares: boolean[] = [];
 
     for (let o = 0; o < numOptions; o++) {
-      const cx = M + 50 + o * 50, cy = qy + 16;   // A=90, B=140, C=190, D=240, E=290 — igual que sheet/page.tsx
-      const { score, glare } = classifyBubble(gray, width, cx, cy, 10);
+      const cx = L.optX(o) + gridDx;
+      const { score, glare } = classifyBubble(gray, width, cx, cy, CALIB.bubbleRadius);
       scores.push(score);
       glares.push(glare);
-      if (glare) glareWarnings++;
     }
 
-    // : umbral adaptativo + deteccion de marcas multiples
+    // Umbral adaptativo + deteccion de marcas multiples
     const maxS = Math.max(...scores);
-    const minValidScore = 0.15; // minimo absoluto para considerar marcado
-    const thresh = Math.max(minValidScore, maxS * 0.55);
+    const maxIdx = scores.indexOf(maxS);
+    const thresh = Math.max(CALIB.absThresh, maxS * CALIB.relThresh);
     const marked = scores.map((s, i) => (s > thresh && !glares[i]) ? i : -1).filter(i => i >= 0);
 
-    // Si hay glare en varias opciones, la pregunta es no confiable
-    const hasGlare = glares.filter(g => g).length >= 3;
+    // El glare solo invalida la pregunta cuando tapa la opcion mas probable
+    // (un reflejo sobre la marca ganadora). Las opciones en blanco que "parecen
+    // brillantes" NO deben convertir toda la pregunta en "?" (Bug 4).
+    const winnerGlare = glares[maxIdx] && maxS >= CALIB.absThresh;
+    if (winnerGlare) glareWarnings++;
 
     let answer = "-";
-    if (hasGlare) {
-      answer = "?"; // no confiable por brillo
-    } else if (marked.length === 0 && maxS > 0.12) {
-      answer = labels[scores.indexOf(maxS)];
+    if (winnerGlare) {
+      answer = "?"; // marca probable bajo reflejo
+    } else if (marked.length === 0 && maxS > CALIB.minPick) {
+      answer = labels[maxIdx];
     } else if (marked.length > 0 && marked.length <= 3) {
-      // Soporte combinado: hasta 3 letras (como Scanner combo)
+      // Soporte combinado: hasta 3 letras
       answer = marked.map(i => labels[i]).join("");
     }
 
@@ -426,9 +576,7 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
 // ─── 4. ID de estudiante ───────────────────────────────────────
 export function readStudentId(imageData: ImageData, config: OMRConfig = DEFAULT_CONFIG): string[] {
   const { width, height, data } = imageData;
-  const { idRows, idCols, margin: M } = config;
-  const { ID_START } = getLayout(config);
-  const xStart = M + 30, yStart = ID_START + 10;
+  const { idRows, idCols } = config;
 
   const gray = new Float32Array(width * height);
   for (let i = 0; i < gray.length; i++) gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
@@ -437,7 +585,7 @@ export function readStudentId(imageData: ImageData, config: OMRConfig = DEFAULT_
   for (let row = 0; row < idRows; row++) {
     let s = "";
     for (let col = 0; col < idCols; col++) {
-      const cx = xStart + col * 28, cy = yStart + row * 28; let dk = 0, tot = 0;
+      const cx = L.idX(col), cy = L.idY(row); let dk = 0, tot = 0;
       for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) {
         const px = cx + dx, py = cy + dy;
         if (px >= 0 && px < width && py >= 0 && py < height) { tot++; if (gray[py * width + px] < DARK_THRESH) dk++; }

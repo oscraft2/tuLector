@@ -6,6 +6,7 @@ import { findCorners, gradeBubbles, readStudentId, DEFAULT_CONFIG, type BubbleRe
 import { createClient } from "@/lib/supabase";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
 import { warpAsync } from "@/lib/omr_worker";
+import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H } from "@/lib/sheet_layout";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
 
@@ -99,12 +100,15 @@ function canvasToDataUrl(canvas: HTMLCanvasElement): string {
  return canvas.toDataURL("image/jpeg", 0.85);
 }
 
-const ANSWER_KEY = ["C","B","B","B","C","E","E","D","C","B","A","B","C","D","E","E","D","C","B","A"];
+// Clave por defecto (demo/fallback offline). La clave real se carga desde la
+// URL (?key=CBBBC... o ?quiz=<id> via Supabase) en tiempo de ejecucion.
+const DEFAULT_ANSWER_KEY = ["C","B","B","B","C","E","E","D","C","B","A","B","C","D","E","E","D","C","B","A"];
 
 export default function ScanPage() {
  const videoRef = useRef<HTMLVideoElement>(null);
  const overlayRef = useRef<HTMLCanvasElement>(null);
  const hiddenCanvas = useRef<HTMLCanvasElement>(null);
+ const fileInputRef = useRef<HTMLInputElement>(null);
 
  const [phase, setPhase] = useState<ScanPhase>("detecting");
  const [results, setResults] = useState<BubbleResult[]>([]);
@@ -121,6 +125,32 @@ export default function ScanPage() {
  const [lastDiag, setLastDiag] = useState<FrameDiag | null>(null);
  const [warpedThumb, setWarpedThumb] = useState<string | null>(null);
  const [capturing, setCapturing] = useState(false);
+ const [answerKey, setAnswerKey] = useState<string[]>(DEFAULT_ANSWER_KEY);
+
+ // Cargar la clave de respuestas real desde la URL o Supabase.
+ useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+  const parseKey = (raw: string) => raw.toUpperCase().split("").filter((c) => "ABCDE".includes(c));
+
+  const keyParam = params.get("key");
+  if (keyParam) {
+   const arr = parseKey(keyParam);
+   if (arr.length > 0) setAnswerKey(arr);
+   return;
+  }
+  const quizId = params.get("quiz");
+  if (!quizId) return;
+  (async () => {
+   try {
+    const supabase = createClient();
+    const { data } = await supabase.from("quizzes").select("answer_key").eq("id", quizId).single();
+    if (data?.answer_key) {
+     const arr = parseKey(String(data.answer_key));
+     if (arr.length > 0) setAnswerKey(arr);
+    }
+   } catch { /* offline: se mantiene la clave por defecto */ }
+  })();
+ }, []);
  const badFrameCount = useRef(0);
  const goodFrameCount = useRef(0);
  const stableFrames = useRef(0);
@@ -158,12 +188,12 @@ export default function ScanPage() {
 
  // Process scan (warp + grade)
  const processScan = async (frame: ImageData, corners: [number, number][]) => {
-  const video = videoRef.current;
   const canvas = hiddenCanvas.current;
-  if (!video || !canvas) return;
+  if (!canvas) return;
 
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  // Dimensionar el canvas al frame (sirve para video EN VIVO y para foto subida).
+  canvas.width = frame.width;
+  canvas.height = frame.height;
   const ctx = canvas.getContext("2d")!;
   ctx.putImageData(frame, 0, 0);
 
@@ -383,6 +413,60 @@ export default function ScanPage() {
   setCapturing(false);
  };
 
+ // ─── SUBIR FOTO: procesa una imagen del telefono con el mismo motor ───
+ const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  setCapturing(true);
+  setShowDebug(true);
+  setError("");
+
+  try {
+   const url = URL.createObjectURL(file);
+   const img = new Image();
+   await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("img")); img.src = url; });
+
+   const canvas = hiddenCanvas.current ?? document.createElement("canvas");
+   canvas.width = img.naturalWidth;
+   canvas.height = img.naturalHeight;
+   const ctx = canvas.getContext("2d")!;
+   ctx.drawImage(img, 0, 0);
+   const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+   URL.revokeObjectURL(url);
+
+   const diag = diagnoseFrame(frame);
+   setLastDiag(diag);
+   const logs: string[] = [
+    `Foto: ${diag.w}x${diag.h} | Oscuro ${(diag.darkRatio * 100).toFixed(1)}% | Nitidez ${diag.sharpScore.toFixed(0)}`,
+   ];
+
+   if (diag.cornersFound && diag.corners) {
+    logs.push(">>> Esquinas detectadas, calificando...");
+    setDebugLog(logs);
+    setCapturing(false);
+    await processScan(frame, diag.corners);
+   } else {
+    const relaxed = tryRelaxedCorners(frame);
+    if (relaxed) {
+     logs.push(">>> Esquinas (umbral relajado), calificando...");
+     setDebugLog(logs);
+     setCapturing(false);
+     await processScan(frame, relaxed);
+    } else {
+     logs.push("No se detectaron las 4 anclas. Revisa que se vean completas y con buen foco.");
+     setDebugLog(logs);
+     setError("No se detectaron las 4 esquinas en la foto");
+     setCapturing(false);
+    }
+   }
+  } catch {
+   setError("No se pudo leer la imagen");
+   setCapturing(false);
+  } finally {
+   e.target.value = "";
+  }
+ };
+
  // Fallback corner finder with relaxed thresholds
  function tryRelaxedCorners(imageData: ImageData): [number, number][] | null {
   const w = imageData.width, h = imageData.height;
@@ -561,14 +645,31 @@ export default function ScanPage() {
      </div>
     )}
 
-    {/* ─── SHUTTER BUTTON ─── */}
-    <div className="absolute bottom-8 left-0 right-0 flex justify-center z-20">
+    {/* ─── SHUTTER + SUBIR FOTO ─── */}
+    <input
+     ref={fileInputRef}
+     type="file"
+     accept="image/*"
+     onChange={onPickFile}
+     className="hidden"
+    />
+    <div className="absolute bottom-8 left-0 right-0 flex items-center justify-center gap-8 z-20">
      <button
       onClick={captureFrame}
       disabled={capturing || !stream}
       className={`w-20 h-20 rounded-full border-4 border-white flex items-center justify-center transition-all active:scale-90 ${capturing ? "opacity-50 scale-75" : "hover:scale-105"}`}
      >
       <div className={`w-16 h-16 rounded-full ${capturing ? "bg-zinc-500" : "bg-white"}`} />
+     </button>
+     <button
+      onClick={() => fileInputRef.current?.click()}
+      disabled={capturing}
+      className="absolute right-8 flex flex-col items-center gap-1 text-white/80 hover:text-white disabled:opacity-40 transition"
+     >
+      <span className="w-12 h-12 rounded-2xl border border-white/40 bg-black/40 backdrop-blur flex items-center justify-center">
+       <ImageIcon />
+      </span>
+      <span className="text-[9px] font-bold uppercase tracking-wider">Subir foto</span>
      </button>
     </div>
 
@@ -627,19 +728,19 @@ export default function ScanPage() {
         <div className="relative inline-block border border-zinc-700 rounded-lg overflow-hidden">
          <img src={warpedThumb} alt="warp" className="block" style={{ width: 150, height: "auto" }} />
          {/* Grid de burbujas superpuesto */}
-         <svg className="absolute inset-0" style={{ width: 150, height: "auto", aspectRatio: "1200/1650" }}
-              viewBox="0 0 1200 1650" preserveAspectRatio="xMidYMid meet">
-          {/* Q_TOP=264, qH=42, cx=90,140,190,240,290, r=12 — igual que sheet/page.tsx */}
+         <svg className="absolute inset-0" style={{ width: 150, height: "auto", aspectRatio: `${SHEET_W}/${SHEET_H}` }}
+              viewBox={`0 0 ${SHEET_W} ${SHEET_H}`} preserveAspectRatio="xMidYMid meet">
+          {/* Posiciones canonicas desde sheet_layout (misma fuente que la hoja). */}
           {Array.from({ length: 20 }, (_, q) => {
-           const qy = 264 + q * 42 + 16;
-           return [90, 140, 190, 240, 290].map((cx, o) => (
-            <circle key={`${q}-${o}`} cx={cx} cy={qy} r={10}
+           const cy = rowCY(q);
+           return [0, 1, 2, 3, 4].map((o) => (
+            <circle key={`${q}-${o}`} cx={optX(o)} cy={cy} r={BUBBLE_R}
              fill="none" stroke={["#ef4444","#f97316","#facc15","#22c55e","#3b82f6"][o]} strokeWidth="3" opacity="0.8" />
            ));
           })}
          </svg>
         </div>
-        <p className="text-[9px] text-zinc-500 mt-1">A=rojo B=naranja C=amarillo D=verde E=azul · cx=90,140,190,240,290 (igual que hoja impresa)</p>
+        <p className="text-[9px] text-zinc-500 mt-1">A=rojo B=naranja C=amarillo D=verde E=azul · posiciones de sheet_layout</p>
        </div>
       )}
 
@@ -664,7 +765,7 @@ export default function ScanPage() {
      <div className="absolute inset-0 flex items-center justify-center p-6 z-40 bg-black/60 backdrop-blur-sm animate-in fade-in zoom-in duration-200">
       <div className="w-full max-w-xs bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
        {(() => {
-        const correct = results.filter((r, i) => r.answer !== "-" && r.answer === ANSWER_KEY[i]).length;
+        const correct = results.filter((r, i) => r.answer !== "-" && r.answer === answerKey[i]).length;
         const answered = results.filter(r => r.answer !== "-").length;
         return (
          <>
@@ -693,7 +794,7 @@ export default function ScanPage() {
 
           <div className="grid grid-cols-5 gap-1.5 mb-2">
            {results.map((r, i) => {
-            const expected = ANSWER_KEY[i];
+            const expected = answerKey[i];
             const isCorrect = r.answer !== "-" && r.answer === expected;
             const isWrong = r.answer !== "-" && r.answer !== expected;
             return (
@@ -708,8 +809,8 @@ export default function ScanPage() {
            })}
           </div>
           <div className="flex gap-1 mb-6">
-           <div className="flex items-center gap-1 text-[8px] text-green-500"><span className="w-2 h-2 rounded-sm bg-green-500/30 border border-green-500/40 inline-block"/>{results.filter((r,i)=>r.answer===ANSWER_KEY[i]).length} correctas</div>
-           <div className="flex items-center gap-1 text-[8px] text-red-400 ml-2"><span className="w-2 h-2 rounded-sm bg-red-500/30 border border-red-500/40 inline-block"/>{results.filter((r,i)=>r.answer!=="-"&&r.answer!==ANSWER_KEY[i]).length} incorrectas</div>
+           <div className="flex items-center gap-1 text-[8px] text-green-500"><span className="w-2 h-2 rounded-sm bg-green-500/30 border border-green-500/40 inline-block"/>{results.filter((r,i)=>r.answer===answerKey[i]).length} correctas</div>
+           <div className="flex items-center gap-1 text-[8px] text-red-400 ml-2"><span className="w-2 h-2 rounded-sm bg-red-500/30 border border-red-500/40 inline-block"/>{results.filter((r,i)=>r.answer!=="-"&&r.answer!==answerKey[i]).length} incorrectas</div>
           </div>
          </>
         );
@@ -730,6 +831,16 @@ function ArrowLeftIcon() {
  return (
   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
    <path d="m15 18-6-6 6-6"/>
+  </svg>
+ );
+}
+
+function ImageIcon() {
+ return (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+   <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+   <circle cx="9" cy="9" r="2"/>
+   <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
   </svg>
  );
 }

@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "test:omr": "tsx test_omr_real.ts",
+    "gen:fixture": "tsx scripts/gen_fixture.ts",
     "start": "next start",
     "lint": "eslint"
   },
