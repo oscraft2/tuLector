@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
 import { warpAsync } from "@/lib/omr_worker";
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H } from "@/lib/sheet_layout";
+import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
 
@@ -187,7 +188,7 @@ export default function ScanPage() {
  }, []);
 
  // Process scan (warp + grade)
- const processScan = async (frame: ImageData, corners: [number, number][]) => {
+ const processScan = async (frame: ImageData, corners: [number, number][], source: "camera" | "upload" = "camera") => {
   const canvas = hiddenCanvas.current;
   if (!canvas) return;
 
@@ -211,35 +212,37 @@ export default function ScanPage() {
    );
    addLog(`Warped: ${warped.width}x${warped.height}`);
 
-   // Thumbnail del warp para debug (1/8 escala)
+   // Thumbnails: foto original + warp (para diagnostico y dataset).
+   const photoThumb = imageDataToThumb(frame, 480, 0.6);
+   let warpThumb: string | null = null;
    try {
-    const tw = Math.round(warped.width / 8), th = Math.round(warped.height / 8);
     const fullC = document.createElement("canvas"); fullC.width = warped.width; fullC.height = warped.height;
     fullC.getContext("2d")!.putImageData(warped, 0, 0);
-    const thumbC = document.createElement("canvas"); thumbC.width = tw; thumbC.height = th;
-    thumbC.getContext("2d")!.drawImage(fullC, 0, 0, tw, th);
-    setWarpedThumb(thumbC.toDataURL("image/jpeg", 0.75));
+    warpThumb = downscaleCanvas(fullC, 360, 0.7);
+    setWarpedThumb(warpThumb);
    } catch { /* no crítico */ }
 
    const report = gradeBubbles(warped, config, corners);
    const idRows = readStudentId(warped, config);
+   const scores = (report.results ?? []).map(r => ({ q: r.question, a: r.answer, s: r.scores }));
 
-   const logFailure = async (reason: string, scores?: {q:number,a:string,s:number[]}[]) => {
-    try {
-     const supabase = createClient();
-     await supabase.from("scan_logs").insert({
-      user_agent: navigator.userAgent,
-      log: { type: "scan_fail", reason, corners, frameW: canvas.width, frameH: canvas.height, warpThumb: warpedThumb, scores }
-     });
-    } catch { /* offline */ }
-   };
+   const save = (type: "scan" | "scan_fail", code: number | undefined, valid: boolean) =>
+    saveScanLog({
+     v: SCAN_LOG_VERSION, type, source, sheet: "v2", ts: new Date().toISOString(),
+     frame: { w: canvas.width, h: canvas.height },
+     diag: report.diag as unknown as Record<string, unknown>,
+     corners, result: { valid, code, reason: report.reason },
+     answers: scores, id: idRows, photo: photoThumb, warp: warpThumb,
+    });
+
+   if (report.diag) addLog(`Registro: ${report.diag.usedTiming ? `temporizacion (${report.diag.timingRows} marcas)` : "offset software"}, dx=${report.diag.gridDx}`);
 
    if (!report.valid) {
     addLog(`ERR[${SCAN_CODES.WRONG_FORMAT}]: ${report.reason}`);
     setDebugLog(logs);
     setPhase("detecting");
     setError(SCAN_MESSAGES[SCAN_CODES.WRONG_FORMAT] || report.reason || "Error");
-    await logFailure(report.reason ?? "invalid", report.results?.map(r => ({ q: r.question, a: r.answer, s: r.scores })));
+    await save("scan_fail", SCAN_CODES.WRONG_FORMAT, false);
     return;
    }
 
@@ -251,7 +254,7 @@ export default function ScanPage() {
     setDebugLog(logs);
     setPhase("detecting");
     setError(SCAN_MESSAGES[SCAN_CODES.OUT_OF_FOCUS]);
-    await logFailure("Sin respuestas (scores todos bajos)", bubbleResults.map(r => ({ q: r.question, a: r.answer, s: r.scores })));
+    await save("scan_fail", SCAN_CODES.OUT_OF_FOCUS, false);
     return;
    }
 
@@ -262,7 +265,7 @@ export default function ScanPage() {
     setDebugLog(logs);
     setPhase("detecting");
     setError(SCAN_MESSAGES[SCAN_CODES.CURVE_FAIL]);
-    await logFailure(`Todas iguales: ${answeredCount}x"${singleAns}"`, bubbleResults.map(r => ({ q: r.question, a: r.answer, s: r.scores })));
+    await save("scan_fail", SCAN_CODES.CURVE_FAIL, false);
     return;
    }
 
@@ -277,13 +280,9 @@ export default function ScanPage() {
    setScanCount((c) => c + 1);
    setPhase("result");
 
-   try {
-    const supabase = createClient();
-    await supabase.from("scan_logs").insert({
-     user_agent: navigator.userAgent,
-     log: { corners, scores: bubbleResults.map(r => ({ q: r.question, a: r.answer, s: r.scores })), id: idRows, frameW: canvas.width, frameH: canvas.height, warpThumb: warpedThumb }
-    });
-   } catch { /* silencioso */ }
+   const saved = await save("scan", SCAN_CODES.GRADED, true);
+   addLog(saved ? "Guardado en Supabase OK" : "No se pudo guardar (ver consola)");
+   setDebugLog([...logs]);
 
    if (navigator.vibrate) navigator.vibrate(100);
 
@@ -444,14 +443,14 @@ export default function ScanPage() {
     logs.push(">>> Esquinas detectadas, calificando...");
     setDebugLog(logs);
     setCapturing(false);
-    await processScan(frame, diag.corners);
+    await processScan(frame, diag.corners, "upload");
    } else {
     const relaxed = tryRelaxedCorners(frame);
     if (relaxed) {
      logs.push(">>> Esquinas (umbral relajado), calificando...");
      setDebugLog(logs);
      setCapturing(false);
-     await processScan(frame, relaxed);
+     await processScan(frame, relaxed, "upload");
     } else {
      logs.push("No se detectaron las 4 anclas. Revisa que se vean completas y con buen foco.");
      setDebugLog(logs);

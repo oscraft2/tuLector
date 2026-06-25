@@ -12,6 +12,7 @@ export default function Dashboard() {
       <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-900">
         <h1 className="text-base font-bold text-zinc-200">Mis Exámenes</h1>
         <div className="flex items-center gap-3">
+          <Link href="/logs" className="text-xs font-bold text-zinc-400 hover:text-white transition">Análisis</Link>
           <Link href="/settings" className="p-2 text-zinc-500 hover:text-white transition">
             <SettingsIcon />
           </Link>

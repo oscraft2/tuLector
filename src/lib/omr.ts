@@ -25,8 +25,14 @@ export interface BubbleResult {
   question: number; answer: string; scores: number[]; correct: boolean | null;
 }
 
+export interface GradeDiag {
+  usedTiming: boolean;   // true si el registro uso la pista de temporizacion
+  timingRows: number;    // marcas de temporizacion detectadas
+  gridDx: number;        // offset horizontal aplicado
+}
+
 export interface GradeReport {
-  results: BubbleResult[]; valid: boolean; reason?: string;
+  results: BubbleResult[]; valid: boolean; reason?: string; diag?: GradeDiag;
 }
 
 // ─── Configuracion ─────────────────────────────────────────────
@@ -507,6 +513,7 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
     gridDx = off.dx;
     rowY = Array.from({ length: numQuestions }, (_, q) => L.rowCY(q) + off.dy);
   }
+  const diag: GradeDiag = { usedTiming: timingRows.length === numQuestions, timingRows: timingRows.length, gridDx };
 
   const results: BubbleResult[] = [];
   const sameCount: Record<string, number> = {};
@@ -556,21 +563,21 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
 
   // Validaciones post
   if (glareWarnings > 10) {
-    return { results, valid: false, reason: `Demasiado brillo: ${glareWarnings} burbujas con reflejo` };
+    return { results, valid: false, reason: `Demasiado brillo: ${glareWarnings} burbujas con reflejo`, diag };
   }
 
   const answeredCount = results.filter(r => r.answer !== "-" && r.answer !== "?").length;
   if (answeredCount === 0) {
-    return { results, valid: false, reason: "Sin respuestas detectadas" };
+    return { results, valid: false, reason: "Sin respuestas detectadas", diag };
   }
 
   const maxSame = Math.max(...Object.values(sameCount));
   if (maxSame >= 18 && answeredCount >= 18) {
     const dominant = Object.entries(sameCount).find(([, v]) => v === maxSame)?.[0];
-    return { results, valid: false, reason: `${maxSame}/20 respuestas "${dominant}" - posible mal warp` };
+    return { results, valid: false, reason: `${maxSame}/20 respuestas "${dominant}" - posible mal warp`, diag };
   }
 
-  return { results, valid: true };
+  return { results, valid: true, diag };
 }
 
 // ─── 4. ID de estudiante ───────────────────────────────────────
