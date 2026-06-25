@@ -240,8 +240,10 @@ export default function ScanPage() {
    if (!report.valid) {
     addLog(`ERR[${SCAN_CODES.WRONG_FORMAT}]: ${report.reason}`);
     setDebugLog(logs);
+    setShowDebug(true);
     setPhase("detecting");
-    setError(SCAN_MESSAGES[SCAN_CODES.WRONG_FORMAT] || report.reason || "Error");
+    // Mostrar la razon REAL (ancla, timing, curva, warp) en vez del generico.
+    setError(report.reason || SCAN_MESSAGES[SCAN_CODES.WRONG_FORMAT] || "Error");
     await save("scan_fail", SCAN_CODES.WRONG_FORMAT, false);
     return;
    }
