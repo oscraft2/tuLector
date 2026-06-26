@@ -84,7 +84,104 @@ function findCornersByMass(gray: Uint8Array, w: number, h: number): [number, num
   return corners;
 }
 
-// ─── 1. Corner detection: grid-based dense-blob with 2-direction white neighbor check ──
+/** Umbral de Otsu sobre el histograma de luminancia (binarizacion adaptativa). */
+function otsuThreshold(gray: Uint8Array): number {
+  const hist = new Array(256).fill(0);
+  for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
+  const total = gray.length;
+  let sum = 0;
+  for (let t = 0; t < 256; t++) sum += t * hist[t];
+  let sumB = 0, wB = 0, maxVar = -1, thr = 127;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB === 0) continue;
+    const wF = total - wB;
+    if (wF === 0) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB, mF = (sum - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > maxVar) { maxVar = between; thr = t; }
+  }
+  return thr;
+}
+
+function validateQuad(c: [number, number][]): boolean {
+  const [tl, tr, br, bl] = c;
+  const topW = Math.hypot(tr[0] - tl[0], tr[1] - tl[1]);
+  const botW = Math.hypot(br[0] - bl[0], br[1] - bl[1]);
+  const leftH = Math.hypot(bl[0] - tl[0], bl[1] - tl[1]);
+  const rightH = Math.hypot(br[0] - tr[0], br[1] - tr[1]);
+  const aspect = ((topW + botW) / 2) / Math.max((leftH + rightH) / 2, 1);
+  if (aspect < 0.45 || aspect > 1.2) return false;
+  if (topW / Math.max(botW, 1) < 0.4 || botW / Math.max(topW, 1) < 0.4) return false;
+  if (leftH / Math.max(rightH, 1) < 0.4 || rightH / Math.max(leftH, 1) < 0.4) return false;
+  const area = Math.abs((tr[0] - tl[0]) * (br[1] - tl[1]) - (tr[1] - tl[1]) * (br[0] - tl[0]));
+  return area >= 15000;
+}
+
+/**
+ * Detector robusto por COMPONENTES CONECTADOS: busca los 4 cuadrados negros de
+ * esquina por forma (blob solido, cuadrado, tamaño plausible) en vez de "lo mas
+ * oscuro por zona". Robusto a que la hoja no llene el cuadro, a fondos y a
+ * perspectiva moderada. Reemplaza el detector que fallaba en fotos reales.
+ */
+function findCornersByBlobs(gray: Uint8Array, w: number, h: number): [number, number][] | null {
+  const otsu = otsuThreshold(gray);
+  const thr = Math.min(otsu, 150); // dark = gray < thr
+  const minDim = Math.min(w, h);
+  const minArea = (minDim * 0.018) * (minDim * 0.018);
+  const maxArea = (minDim * 0.10) * (minDim * 0.10);
+
+  const visited = new Uint8Array(w * h);
+  const stack: number[] = [];
+  const cands: { x: number; y: number; area: number }[] = [];
+
+  for (let start = 0; start < w * h; start++) {
+    if (visited[start] || gray[start] >= thr) continue;
+    let minx = w, miny = h, maxx = 0, maxy = 0, count = 0, sx = 0, sy = 0;
+    stack.length = 0; stack.push(start); visited[start] = 1;
+    while (stack.length) {
+      const p = stack.pop()!;
+      const px = p % w, py = (p / w) | 0;
+      count++; sx += px; sy += py;
+      if (px < minx) minx = px; if (px > maxx) maxx = px;
+      if (py < miny) miny = py; if (py > maxy) maxy = py;
+      if (px > 0 && !visited[p - 1] && gray[p - 1] < thr) { visited[p - 1] = 1; stack.push(p - 1); }
+      if (px < w - 1 && !visited[p + 1] && gray[p + 1] < thr) { visited[p + 1] = 1; stack.push(p + 1); }
+      if (py > 0 && !visited[p - w] && gray[p - w] < thr) { visited[p - w] = 1; stack.push(p - w); }
+      if (py < h - 1 && !visited[p + w] && gray[p + w] < thr) { visited[p + w] = 1; stack.push(p + w); }
+    }
+    if (count < minArea || count > maxArea) continue;
+    const bw = maxx - minx + 1, bh = maxy - miny + 1;
+    const aspect = bw / Math.max(bh, 1);
+    if (aspect < 0.5 || aspect > 2.0) continue;     // cuadrado-ish
+    if (count / (bw * bh) < 0.78) continue;          // solido (excluye circulos ~0.78)
+    cands.push({ x: sx / count, y: sy / count, area: count });
+  }
+
+  if (cands.length < 4) return null;
+
+  // Asignacion por puntos extremos: las 4 esquinas del conjunto de cuadrados.
+  let tl = cands[0], tr = cands[0], br = cands[0], bl = cands[0];
+  for (const c of cands) {
+    if (c.x + c.y < tl.x + tl.y) tl = c;
+    if (c.x + c.y > br.x + br.y) br = c;
+    if (c.x - c.y > tr.x - tr.y) tr = c;
+    if (c.x - c.y < bl.x - bl.y) bl = c;
+  }
+  const corners: [number, number][] = [
+    [Math.round(tl.x), Math.round(tl.y)],
+    [Math.round(tr.x), Math.round(tr.y)],
+    [Math.round(br.x), Math.round(br.y)],
+    [Math.round(bl.x), Math.round(bl.y)],
+  ];
+  // Los 4 extremos deben ser distintos y formar un cuadrilatero valido.
+  const uniq = new Set(corners.map(c => `${c[0]},${c[1]}`));
+  if (uniq.size < 4 || !validateQuad(corners)) return null;
+  return corners;
+}
+
+// ─── 1. Corner detection: blobs conectados (robusto) → grid-blob → centro de masa ──
 export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CONFIG): [number, number][] | null {
   const w = imageData.width, h = imageData.height;
   const gray = new Uint8Array(w * h);
@@ -92,6 +189,11 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
     const j = i * 4;
     gray[i] = Math.round(imageData.data[j] * 0.299 + imageData.data[j + 1] * 0.587 + imageData.data[j + 2] * 0.114);
   }
+
+  // Detector robusto por forma (componentes conectados). Si encuentra los 4
+  // cuadrados, lo preferimos al metodo por densidad de zona.
+  const blobCorners = findCornersByBlobs(gray, w, h);
+  if (blobCorners) return blobCorners;
 
   // Build integral image for fast region sums
   const integral = new Uint32Array(w * h);
