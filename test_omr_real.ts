@@ -66,6 +66,25 @@ async function main() {
   const miss2 = report2.results.filter((r, i) => r.answer !== EXPECTED_ANSWERS[i]);
   if (miss2.length > 0) fail(`timing parcial: ${miss2.length} respuestas erradas con 4 marcas ocluidas`);
   console.log(`Partial-timing guard passed: usedTiming=${report2.diag?.usedTiming} con 4 marcas ocluidas (${report2.diag?.timingRows} detectadas)`);
+
+  // ─── Guardia de warp NO-identidad: incrustar la hoja en un lienzo mayor con
+  // offset (simula que no llena el cuadro, como una foto real). Atrapa errores de
+  // DIRECCION de la homografia que el fixture canonico no ve. ───
+  const padX = 220, padY = 320;
+  const big = createCanvas(img.width + padX * 2, img.height + padY * 2);
+  const bctx = big.getContext("2d");
+  bctx.fillStyle = "#ffffff";
+  bctx.fillRect(0, 0, big.width, big.height);
+  bctx.drawImage(img, padX, padY);
+  const bigFrame = bctx.getImageData(0, 0, big.width, big.height) as unknown as globalThis.ImageData;
+
+  const c2 = findCorners(bigFrame) ?? fail("offset: esquinas no detectadas");
+  const w2 = warpImageData(bigFrame, c2);
+  const r2 = gradeBubbles(w2, undefined, c2);
+  if (!r2.valid) fail(`offset warp invalido: ${r2.reason}`);
+  const offMiss = r2.results.filter((x, i) => x.answer !== EXPECTED_ANSWERS[i]);
+  if (offMiss.length > 0) fail(`offset warp: ${offMiss.length} respuestas erradas`);
+  console.log(`Offset-warp guard passed: hoja no-canonica recuperada (esquinas TL=${c2[0]})`);
 }
 
 main().catch((error) => {

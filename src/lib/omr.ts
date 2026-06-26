@@ -327,11 +327,15 @@ export function warpImageData(
     L.CORNER_CENTERS[3][0], L.CORNER_CENTERS[3][1],
   ];
   const src = [...tl, ...tr, ...br, ...bl];
+  // Homografia DESTINO→ORIGEN (mapeo inverso): para cada pixel de salida (dx,dy)
+  // se obtiene el pixel fuente. Antes se construia ORIGEN→DESTINO y se aplicaba a
+  // coordenadas de destino → warp incorrecto en fotos reales (solo se salvaba el
+  // fixture porque ya estaba en posicion canonica → homografia ≈ identidad).
   const A: number[][] = [], b: number[] = [];
   for (let i = 0; i < 4; i++) {
-    A.push([src[i * 2], src[i * 2 + 1], 1, 0, 0, 0, -dst[i * 2] * src[i * 2], -dst[i * 2] * src[i * 2 + 1]]);
-    A.push([0, 0, 0, src[i * 2], src[i * 2 + 1], 1, -dst[i * 2 + 1] * src[i * 2], -dst[i * 2 + 1] * src[i * 2 + 1]]);
-    b.push(dst[i * 2]); b.push(dst[i * 2 + 1]);
+    A.push([dst[i * 2], dst[i * 2 + 1], 1, 0, 0, 0, -src[i * 2] * dst[i * 2], -src[i * 2] * dst[i * 2 + 1]]);
+    A.push([0, 0, 0, dst[i * 2], dst[i * 2 + 1], 1, -src[i * 2 + 1] * dst[i * 2], -src[i * 2 + 1] * dst[i * 2 + 1]]);
+    b.push(src[i * 2]); b.push(src[i * 2 + 1]);
   }
   const h = solve8x8(A, b);
   if (!h) return sourceData;
