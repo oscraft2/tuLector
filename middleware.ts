@@ -5,7 +5,18 @@ const adminPrefix = "/admin";
 const allowedAdminRoles = new Set(["platform_admin", "support", "finance", "marketing"]);
 
 export async function middleware(request: NextRequest) {
-  if (!request.nextUrl.pathname.startsWith(adminPrefix)) return NextResponse.next();
+  const { pathname, searchParams, origin } = request.nextUrl;
+
+  // Supabase puede volver al Site URL raiz si el redirectTo no esta allowlisted.
+  // Si vuelve a /?code=..., lo normalizamos al callback real para crear cookies SSR.
+  if (pathname === "/" && searchParams.has("code")) {
+    const callbackUrl = new URL("/auth/callback", origin);
+    callbackUrl.searchParams.set("code", searchParams.get("code") ?? "");
+    callbackUrl.searchParams.set("next", searchParams.get("next") ?? "/dashboard");
+    return NextResponse.redirect(callbackUrl);
+  }
+
+  if (!pathname.startsWith(adminPrefix)) return NextResponse.next();
 
   const response = NextResponse.next({ request });
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -39,5 +50,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: ["/", "/admin/:path*"],
 };
