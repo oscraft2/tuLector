@@ -400,7 +400,8 @@ const CALIB = {
   bubbleRadius: 10,   // radio de muestreo del ROI por burbuja
   relThresh: 0.55,    // umbral relativo al mejor score de la pregunta
   absThresh: 0.15,    // score minimo absoluto para considerar una opcion marcada
-  minPick: 0.12,      // score minimo para elegir el maximo cuando nada supera el umbral
+  minPick: 0.05,      // score minimo para elegir el maximo (calibrado con fotos reales)
+  dominance: 0.02,    // el ganador debe superar al 2do por este margen (anti falso positivo)
   gridSearchDx: 6,    // rango +-px de busqueda horizontal de la grilla
   gridSearchDy: 8,    // rango +-px de busqueda vertical de la grilla
   gridSearchStep: 2,  // paso de la busqueda de offset
@@ -698,9 +699,11 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
     if (winnerGlare) glareWarnings++;
 
     let answer = "-";
+    const sorted = [...scores].sort((a, b) => b - a);
+    const dominates = sorted[0] - sorted[1] > CALIB.dominance;
     if (winnerGlare) {
       answer = "?"; // marca probable bajo reflejo
-    } else if (marked.length === 0 && maxS > CALIB.minPick) {
+    } else if (marked.length === 0 && maxS > CALIB.minPick && dominates) {
       answer = labels[maxIdx];
     } else if (marked.length > 0 && marked.length <= 3) {
       // Soporte combinado: hasta 3 letras
