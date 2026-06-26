@@ -347,16 +347,17 @@ function checkCurve(corners: [number, number][]): boolean {
   const leftLen = Math.hypot(bl[0] - tl[0], bl[1] - tl[1]);
   const rightLen = Math.hypot(br[0] - tr[0], br[1] - tr[1]);
 
-  // Papel curvado: lados opuestos muy diferentes (>40% diferencia)
+  // Umbrales aflojados: una foto a mano tiene PERSPECTIVA (lados/diagonales
+  // distintos) que la homografia SI corrige; solo rechazamos deformacion extrema
+  // (papel realmente doblado), no el angulo normal de captura. (Fase 0.4)
   const hRatio = Math.max(topLen, botLen) / Math.max(Math.min(topLen, botLen), 1);
   const vRatio = Math.max(leftLen, rightLen) / Math.max(Math.min(leftLen, rightLen), 1);
-  if (hRatio > 1.4 || vRatio > 1.4) return true;
+  if (hRatio > 1.9 || vRatio > 1.9) return true;
 
-  // Verificar que las diagonales son similares (papel plano = diagonales iguales)
   const diag1 = Math.hypot(br[0] - tl[0], br[1] - tl[1]);
   const diag2 = Math.hypot(tr[0] - bl[0], tr[1] - bl[1]);
   const dRatio = Math.max(diag1, diag2) / Math.max(Math.min(diag1, diag2), 1);
-  if (dRatio > 1.3) return true;
+  if (dRatio > 1.6) return true;
 
   return false;
 }
@@ -406,20 +407,63 @@ function readTimingRows(gray: Float32Array, w: number, h: number): number[] {
   return centers;
 }
 
+/**
+ * Ajusta los centros de temporizacion detectados a las NUM_QUESTIONS filas por
+ * regresion lineal. Tolera marcas faltantes (sombra/glare/baja resolucion):
+ * interpola las filas no detectadas en vez de descartar el registro. (Fase 0.3)
+ * Devuelve los Y de las N filas, o null si el ajuste no es fiable.
+ *
+ * validateFormat y gradeBubbles usan ESTA misma funcion → el criterio de
+ * "formato valido" y "registro por temporizacion" siempre concuerdan (antes
+ * validaba con >=80% pero solo registraba con ==100%, auditoria A2).
+ */
+function rowsFromTiming(centers: number[], numQuestions: number): number[] | null {
+  const minPts = Math.max(6, Math.floor(numQuestions * 0.6));
+  if (centers.length < minPts) return null;
+
+  // Cada centro → indice de fila teorico mas cercano (dedup por indice).
+  const byIndex = new Map<number, number>();
+  for (const c of centers) {
+    const i = Math.round((c - L.Q_TOP - 14) / L.ROW_H);
+    if (i < 0 || i >= numQuestions) continue;
+    const expected = L.rowCY(i);
+    const prev = byIndex.get(i);
+    if (prev === undefined || Math.abs(c - expected) < Math.abs(prev - expected)) byIndex.set(i, c);
+  }
+  const pts = [...byIndex.entries()];
+  if (pts.length < minPts) return null;
+
+  // Regresion lineal c = a*i + b.
+  const n = pts.length;
+  let si = 0, sc = 0, sii = 0, sic = 0;
+  for (const [i, c] of pts) { si += i; sc += c; sii += i * i; sic += i * c; }
+  const denom = n * sii - si * si;
+  if (Math.abs(denom) < 1e-6) return null;
+  const a = (n * sic - si * sc) / denom;
+  const b = (sc - a * si) / n;
+
+  // Sanidad: la pendiente debe parecerse al paso de fila real.
+  if (a < L.ROW_H * 0.7 || a > L.ROW_H * 1.3) return null;
+
+  const rowY: number[] = [];
+  for (let q = 0; q < numQuestions; q++) rowY.push(Math.round(a * q + b));
+  return rowY;
+}
+
 // Scanner Format Validation (return code 30): verifica que la hoja sea la correcta
 function validateFormat(gray: Float32Array, w: number, h: number, config: OMRConfig): { valid: boolean; reason?: string } {
   // 1. Las 4 anclas de esquina deben ser solidas (blob denso de negro).
-  //    Caja de 25px → ~2500px; una ancla solida de 40px cubre de sobra.
   for (const [cx, cy] of L.CORNER_CENTERS) {
     if (darkInBox(gray, w, h, cx, cy, 25) < 800) {
       return { valid: false, reason: `Falta ancla de esquina en (${cx},${cy})` };
     }
   }
 
-  // 2. La pista de temporizacion debe tener aproximadamente NUM_QUESTIONS marcas.
+  // 2. La pista de temporizacion debe poder ajustarse a las NUM_QUESTIONS filas
+  //    (mismo criterio que el registro en gradeBubbles).
   const rows = readTimingRows(gray, w, h);
-  if (rows.length < Math.floor(L.NUM_QUESTIONS * 0.8)) {
-    return { valid: false, reason: `Pista de temporizacion incompleta (${rows.length}/${L.NUM_QUESTIONS})` };
+  if (!rowsFromTiming(rows, L.NUM_QUESTIONS)) {
+    return { valid: false, reason: `Pista de temporizacion insuficiente (${rows.length}/${L.NUM_QUESTIONS})` };
   }
 
   return { valid: true };
@@ -503,17 +547,18 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
   // Registro de filas: preferimos los Y fisicos de la pista de temporizacion;
   // si no se leen las NUM_QUESTIONS marcas, caemos al offset software.
   const timingRows = readTimingRows(gray, width, height);
+  const fitted = rowsFromTiming(timingRows, numQuestions); // tolera marcas faltantes
   let rowY: number[];
   let gridDx: number;
-  if (timingRows.length === numQuestions) {
-    rowY = timingRows;
+  if (fitted) {
+    rowY = fitted;
     gridDx = findColumnOffset(gray, width, height, rowY, numOptions);
   } else {
     const off = findGridOffset(gray, width, height, config);
     gridDx = off.dx;
     rowY = Array.from({ length: numQuestions }, (_, q) => L.rowCY(q) + off.dy);
   }
-  const diag: GradeDiag = { usedTiming: timingRows.length === numQuestions, timingRows: timingRows.length, gridDx };
+  const diag: GradeDiag = { usedTiming: !!fitted, timingRows: timingRows.length, gridDx };
 
   const results: BubbleResult[] = [];
   const sameCount: Record<string, number> = {};

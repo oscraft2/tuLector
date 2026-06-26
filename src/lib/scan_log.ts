@@ -34,9 +34,14 @@ export interface ScanLogRow {
   created_at: string;
 }
 
+const MAX_IMG_CHARS = 250_000; // ~180 KB base64; descarta imagenes anomalas
+
 /** Inserta un escaneo. Devuelve true/false y loguea el error (no en silencio). */
 export async function saveScanLog(payload: ScanLogPayload): Promise<boolean> {
   try {
+    // Tope de tamaño: evita inflar el JSONB con imagenes anomalas (Fase 1.1).
+    if (payload.photo && payload.photo.length > MAX_IMG_CHARS) payload.photo = null;
+    if (payload.warp && payload.warp.length > MAX_IMG_CHARS) payload.warp = null;
     const supabase = createClient();
     const { error } = await supabase.from("scan_logs").insert({
       user_agent: typeof navigator !== "undefined" ? navigator.userAgent : "",

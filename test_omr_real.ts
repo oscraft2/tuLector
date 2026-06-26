@@ -7,6 +7,7 @@
 import { createCanvas, ImageData as CanvasImageData, loadImage } from "canvas";
 import { TEST_IMAGE_BASE64, EXPECTED_ANSWERS, EXPECTED_ID } from "./src/app/test/test_image";
 import { findCorners, gradeBubbles, readStudentId, warpImageData } from "./src/lib/omr";
+import { TIMING_X, rowCY } from "./src/lib/sheet_layout";
 
 (globalThis as unknown as { ImageData: typeof CanvasImageData }).ImageData = CanvasImageData;
 
@@ -42,6 +43,29 @@ async function main() {
   }
 
   console.log(`OMR production smoke test passed: ${report.results.length}/20 answers, ${idRows.length}/3 ID rows`);
+
+  // ─── Guardia de timing parcial (Fase 0.3): ocluir 4 marcas y verificar que
+  // el registro interpola por regresion y sigue calificando 20/20. ───
+  const warped2 = warpImageData(frame, corners);
+  const d = warped2.data;
+  for (const q of [3, 7, 11, 15]) {
+    const cy = rowCY(q);
+    for (let dy = -14; dy <= 14; dy++) {
+      for (let dx = -20; dx <= 20; dx++) {
+        const px = TIMING_X + dx, py = cy + dy;
+        if (px >= 0 && px < warped2.width && py >= 0 && py < warped2.height) {
+          const i = (py * warped2.width + px) * 4;
+          d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = 255;
+        }
+      }
+    }
+  }
+  const report2 = gradeBubbles(warped2);
+  if (!report2.valid) fail(`timing parcial: reporte invalido (${report2.reason})`);
+  if (!report2.diag?.usedTiming) fail("timing parcial: no uso registro por temporizacion interpolado");
+  const miss2 = report2.results.filter((r, i) => r.answer !== EXPECTED_ANSWERS[i]);
+  if (miss2.length > 0) fail(`timing parcial: ${miss2.length} respuestas erradas con 4 marcas ocluidas`);
+  console.log(`Partial-timing guard passed: usedTiming=${report2.diag?.usedTiming} con 4 marcas ocluidas (${report2.diag?.timingRows} detectadas)`);
 }
 
 main().catch((error) => {

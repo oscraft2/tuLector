@@ -2,10 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { findCorners, gradeBubbles, readStudentId, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
+import { findCorners, gradeBubbles, readStudentId, warpImageData, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
 import { createClient } from "@/lib/supabase";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
-import { warpAsync } from "@/lib/omr_worker";
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H } from "@/lib/sheet_layout";
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
 
@@ -206,10 +205,9 @@ export default function ScanPage() {
    addLog(`Corners: TL=(${corners[0][0]},${corners[0][1]}) TR=(${corners[1][0]},${corners[1][1]}) BR=(${corners[2][0]},${corners[2][1]}) BL=(${corners[3][0]},${corners[3][1]})`);
 
    const srcImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-   const warped = await warpAsync(
-    srcImageData, corners,
-    { sheetWidth: config.sheetWidth, sheetHeight: config.sheetHeight, margin: config.margin, cornerSize: config.cornerSize }
-   );
+   // Warp directo (mismo motor que el test). Antes via Web Worker duplicado que
+   // se colgaba si solve8x8 fallaba y dejaba borde negro (auditorias P1-3/P1-4).
+   const warped = warpImageData(srcImageData, corners, config);
    addLog(`Warped: ${warped.width}x${warped.height}`);
 
    // Thumbnails: foto original + warp (para diagnostico y dataset).
@@ -326,36 +324,20 @@ export default function ScanPage() {
   // Build diagnostic log
   const logs: string[] = [];
 
-  // Helper to send diagnostics to Supabase (fire-and-forget)
+  // Diagnostico ruteado por saveScanLog (sin insert directo, Fase 1.1).
   const sendDiag = () => {
-   try {
-    const s = createClient();
-    s.from("scan_logs").insert({
-     user_agent: navigator.userAgent,
-     log: {
-      type: "diagnostic",
-      timestamp: new Date().toISOString(),
-      frameW: diag.w,
-      frameH: diag.h,
-      darkRatio: Math.round(diag.darkRatio * 10000) / 100,
-      sharpScore: Math.round(diag.sharpScore * 10) / 10,
-      sharpPassed: diag.sharpPassed,
-      cornersFound: diag.cornersFound,
-      zones: diag.zones.map(z => ({
-       name: z.name,
-       bestX: z.bestX, bestY: z.bestY,
-       bestDensity: z.bestDensity,
-       bestDarkCount: z.bestDarkCount,
-       winSize: z.winSize,
-       passed: z.passed,
-      })),
-      logText: logs.join("\n"),
-     },
-    }).then(
-     () => { console.log("[DIAG] Enviado a Supabase OK"); },
-     (e: unknown) => { console.warn("[DIAG] Supabase error:", e); }
-    );
-   } catch { /* offline / no auth */ }
+   void saveScanLog({
+    v: SCAN_LOG_VERSION, type: "diagnostic", source: "camera", sheet: "v2",
+    ts: new Date().toISOString(),
+    frame: { w: diag.w, h: diag.h },
+    diag: {
+     darkRatio: Math.round(diag.darkRatio * 10000) / 100,
+     sharpScore: Math.round(diag.sharpScore * 10) / 10,
+     sharpPassed: diag.sharpPassed,
+     cornersFound: diag.cornersFound,
+    },
+    corners: diag.corners,
+   });
   };
   logs.push(`Frame: ${diag.w}x${diag.h} | Total px: ${diag.totalPixels} | Dark px: ${diag.darkPixels} (${(diag.darkRatio * 100).toFixed(1)}%)`);
   logs.push(`Sharpness: ${diag.sharpScore.toFixed(1)} (min 40) → ${diag.sharpPassed ? "OK" : "FAIL"}`);
