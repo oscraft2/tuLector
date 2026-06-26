@@ -453,9 +453,12 @@ function rowsFromTiming(centers: number[], numQuestions: number): number[] | nul
 // Scanner Format Validation (return code 30): verifica que la hoja sea la correcta
 function validateFormat(gray: Float32Array, w: number, h: number, config: OMRConfig): { valid: boolean; reason?: string } {
   // 1. Las 4 anclas de esquina deben ser solidas (blob denso de negro).
+  //    El conteo va en la razon para diagnosticar en remoto (~0 = warp mal,
+  //    ~600 = cerca, solo umbral).
   for (const [cx, cy] of L.CORNER_CENTERS) {
-    if (darkInBox(gray, w, h, cx, cy, 25) < 800) {
-      return { valid: false, reason: `Falta ancla de esquina en (${cx},${cy})` };
+    const d = darkInBox(gray, w, h, cx, cy, 25);
+    if (d < 800) {
+      return { valid: false, reason: `Falta ancla en (${cx},${cy}) [oscuro=${d}/800]` };
     }
   }
 
