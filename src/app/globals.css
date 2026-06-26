@@ -1,11 +1,11 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-background: #09090b;
-  --color-foreground: #fafafa;
+  --color-background: #fafafa;
+  --color-foreground: #0b1220;
+  --font-sans: "Source Sans 3", "Noto Sans", "Segoe UI", Arial, sans-serif;
 }
 
 body {
-  background: #09090b;
-  color: #fafafa;
+  font-family: var(--font-sans);
 }

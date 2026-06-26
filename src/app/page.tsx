@@ -19,13 +19,13 @@ export default async function Home({ searchParams }: HomeProps) {
   ];
 
   return (
-    <main className="min-h-screen bg-white text-[#111827]" style={{ fontFamily: '"Source Sans 3", "Noto Sans", "Segoe UI", Arial, sans-serif' }}>
+    <main className="min-h-screen bg-white text-[#111827]">
       <PublicHeader locale={locale} />
 
       <section className="mx-auto grid min-h-[calc(100vh-65px)] max-w-7xl items-center gap-10 px-5 py-10 md:px-8 lg:grid-cols-[0.82fr_1.18fr]">
         <div className="max-w-xl">
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#6b7280]">{copy.eyebrow}</p>
-          <h1 className="mt-5 text-5xl font-semibold tracking-tight text-[#111827] md:text-7xl">
+          <h1 className="mt-5 text-5xl font-semibold leading-tight tracking-tight text-[#111827] md:text-7xl">
             {copy.title}
           </h1>
           <p className="mt-6 text-xl leading-8 text-[#4b5563]">
@@ -38,15 +38,15 @@ export default async function Home({ searchParams }: HomeProps) {
                 key={action.href}
                 href={localizedHref(action.href, locale)}
                 className={action.primary
-                  ? "rounded-md bg-[#111827] px-5 py-3 text-center text-sm font-semibold text-white hover:bg-[#1f2937]"
-                  : "rounded-md border border-[#d8dde3] bg-white px-5 py-3 text-center text-sm font-semibold text-[#111827] hover:bg-[#f6f7f9]"}
+                  ? "rounded-lg bg-[#111827] px-6 py-3.5 text-center text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#07305f] hover:shadow-md active:scale-[0.98]"
+                  : "rounded-lg border border-[#d8dde3] bg-white px-6 py-3.5 text-center text-sm font-semibold text-[#111827] transition-all hover:border-[#bcc3cd] hover:bg-[#f6f7f9] active:scale-[0.98]"}
               >
                 {action.label}
               </Link>
             ))}
           </div>
 
-          <div className="mt-10 grid max-w-lg grid-cols-3 gap-3 border-t border-[#e6e8eb] pt-6">
+          <div className="mt-10 grid max-w-lg grid-cols-3 gap-4 border-t border-[#f0f0f3] pt-6">
             {copy.stats.map((stat) => (
               <SmallStat key={stat.label} value={stat.value} label={stat.label} />
             ))}
@@ -54,9 +54,9 @@ export default async function Home({ searchParams }: HomeProps) {
         </div>
 
         <div className="relative">
-          <div className="overflow-hidden rounded-lg border border-[#e6e8eb] bg-[#f6f7f9]">
+          <div className="overflow-hidden rounded-xl border border-[#e6e8eb] bg-[#f6f7f9] shadow-lg shadow-black/5">
             <Image
-              src="/tulector-hero.png"
+              src="/tulector-hero.webp"
               alt="Hoja de respuestas escaneada con telefono y analisis educativo"
               width={1400}
               height={980}
@@ -64,7 +64,7 @@ export default async function Home({ searchParams }: HomeProps) {
               className="h-auto w-full object-cover"
             />
           </div>
-          <div className="absolute bottom-5 left-5 right-5 rounded-md border border-white/70 bg-white/92 p-4 shadow-sm backdrop-blur">
+          <div className="absolute bottom-5 left-5 right-5 rounded-lg border border-white/60 bg-white/90 p-4 shadow-lg shadow-black/5 backdrop-blur-sm">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm font-semibold text-[#111827]">{copy.exam.name}</p>
@@ -80,10 +80,11 @@ export default async function Home({ searchParams }: HomeProps) {
         </div>
       </section>
 
-      <section className="border-y border-[#e6e8eb] bg-[#f8f9fb] px-5 py-10 md:px-8">
+      <section className="border-y border-[#e6e8eb] bg-[#f8f9fb] px-5 py-12 md:px-8">
         <div className="mx-auto grid max-w-7xl gap-4 md:grid-cols-4">
-          {copy.workflow.map((item) => (
-            <div key={item} className="rounded-md border border-[#e6e8eb] bg-white px-5 py-5 text-sm font-semibold">
+          {copy.workflow.map((item, i) => (
+            <div key={item} className="group flex items-center gap-4 rounded-lg border border-[#e6e8eb] bg-white px-5 py-5 text-sm font-semibold text-[#374151] shadow-sm transition-all hover:border-[#bcc3cd] hover:shadow-md">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#111827] text-xs font-bold text-white">{i + 1}</span>
               {item}
             </div>
           ))}

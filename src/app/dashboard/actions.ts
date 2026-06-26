@@ -5,6 +5,16 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { validateRut, normalizeRut } from "@/lib/rut";
+import {
+  QUIZ_ALLOWED_OPTIONS,
+  QUIZ_MAX_QUESTIONS,
+  QUIZ_MIN_QUESTIONS,
+  normalizeAnswerKeyForOptions,
+  normalizeQuestionCount,
+  normalizeQuizOptions,
+  optionLabelsFor,
+} from "@/lib/quiz_constraints";
+import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
 
 export async function updateLocale(formData: FormData) {
   const { supabase, user } = await getDashboardContext();
@@ -17,17 +27,27 @@ export async function updateLocale(formData: FormData) {
 export async function createQuiz(formData: FormData) {
   const { supabase, user, school } = await getDashboardContext();
   const title = String(formData.get("title") ?? "").trim();
-  const answerKey = String(formData.get("answer_key_clean") ?? formData.get("answer_key") ?? "").toUpperCase().replace(/[^A-E]/g, "");
-  const numQuestions = Number(formData.get("num_questions") ?? 20);
-  if (!title || answerKey.length !== numQuestions) throw new Error("Clave invalida para el numero de preguntas.");
+  const requestedQuestions = Number(formData.get("num_questions") ?? 20);
+  const requestedOptions = Number(formData.get("options_per_question") ?? 5);
+  if (!Number.isInteger(requestedQuestions) || requestedQuestions < QUIZ_MIN_QUESTIONS || requestedQuestions > QUIZ_MAX_QUESTIONS) {
+    throw new Error("El lector movil soporta entre 1 y 40 preguntas.");
+  }
+  if (!QUIZ_ALLOWED_OPTIONS.includes(requestedOptions as (typeof QUIZ_ALLOWED_OPTIONS)[number])) {
+    throw new Error("El lector movil soporta 3, 4 o 5 opciones.");
+  }
+  const numQuestions = normalizeQuestionCount(formData.get("num_questions"));
+  const numOptions = normalizeQuizOptions(formData.get("options_per_question"));
+  const answerKey = normalizeAnswerKeyForOptions(formData.get("answer_key_clean") ?? formData.get("answer_key"), numOptions);
+  if (!title) throw new Error("Ingresa un titulo para el ensayo.");
+  if (answerKey.length !== numQuestions) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
   await supabase.from("quizzes").insert({
     school_id: school.id,
     user_id: user.id,
     created_by: user.id,
     title,
     num_questions: numQuestions,
-    options_per_question: Number(formData.get("options_per_question") ?? 5),
-    option_labels: String(formData.get("option_labels") ?? "A,B,C,D,E"),
+    options_per_question: numOptions,
+    option_labels: optionLabelsFor(numOptions).split("").join(","),
     answer_key: answerKey,
     subject: String(formData.get("subject") ?? "") || null,
     grade: String(formData.get("grade") ?? "") || null,
@@ -110,18 +130,16 @@ export async function revokeMember(formData: FormData) {
 export async function updateSchoolSettings(formData: FormData) {
   const { supabase, school, isAdmin } = await getDashboardContext();
   if (!isAdmin) throw new Error("Solo admin puede editar configuracion del colegio.");
-  const country = String(formData.get("country_code") ?? "CL");
-  const defaults = country === "BR"
-    ? { grading_scale_min: 0, grading_scale_max: 10, passing_grade: 6, exigencia: 0.6, ministry_format: "br_generic" }
-    : { grading_scale_min: 1, grading_scale_max: 7, passing_grade: 4, exigencia: 0.6, ministry_format: "cl_mineduc" };
+  const country = resolveCountryProfile(String(formData.get("country_code") ?? "CL"));
+  const defaults = countryDefaults(country.code);
   await supabase.from("schools").update({
     name: String(formData.get("name") ?? school.name),
     subdomain: String(formData.get("subdomain") ?? "") || null,
-    country_code: country,
+    country_code: country.code,
     region: String(formData.get("region") ?? "") || null,
     city: String(formData.get("city") ?? "") || null,
     branding_primary_color: String(formData.get("branding_primary_color") ?? "#111827"),
-    timezone: String(formData.get("timezone") ?? "America/Santiago"),
+    timezone: String(formData.get("timezone") ?? country.timezone),
     ...defaults,
     updated_at: new Date().toISOString(),
   }).eq("id", school.id);

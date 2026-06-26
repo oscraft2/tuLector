@@ -14,7 +14,19 @@ export default function LogsPage() {
     setRows(await fetchScanLogs(200));
     setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    fetchScanLogs(200)
+      .then((nextRows) => {
+        if (!cancelled) setRows(nextRows);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const scans = rows.filter((r) => r.log?.type === "scan" || r.log?.type === "scan_fail");
   const ok = scans.filter((r) => r.log?.result?.valid).length;

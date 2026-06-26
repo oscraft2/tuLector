@@ -1,0 +1,42 @@
+# Vercel deploys only the Next.js web app from this repository.
+# Keep Flutter/Android, local OMR fixtures, docs and generated artifacts out of
+# the upload bundle. The mobile app and native reader are built separately.
+
+# VCS / package manager / local state
+.git/
+.vercel/
+.next/
+node_modules/
+.env*
+*.log
+*.tsbuildinfo
+
+# Flutter mobile app and generated APK/build outputs
+mobile/
+*.apk
+*.aab
+
+# Local tests, fixtures and OMR tooling not needed by the web runtime
+tests/
+src/app/test/
+test_omr.ts
+test_omr_real.ts
+scripts/
+debug/
+answer_sheet.png
+test_*.jpg
+
+# Documentation and reference data
+docs/
+tulector_tech.json
+training_plan.json
+omr_reference.json
+CLAUDE.md
+AGENTS.md
+
+# Supabase local development files. Production uses Vercel env vars and the
+# remote database, not local migrations/config.
+supabase/
+
+# Heavy source asset replaced by public/tulector-hero.webp
+public/tulector-hero.png

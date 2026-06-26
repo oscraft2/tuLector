@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
 import type { DashboardLocale } from "@/locales";
+import { resolveCountryProfile } from "@/lib/country_profiles";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -92,6 +93,7 @@ export async function getDashboardContext() {
     user,
     member: membership as DashboardMember,
     school: school as DashboardSchool,
+    countryProfile: resolveCountryProfile((school as DashboardSchool).country_code),
     locale: ((profile?.locale as DashboardLocale | undefined) ?? "es-CL"),
     isAdmin: membership.role === "admin",
   };

@@ -5,13 +5,14 @@ import { DashboardShell } from "@/components/dashboard/DashboardNav";
 import { AnswerKeyEditor } from "@/components/dashboard/AnswerKeyEditor";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { createQuiz, archiveQuiz, duplicateQuiz, startScanForQuiz } from "@/app/dashboard/actions";
+import { QUIZ_MAX_QUESTIONS } from "@/lib/quiz_constraints";
 
 export const dynamic = "force-dynamic";
 
 export default async function QuizzesPage() {
   const { supabase, locale } = await getDashboardContext();
   const t = getDashboardMessages(locale);
-  const { data: quizzes } = await supabase.from("quizzes").select("id,title,subject,grade,num_questions,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false });
+  const { data: quizzes } = await supabase.from("quizzes").select("id,title,subject,grade,num_questions,options_per_question,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false });
 
   return (
     <DashboardShell locale={locale} title={t.quizzes} description="Crea ensayos, define claves, duplica instrumentos y genera hojas v2 imprimibles para leerlas luego desde la app movil.">
@@ -24,25 +25,21 @@ export default async function QuizzesPage() {
               <label className="text-sm font-semibold">Asignatura<input name="subject" className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal" /></label>
               <label className="text-sm font-semibold">Curso<input name="grade" className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal" placeholder="IV Medio" /></label>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="text-sm font-semibold">Preguntas<input name="num_questions" type="number" min="1" max="100" defaultValue="20" className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal" /></label>
-              <label className="text-sm font-semibold">Opciones<input name="options_per_question" type="number" min="2" max="8" defaultValue="5" className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal" /></label>
-            </div>
-            <input type="hidden" name="option_labels" value="A,B,C,D,E" />
             <AnswerKeyEditor questions={20} />
+            <p className="text-xs text-[#5b6472]">Formatos compatibles con el lector movil: hasta {QUIZ_MAX_QUESTIONS} preguntas y 3, 4 o 5 opciones.</p>
             <button className="rounded-md bg-[#07305f] px-4 py-2 text-sm font-semibold text-white">Crear ensayo</button>
           </div>
         </form>
 
         <DataTable
-          columns={["Ensayo", "Asignatura", "Preguntas", "Creado", "Acciones"]}
+          columns={["Ensayo", "Asignatura", "Formato", "Creado", "Acciones"]}
           rows={quizzes ?? []}
           empty="Todavia no hay ensayos. Crea uno para generar su hoja imprimible."
           renderRow={(quiz) => (
             <tr key={quiz.id} className="border-b border-[#eef0f3] last:border-0">
               <td className="px-5 py-4 font-semibold"><Link href={`/dashboard/quizzes/${quiz.id}`} className="hover:underline">{quiz.title}</Link></td>
               <td className="px-5 py-4 text-[#5b6472]">{quiz.subject ?? "-"}</td>
-              <td className="px-5 py-4 text-[#5b6472]">{quiz.num_questions}</td>
+              <td className="px-5 py-4 text-[#5b6472]">{quiz.num_questions}x{quiz.options_per_question ?? 5}</td>
               <td className="px-5 py-4 text-[#5b6472]">{formatDate(quiz.created_at, locale)}</td>
               <td className="px-5 py-4">
                 <div className="flex gap-2">

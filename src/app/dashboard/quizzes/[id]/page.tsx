@@ -24,8 +24,9 @@ export default async function QuizDetailPage({ params }: PageProps) {
   return (
     <DashboardShell locale={locale} title={quiz.title} description="Detalle del ensayo, clave, lecturas sincronizadas y analisis por item.">
       <div className="space-y-6">
-        <section className="grid gap-4 md:grid-cols-4">
+        <section className="grid gap-4 md:grid-cols-5">
           <Info label="Preguntas" value={quiz.num_questions} />
+          <Info label="Opciones" value={quiz.options_per_question ?? 5} />
           <Info label="Asignatura" value={quiz.subject ?? "-"} />
           <Info label="Curso" value={quiz.grade ?? "-"} />
           <Info label="Promedio" value={`${avg}%`} />

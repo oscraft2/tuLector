@@ -10,7 +10,7 @@ import { LanguageSwitcher } from "@/components/dashboard/LanguageSwitcher";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const { supabase, school, locale, user } = await getDashboardContext();
+  const { supabase, school, countryProfile, locale, user } = await getDashboardContext();
   const t = getDashboardMessages(locale);
   const [{ count: quizzesCount }, { count: studentsCount }, { data: papers }, { data: quizzes }] = await Promise.all([
     supabase.from("quizzes").select("id", { count: "exact", head: true }).is("archived_at", null),
@@ -29,10 +29,26 @@ export default async function DashboardPage() {
         <div className="flex flex-col gap-4 rounded-md border border-[#e6e8eb] bg-white p-5 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm font-semibold text-[#111827]">{school.name}</p>
-            <p className="mt-1 text-sm text-[#4b5563]">Plan {school.plan} · {school.country_code ?? "CL"}</p>
+            <p className="mt-1 text-sm text-[#4b5563]">Plan {school.plan} · {countryProfile.profileName}</p>
           </div>
           <LanguageSwitcher locale={locale} />
         </div>
+
+        <section className="rounded-md border border-[#d8dde3] bg-white p-5">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-2xl">
+              <p className="text-sm font-semibold text-[#07305f]">{countryProfile.flag} {countryProfile.profileName} activo</p>
+              <h2 className="mt-2 text-xl font-semibold">Estandarizacion del lector</h2>
+              <p className="mt-2 text-sm leading-6 text-[#5b6472]">{countryProfile.dashboardSummary}</p>
+            </div>
+            <div className="grid gap-2 text-sm sm:grid-cols-2 lg:min-w-[420px]">
+              <ProfileFact label="Identificador" value={`${countryProfile.studentIdLabel} (${countryProfile.studentIdExample})`} />
+              <ProfileFact label="Notas" value={countryProfile.grading.display} />
+              <ProfileFact label="Evaluaciones" value={countryProfile.evaluationSystems.join(" / ")} />
+              <ProfileFact label="Formato" value={countryProfile.ministryFormat} />
+            </div>
+          </div>
+        </section>
 
         <KPIGrid>
           <KPI label="Ensayos activos" value={formatNumber(quizzesCount ?? 0, locale)} detail="sin archivar" />
@@ -77,6 +93,15 @@ export default async function DashboardPage() {
         </section>
       </div>
     </DashboardShell>
+  );
+}
+
+function ProfileFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-[#e6e8eb] bg-[#f8fafc] px-3 py-2">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7280]">{label}</p>
+      <p className="mt-1 font-semibold text-[#111827]">{value}</p>
+    </div>
   );
 }
 

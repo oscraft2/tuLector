@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase_server";
+import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
 
 export async function completeOnboarding(formData: FormData) {
   const supabase = await createSupabaseServerClient();
@@ -10,15 +11,17 @@ export async function completeOnboarding(formData: FormData) {
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Nombre de institucion requerido.");
-  const country = String(formData.get("country_code") ?? "CL");
-  const defaults = country === "BR"
-    ? { grading_scale_min: 0, grading_scale_max: 10, passing_grade: 6, exigencia: 0.6, ministry_format: "br_generic" }
-    : { grading_scale_min: 1, grading_scale_max: 7, passing_grade: 4, exigencia: 0.6, ministry_format: "cl_mineduc" };
+  const country = resolveCountryProfile(String(formData.get("country_code") ?? "CL"));
+  const defaults = countryDefaults(country.code);
+  const rbd = String(formData.get("rbd") ?? "").trim() || null;
+  const institucionTipo = String(formData.get("institucion_tipo") ?? "").trim() || null;
 
   const { data: school, error } = await supabase.from("schools").insert({
     name,
+    rbd,
+    institucion_tipo: institucionTipo,
     subdomain: String(formData.get("subdomain") ?? "") || null,
-    country_code: country,
+    country_code: country.code,
     region: String(formData.get("region") ?? "") || null,
     city: String(formData.get("city") ?? "") || null,
     plan: "starter",
@@ -29,6 +32,6 @@ export async function completeOnboarding(formData: FormData) {
   if (error) throw new Error(error.message);
 
   await supabase.from("school_members").insert({ school_id: school.id, user_id: user.id, role: "admin" });
-  await supabase.from("profiles").upsert({ user_id: user.id, locale: country === "BR" ? "pt-BR" : "es-CL" });
+  await supabase.from("profiles").upsert({ user_id: user.id, locale: country.locale });
   redirect("/dashboard/settings");
 }
