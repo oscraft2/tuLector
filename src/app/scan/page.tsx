@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { findCorners, gradeBubbles, readRut, warpImageData, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
-import { createClient } from "@/lib/supabase";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H } from "@/lib/sheet_layout";
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
@@ -145,28 +144,24 @@ export default function ScanPage() {
  const [capturing, setCapturing] = useState(false);
  const [answerKey, setAnswerKey] = useState<string[]>(DEFAULT_ANSWER_KEY);
 
- // Cargar la clave de respuestas real desde la URL o Supabase.
+ // Cargar la clave de respuestas desde una sesion autenticada de escaneo.
  useEffect(() => {
-  const params = new URLSearchParams(window.location.search);
   const parseKey = (raw: string) => raw.toUpperCase().split("").filter((c) => "ABCDE".includes(c));
-
-  const keyParam = params.get("key");
-  if (keyParam) {
-   const arr = parseKey(keyParam);
-   if (arr.length > 0) setAnswerKey(arr);
-   return;
-  }
-  const quizId = params.get("quiz");
-  if (!quizId) return;
   (async () => {
    try {
-    const supabase = createClient();
-    const { data } = await supabase.from("quizzes").select("answer_key").eq("id", quizId).single();
-    if (data?.answer_key) {
+    const res = await fetch("/api/scan/active-quiz", { credentials: "include", cache: "no-store" });
+    if (!res.ok) {
+     setError("Selecciona un ensayo desde el dashboard antes de escanear.");
+     return;
+    }
+    const data = await res.json() as { answer_key?: string; title?: string };
+    if (data.answer_key) {
      const arr = parseKey(String(data.answer_key));
      if (arr.length > 0) setAnswerKey(arr);
     }
-   } catch { /* offline: se mantiene la clave por defecto */ }
+   } catch {
+    setError("No se pudo cargar el ensayo activo. Se mantiene clave offline de prueba.");
+   }
   })();
  }, []);
  const badFrameCount = useRef(0);
@@ -956,3 +951,5 @@ function ImageIcon() {
   </svg>
  );
 }
+
+

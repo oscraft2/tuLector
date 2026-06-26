@@ -1,61 +1,83 @@
 import Link from "next/link";
+import { getDashboardContext } from "@/lib/supabase_server";
+import { getDashboardMessages, formatNumber } from "@/locales";
+import { DashboardShell } from "@/components/dashboard/DashboardNav";
+import { KPI, KPIGrid } from "@/components/dashboard/KPI";
+import { DataTable } from "@/components/dashboard/DataTable";
+import { QuotaBar } from "@/components/dashboard/QuotaBar";
+import { LanguageSwitcher } from "@/components/dashboard/LanguageSwitcher";
 
-const DEMO_QUIZZES = [
-  { id: "1", title: "Examen de Matemáticas", questions: 20, papers: 15, date: "20 May" },
-  { id: "2", title: "Prueba de Historia", questions: 15, papers: 22, date: "18 May" },
-  { id: "3", title: "Quiz de Ciencias", questions: 10, papers: 30, date: "15 May" },
-];
+export const dynamic = "force-dynamic";
 
-export default function Dashboard() {
+export default async function DashboardPage() {
+  const { supabase, school, locale, user } = await getDashboardContext();
+  const t = getDashboardMessages(locale);
+  const [{ count: quizzesCount }, { count: studentsCount }, { data: papers }, { data: quizzes }] = await Promise.all([
+    supabase.from("quizzes").select("id", { count: "exact", head: true }).is("archived_at", null),
+    supabase.from("students").select("id", { count: "exact", head: true }),
+    supabase.from("papers").select("id, score, total, status, scanned_at, quiz_id").order("scanned_at", { ascending: false }).limit(5),
+    supabase.from("quizzes").select("id, title, subject, grade, created_at").is("archived_at", null).order("created_at", { ascending: false }).limit(5),
+  ]);
+  const scansUsed = school.scans_used ?? 0;
+  const scansLimit = school.scans_limit ?? 0;
+  const validPapers = papers?.filter((p) => typeof p.score === "number" && typeof p.total === "number") ?? [];
+  const avg = validPapers.length ? Math.round(validPapers.reduce((sum, p) => sum + ((p.score ?? 0) / Math.max(1, p.total ?? 1)) * 100, 0) / validPapers.length) : 0;
+
   return (
-    <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-900">
-        <h1 className="text-base font-bold text-zinc-200">Mis Exámenes</h1>
-        <div className="flex items-center gap-3">
-          <Link href="/logs" className="text-xs font-bold text-zinc-400 hover:text-white transition">Análisis</Link>
-          <Link href="/settings" className="p-2 text-zinc-500 hover:text-white transition">
-            <SettingsIcon />
-          </Link>
-          <Link href="/scan" className="bg-green-600 hover:bg-green-500 px-3 py-1.5 rounded-lg text-xs font-bold transition">
-            NUEVO
-          </Link>
-        </div>
-      </header>
-
-      <main className="flex-1 max-w-lg mx-auto w-full px-4 py-6 space-y-3">
-        {DEMO_QUIZZES.map((q) => (
-          <Link
-            key={q.id}
-            href={`/results?id=${q.id}`}
-            className="flex items-center justify-between bg-zinc-900/50 border border-zinc-800/50 p-4 rounded-xl hover:bg-zinc-900 hover:border-zinc-700 transition group"
-          >
-            <div>
-              <h3 className="font-semibold text-sm group-hover:text-green-400 transition">{q.title}</h3>
-              <p className="text-[11px] text-zinc-500 mt-0.5">
-                {q.questions} preguntas · {q.papers} hojas
-              </p>
-            </div>
-            <div className="text-right">
-              <span className="text-[10px] text-zinc-600 font-medium uppercase tracking-tighter">{q.date}</span>
-            </div>
-          </Link>
-        ))}
-
-        {DEMO_QUIZZES.length === 0 && (
-          <div className="text-center py-20 text-zinc-600">
-            <p className="text-sm mb-4">No hay exámenes registrados</p>
-            <Link href="/scan" className="text-green-500 text-xs font-bold hover:underline">EMPEZAR A ESCANEAR</Link>
+    <DashboardShell locale={locale} title={t.dashboard} description="Consola web para administrar cursos, alumnos, ensayos, claves, resultados y exportaciones. La lectura OMR ocurre desde la app movil sincronizada." organizationName={school.name} userInitials={(user.email ?? "TL").slice(0, 2).toUpperCase()}>
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 rounded-md border border-[#e6e8eb] bg-white p-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-[#111827]">{school.name}</p>
+            <p className="mt-1 text-sm text-[#4b5563]">Plan {school.plan} · {school.country_code ?? "CL"}</p>
           </div>
-        )}
-      </main>
-    </div>
+          <LanguageSwitcher locale={locale} />
+        </div>
+
+        <KPIGrid>
+          <KPI label="Ensayos activos" value={formatNumber(quizzesCount ?? 0, locale)} detail="sin archivar" />
+          <KPI label="Alumnos" value={formatNumber(studentsCount ?? 0, locale)} detail="por colegio" />
+          <KPI label="Lecturas app" value={formatNumber(papers?.length ?? 0, locale)} detail="ultimas sincronizadas" />
+          <KPI label="Promedio reciente" value={`${avg}%`} detail="ultimas lecturas" />
+        </KPIGrid>
+
+        <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-md border border-[#e6e8eb] bg-white p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-semibold">Ensayos recientes</h2>
+              <Link href="/dashboard/quizzes" className="text-sm font-semibold text-[#4b5563] hover:text-[#111827]">Ver todos</Link>
+            </div>
+            <DataTable
+              columns={["Ensayo", "Asignatura", "Curso", "Accion"]}
+              rows={quizzes ?? []}
+              empty="Crea tu primer ensayo para generar hojas y sincronizar la app."
+              renderRow={(quiz) => (
+                <tr key={quiz.id} className="border-b border-[#eef0f3] last:border-0">
+                  <td className="px-5 py-4 font-semibold">{quiz.title}</td>
+                  <td className="px-5 py-4 text-[#4b5563]">{quiz.subject ?? "-"}</td>
+                  <td className="px-5 py-4 text-[#4b5563]">{quiz.grade ?? "-"}</td>
+                  <td className="px-5 py-4"><Link href={`/dashboard/quizzes/${quiz.id}`} className="font-semibold underline">Abrir</Link></td>
+                </tr>
+              )}
+            />
+          </div>
+
+          <div className="space-y-6">
+            <div className="rounded-md border border-[#e6e8eb] bg-white p-5"><QuotaBar used={scansUsed} limit={scansLimit} /></div>
+            <div className="rounded-md border border-[#e6e8eb] bg-white p-5">
+              <h2 className="text-base font-semibold">Flujo correcto</h2>
+              <div className="mt-4 grid gap-3 text-sm">
+                <Link href="/dashboard/quizzes" className="rounded-md border border-[#e6e8eb] px-4 py-3 font-semibold">1. Crear ensayo y clave</Link>
+                <Link href="/sheet" className="rounded-md border border-[#e6e8eb] px-4 py-3 font-semibold">2. Generar hoja v2</Link>
+                <Link href="/scan" className="rounded-md border border-[#e6e8eb] px-4 py-3 font-semibold">3. Leer desde app movil</Link>
+                <Link href="/dashboard/papers" className="rounded-md border border-[#e6e8eb] px-4 py-3 font-semibold">4. Revisar y exportar</Link>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </DashboardShell>
   );
 }
 
-function SettingsIcon() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>
-    </svg>
-  );
-}
+
