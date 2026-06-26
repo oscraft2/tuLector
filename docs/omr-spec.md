@@ -37,14 +37,19 @@ the engine, the fixture generator, and mirrored in the native engine.
 | Field | Value |
 | --- | --- |
 | Sheet width / height | `1200` / `1650` |
-| Anchors (solid) | 4 corners `(70,70)`,`(1130,70)`,`(1130,1580)`,`(70,1580)` + 8 edge anchors = 12 zones |
+| Anchors (solid) | 4 corners `(70,70)`,`(1130,70)`,`(1130,1580)`,`(70,1580)`. Edge anchors removed (interfered with corner detection on real photos). |
 | Anchor size | `40` (solid filled black) |
-| Timing track | one solid mark per question row at `x≈120` (left margin) → physical row registration |
-| Questions / Options | `20` / `A-E` |
+| Corner detection | connected-components (Otsu + solid square blobs + extreme points); falls back to grid-blob then center-of-mass |
+| Timing track | one solid mark per question row at `x≈120` (left margin) → physical row registration (linear-fit, tolerates missing marks) |
+| Questions / Options | `20` / `A-E` (target: parametric, see `hoja-parametrica-spec.md`) |
 | Question rows | `cy(q) = 340 + q*60 + 14` |
 | Option centers | `x = 200 + o*64` (A..E); `y = timing row, fallback cy(q)` |
 | Bubble radius | `15` (outline drawn in light gray, not black) |
-| ID grid | `3 x 10`, `x = 200 + col*30`, `y = 210 + row*30`, r `9` |
+| RUT field (Chile) | 8 digit cols + 1 DV col (0-9 + K), `x = 640 + c*40`, `y = 252 + d*27`, r `8`. DV validated by módulo 11 (`readRut`/`computeRutDV`). Replaces the legacy 3×10 ID grid. |
+
+Both engines (web `omr.ts` and native `omr_engine.cpp`) implement: connected-components
+corner detection, dest→src homography warp, timing-track + linear-fit registration,
+mark calibration (`minPick` 0.05 + dominance 0.02), and RUT reading with DV validation.
 
 ## Calibration Constants (single source of truth)
 
