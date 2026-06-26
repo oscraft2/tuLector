@@ -38,13 +38,12 @@ export const CORNER_CENTERS: [number, number][] = [
   [70, SHEET_H - 70],
 ];
 
-// Anclas intermedias (validacion de formato / registro por bloque). 8 → 12 total.
-export const EDGE_ANCHORS: [number, number][] = [
-  [SHEET_W / 2, 70],
-  [SHEET_W / 2, SHEET_H - 70],
-  [70, 460], [70, 825], [70, 1190],
-  [SHEET_W - 70, 460], [SHEET_W - 70, 825], [SHEET_W - 70, 1190],
-];
+// Anclas intermedias: RETIRADAS. El motor nunca las usaba (auditorías P1-6) y,
+// peor, las laterales caen dentro de las zonas de búsqueda de esquinas (28% y 72%
+// de alto) y el detector las confundía con esquinas → cuadriláteros falsos en
+// fotos reales. Se vuelve a 4 esquinas + pista de temporización (que sí registra).
+// Para registro por bloques futuro habría que detectarlas explícitamente (Fase 4).
+export const EDGE_ANCHORS: [number, number][] = [];
 
 export const ALL_ANCHORS: [number, number][] = [...CORNER_CENTERS, ...EDGE_ANCHORS];
 

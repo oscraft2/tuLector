@@ -73,7 +73,7 @@ function findCornersByMass(gray: Uint8Array, w: number, h: number): [number, num
   const avgW = (topW + botW) / 2;
   const avgH = (leftH + rightH) / 2;
   const aspect = avgW / Math.max(avgH, 1);
-  if (aspect < 0.35 || aspect > 2.8) return null;
+  if (aspect < 0.45 || aspect > 1.2) return null;
   if (topW / Math.max(botW, 1) < 0.3 || botW / Math.max(topW, 1) < 0.3) return null;
   if (leftH / Math.max(rightH, 1) < 0.3 || rightH / Math.max(leftH, 1) < 0.3) return null;
   const area = Math.abs((tr[0] - tl[0]) * (br[1] - tl[1]) - (tr[1] - tl[1]) * (br[0] - tl[0]));
@@ -197,7 +197,7 @@ export function findCorners(imageData: ImageData, config: OMRConfig = DEFAULT_CO
   const avgW = (topW + botW) / 2;
   const avgH = (leftH + rightH) / 2;
   const aspect = avgW / Math.max(avgH, 1);
-  if (aspect < 0.35 || aspect > 2.8) return findCornersByMass(gray, w, h);
+  if (aspect < 0.45 || aspect > 1.2) return findCornersByMass(gray, w, h);
   if (topW / Math.max(botW, 1) < 0.3 || botW / Math.max(topW, 1) < 0.3) return findCornersByMass(gray, w, h);
   if (leftH / Math.max(rightH, 1) < 0.3 || rightH / Math.max(leftH, 1) < 0.3) return findCornersByMass(gray, w, h);
   const area = Math.abs((tr[0] - tl[0]) * (br[1] - tl[1]) - (tr[1] - tl[1]) * (br[0] - tl[0]));
