@@ -1,11 +1,11 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-background: #09090b;
-  --color-foreground: #fafafa;
+  --color-background: #ffffff;
+  --color-foreground: #111827;
 }
 
 body {
-  background: #09090b;
-  color: #fafafa;
+  background: #ffffff;
+  color: #111827;
 }

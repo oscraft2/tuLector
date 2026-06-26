@@ -2,8 +2,17 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TuLector - Escaner de examenes",
-  description: "Escanea examenes de opcion multiple con la camara de tu telefono. Procesamiento 100% en el navegador.",
+  title: "TuLector - Correccion y analisis de ensayos",
+  description: "Plataforma para crear ensayos, leer hojas de respuesta por camara, administrar alumnos, analizar resultados y convertir puntajes equivalentes.",
+  keywords: [
+    "lector de ensayos",
+    "correccion de pruebas",
+    "hojas de respuesta",
+    "puntaje equivalente",
+    "analisis educativo",
+    "OMR",
+    "Chile",
+  ],
 };
 
 export const viewport: Viewport = {
@@ -16,7 +25,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es" className="h-full antialiased">
-      <body className="min-h-full flex flex-col bg-zinc-950 text-white">{children}</body>
+      <body className="min-h-full bg-white text-[#111827]">{children}</body>
     </html>
   );
 }

@@ -104,6 +104,24 @@ function canvasToDataUrl(canvas: HTMLCanvasElement): string {
 // URL (?key=CBBBC... o ?quiz=<id> via Supabase) en tiempo de ejecucion.
 const DEFAULT_ANSWER_KEY = ["C","B","B","B","C","E","E","D","C","B","A","B","C","D","E","E","D","C","B","A"];
 
+// ─── Captura por votacion multi-frame (estabiliza el resultado) ───
+const VOTE_TARGET = 5;        // frames validos a juntar antes de votar
+const VOTE_TIMEOUT_MS = 2500; // tiempo maximo de captura
+const VOTE_MAX_ATTEMPTS = 28; // tope de frames inspeccionados
+const VOTE_FOCUS_MIN = 40;    // gate de foco (Laplaciano), estilo referencia
+const VOTE_MARKS_REQUIRED = 20; // solo frames con la pista de temporizacion completa
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Voto por mayoria de un campo (respuesta de pregunta o fila de ID). */
+function voteField(values: string[]): string {
+ const counts: Record<string, number> = {};
+ for (const v of values) counts[v] = (counts[v] || 0) + 1;
+ let best = values[0] ?? "-", bestN = 0;
+ for (const [k, n] of Object.entries(counts)) if (n > bestN) { bestN = n; best = k; }
+ return best;
+}
+
 export default function ScanPage() {
  const videoRef = useRef<HTMLVideoElement>(null);
  const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -295,6 +313,106 @@ export default function ScanPage() {
    setError("Error al procesar. Intenta de nuevo.");
    setPhase("detecting");
   }
+ };
+
+ // ─── CAPTURA POR VOTACION MULTI-FRAME (auto-scan en vivo) ───
+ // Junta varios frames VALIDOS (gate de foco + formato + 20 marcas), descarta
+ // los borrosos/incompletos, y vota por mayoria cada respuesta. La data real
+ // mostro que el consenso entre frames es 20/20 aunque frames sueltos fallen.
+ const runVotingScan = async () => {
+  const video = videoRef.current;
+  const canvas = hiddenCanvas.current;
+  if (!video || !canvas) return;
+
+  setPhase("scanning");
+  setCapturing(true);
+  setError("");
+
+  const ctx = canvas.getContext("2d")!;
+  const sessions: { answers: string[]; id: string[]; scores: number[][] }[] = [];
+  let lastFrame: ImageData | null = null;
+  let lastCorners: [number, number][] | null = null;
+  let lastWarp: ImageData | null = null;
+  let rejected = 0;
+  const start = Date.now();
+  let attempts = 0;
+
+  while (sessions.length < VOTE_TARGET && Date.now() - start < VOTE_TIMEOUT_MS && attempts < VOTE_MAX_ATTEMPTS) {
+   attempts++;
+   if (video.readyState < 2) { await sleep(80); continue; }
+   canvas.width = video.videoWidth;
+   canvas.height = video.videoHeight;
+   ctx.drawImage(video, 0, 0);
+   const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+   if (isFrameSharp(frame) <= VOTE_FOCUS_MIN) { rejected++; await sleep(70); continue; } // gate de foco
+   const corners = findCorners(frame, config);
+   if (!corners) { rejected++; await sleep(70); continue; }
+   const warped = warpImageData(frame, corners, config);
+   const report = gradeBubbles(warped, config, corners);
+   if (!report.valid || report.diag?.timingRows !== VOTE_MARKS_REQUIRED) { rejected++; await sleep(70); continue; } // gate formato/marcas
+   const idRows = readStudentId(warped, config);
+   sessions.push({
+    answers: report.results.map((r) => r.answer),
+    id: idRows,
+    scores: report.results.map((r) => r.scores),
+   });
+   lastFrame = frame; lastCorners = corners; lastWarp = warped;
+   await sleep(70);
+  }
+
+  setCapturing(false);
+
+  if (sessions.length === 0 || !lastFrame || !lastCorners || !lastWarp) {
+   setError("No se logró un frame estable. Acerca, enfoca y mantén firme.");
+   setPhase("detecting");
+   return;
+  }
+
+  // Votar por pregunta y por fila de ID
+  const votedAnswers = Array.from({ length: config.numQuestions }, (_, q) =>
+   voteField(sessions.map((s) => s.answers[q] ?? "-"))
+  );
+  const votedId = Array.from({ length: config.idRows }, (_, r) =>
+   voteField(sessions.map((s) => s.id[r] ?? ""))
+  );
+  const repScores = sessions[sessions.length - 1].scores;
+  const bubbleResults: BubbleResult[] = votedAnswers.map((a, i) => ({
+   question: i + 1, answer: a, scores: repScores[i] ?? [], correct: null,
+  }));
+
+  // Thumbnails del último frame válido
+  const photoThumb = imageDataToThumb(lastFrame, 480, 0.6);
+  let warpThumb: string | null = null;
+  try {
+   const fc = document.createElement("canvas"); fc.width = lastWarp.width; fc.height = lastWarp.height;
+   fc.getContext("2d")!.putImageData(lastWarp, 0, 0);
+   warpThumb = downscaleCanvas(fc, 360, 0.7);
+   setWarpedThumb(warpThumb);
+  } catch { /* no crítico */ }
+
+  setResults(bubbleResults);
+  setStudentId(votedId);
+  setScanCount((c) => c + 1);
+  setDebugLog([`Votación: ${sessions.length} frames válidos, ${rejected} descartados`]);
+  setPhase("result");
+
+  await saveScanLog({
+   v: SCAN_LOG_VERSION, type: "scan", source: "camera", sheet: "v2", ts: new Date().toISOString(),
+   frame: { w: lastFrame.width, h: lastFrame.height },
+   diag: { voted: true, frames: sessions.length, rejected },
+   corners: lastCorners,
+   result: { valid: true, code: SCAN_CODES.GRADED },
+   answers: bubbleResults.map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
+   id: votedId, photo: photoThumb, warp: warpThumb,
+  });
+
+  if (navigator.vibrate) navigator.vibrate(100);
+  setTimeout(() => {
+   setPhase((prev) => (prev === "result" ? "cooldown" : prev));
+   setLastScan(Date.now());
+   setTimeout(() => setPhase("detecting"), cooldownMs);
+  }, 2000);
  };
 
  // ─── MANUAL SHUTTER: capture frame, run diagnostics, try to scan ───
@@ -559,7 +677,7 @@ export default function ScanPage() {
      if (stableFrames.current >= stableFramesNeeded && canScan && phase === "detecting") {
       stableFrames.current = 0;
       setPhase("scanning");
-      processScan(frame, corners);
+      runVotingScan();
      }
     } else {
      stableFrames.current = 0;
