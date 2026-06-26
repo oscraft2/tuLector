@@ -105,10 +105,10 @@ function canvasToDataUrl(canvas: HTMLCanvasElement): string {
 const DEFAULT_ANSWER_KEY = ["C","B","B","B","C","E","E","D","C","B","A","B","C","D","E","E","D","C","B","A"];
 
 // ─── Captura por votacion multi-frame (estabiliza el resultado) ───
-const VOTE_TARGET = 5;        // frames validos a juntar antes de votar
-const VOTE_TIMEOUT_MS = 2500; // tiempo maximo de captura
-const VOTE_MAX_ATTEMPTS = 28; // tope de frames inspeccionados
-const VOTE_FOCUS_MIN = 40;    // gate de foco (Laplaciano), estilo referencia
+const VOTE_TARGET = 3;        // frames validos a juntar antes de votar (mas rapido)
+const VOTE_TIMEOUT_MS = 1800; // tiempo maximo de captura
+const VOTE_MAX_ATTEMPTS = 30; // tope de frames inspeccionados
+const VOTE_FOCUS_MIN = 35;    // gate de foco (Laplaciano), un poco mas permisivo
 const VOTE_MARKS_REQUIRED = 20; // solo frames con la pista de temporizacion completa
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -177,7 +177,7 @@ export default function ScanPage() {
  const frameSkipMs = 66;
 
  const cooldownMs = SCAN_THRESHOLDS.scanCooldownMs;
- const stableFramesNeeded = 8;
+ const stableFramesNeeded = 5;
  const config = DEFAULT_CONFIG;
 
  // Iniciar camara
@@ -330,37 +330,41 @@ export default function ScanPage() {
 
   const ctx = canvas.getContext("2d")!;
   const sessions: { answers: string[]; id: string[]; scores: number[][] }[] = [];
+  const frameReads: string[] = [];   // lectura de cada frame valido (para diagnostico)
   let lastFrame: ImageData | null = null;
   let lastCorners: [number, number][] | null = null;
   let lastWarp: ImageData | null = null;
-  let rejected = 0;
+  let lastTiming: number | null = null;
+  let rejFocus = 0, rejCorners = 0, rejInvalid = 0;
   const start = Date.now();
   let attempts = 0;
 
   while (sessions.length < VOTE_TARGET && Date.now() - start < VOTE_TIMEOUT_MS && attempts < VOTE_MAX_ATTEMPTS) {
    attempts++;
-   if (video.readyState < 2) { await sleep(80); continue; }
+   if (video.readyState < 2) { await sleep(50); continue; }
    canvas.width = video.videoWidth;
    canvas.height = video.videoHeight;
    ctx.drawImage(video, 0, 0);
    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-   if (isFrameSharp(frame) <= VOTE_FOCUS_MIN) { rejected++; await sleep(70); continue; } // gate de foco
+   if (isFrameSharp(frame) <= VOTE_FOCUS_MIN) { rejFocus++; await sleep(40); continue; }
    const corners = findCorners(frame, config);
-   if (!corners) { rejected++; await sleep(70); continue; }
+   if (!corners) { rejCorners++; await sleep(40); continue; }
    const warped = warpImageData(frame, corners, config);
    const report = gradeBubbles(warped, config, corners);
-   if (!report.valid || report.diag?.timingRows !== VOTE_MARKS_REQUIRED) { rejected++; await sleep(70); continue; } // gate formato/marcas
+   if (!report.valid || report.diag?.timingRows !== VOTE_MARKS_REQUIRED) { rejInvalid++; await sleep(40); continue; }
    const idRows = readStudentId(warped, config);
-   sessions.push({
-    answers: report.results.map((r) => r.answer),
-    id: idRows,
-    scores: report.results.map((r) => r.scores),
-   });
+   const reads = report.results.map((r) => r.answer);
+   sessions.push({ answers: reads, id: idRows, scores: report.results.map((r) => r.scores) });
+   frameReads.push(reads.join(","));
    lastFrame = frame; lastCorners = corners; lastWarp = warped;
-   await sleep(70);
+   lastTiming = report.diag?.timingRows ?? null;
+   // Salida temprana: 2 frames validos identicos = suficiente (rapido en buenas condiciones)
+   if (sessions.length >= 2 && frameReads[frameReads.length - 1] === frameReads[frameReads.length - 2]) break;
+   await sleep(40);
   }
 
+  const rejected = rejFocus + rejCorners + rejInvalid;
   setCapturing(false);
 
   if (sessions.length === 0 || !lastFrame || !lastCorners || !lastWarp) {
@@ -394,13 +398,20 @@ export default function ScanPage() {
   setResults(bubbleResults);
   setStudentId(votedId);
   setScanCount((c) => c + 1);
-  setDebugLog([`Votación: ${sessions.length} frames válidos, ${rejected} descartados`]);
+  setDebugLog([
+   `Votación: ${sessions.length} frames válidos, ${rejected} descartados (foco:${rejFocus} esquinas:${rejCorners} inválido:${rejInvalid})`,
+   ...frameReads.map((r, i) => `  frame ${i + 1}: ${r}`),
+  ]);
   setPhase("result");
 
   await saveScanLog({
    v: SCAN_LOG_VERSION, type: "scan", source: "camera", sheet: "v2", ts: new Date().toISOString(),
    frame: { w: lastFrame.width, h: lastFrame.height },
-   diag: { voted: true, frames: sessions.length, rejected },
+   diag: {
+    voted: true, frames: sessions.length, rejected,
+    rejFocus, rejCorners, rejInvalid, timingRows: lastTiming,
+    reads: frameReads,
+   },
    corners: lastCorners,
    result: { valid: true, code: SCAN_CODES.GRADED },
    answers: bubbleResults.map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
