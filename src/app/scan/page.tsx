@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { findCorners, gradeBubbles, readStudentId, warpImageData, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
+import { findCorners, gradeBubbles, readRut, warpImageData, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
 import { createClient } from "@/lib/supabase";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H } from "@/lib/sheet_layout";
@@ -239,7 +239,8 @@ export default function ScanPage() {
    } catch { /* no crítico */ }
 
    const report = gradeBubbles(warped, config, corners);
-   const idRows = readStudentId(warped, config);
+   const rutR = readRut(warped, config);
+   const idRows = rutR.rut ? [rutR.rut] : [];
    const scores = (report.results ?? []).map(r => ({ q: r.question, a: r.answer, s: r.scores }));
 
    const save = (type: "scan" | "scan_fail", code: number | undefined, valid: boolean) =>
@@ -248,7 +249,7 @@ export default function ScanPage() {
      frame: { w: canvas.width, h: canvas.height },
      diag: report.diag as unknown as Record<string, unknown>,
      corners, result: { valid, code, reason: report.reason },
-     answers: scores, id: idRows, photo: photoThumb, warp: warpThumb,
+     answers: scores, id: idRows, rut: rutR.rut, dvOk: rutR.dvOk, photo: photoThumb, warp: warpThumb,
     });
 
    if (report.diag) addLog(`Registro: ${report.diag.usedTiming ? `temporizacion (${report.diag.timingRows} marcas)` : "offset software"}, dx=${report.diag.gridDx}`);
@@ -329,7 +330,7 @@ export default function ScanPage() {
   setError("");
 
   const ctx = canvas.getContext("2d")!;
-  const sessions: { answers: string[]; id: string[]; scores: number[][] }[] = [];
+  const sessions: { answers: string[]; rut: string; dvOk: boolean; scores: number[][] }[] = [];
   const frameReads: string[] = [];   // lectura de cada frame valido (para diagnostico)
   let lastFrame: ImageData | null = null;
   let lastCorners: [number, number][] | null = null;
@@ -353,9 +354,9 @@ export default function ScanPage() {
    const warped = warpImageData(frame, corners, config);
    const report = gradeBubbles(warped, config, corners);
    if (!report.valid || report.diag?.timingRows !== VOTE_MARKS_REQUIRED) { rejInvalid++; await sleep(40); continue; }
-   const idRows = readStudentId(warped, config);
+   const rutR = readRut(warped, config);
    const reads = report.results.map((r) => r.answer);
-   sessions.push({ answers: reads, id: idRows, scores: report.results.map((r) => r.scores) });
+   sessions.push({ answers: reads, rut: rutR.rut, dvOk: rutR.dvOk, scores: report.results.map((r) => r.scores) });
    frameReads.push(reads.join(","));
    lastFrame = frame; lastCorners = corners; lastWarp = warped;
    lastTiming = report.diag?.timingRows ?? null;
@@ -373,13 +374,12 @@ export default function ScanPage() {
    return;
   }
 
-  // Votar por pregunta y por fila de ID
+  // Votar por pregunta y el RUT
   const votedAnswers = Array.from({ length: config.numQuestions }, (_, q) =>
    voteField(sessions.map((s) => s.answers[q] ?? "-"))
   );
-  const votedId = Array.from({ length: config.idRows }, (_, r) =>
-   voteField(sessions.map((s) => s.id[r] ?? ""))
-  );
+  const votedRut = voteField(sessions.map((s) => s.rut));
+  const votedDvOk = sessions.find((s) => s.rut === votedRut)?.dvOk ?? false;
   const repScores = sessions[sessions.length - 1].scores;
   const bubbleResults: BubbleResult[] = votedAnswers.map((a, i) => ({
    question: i + 1, answer: a, scores: repScores[i] ?? [], correct: null,
@@ -396,7 +396,7 @@ export default function ScanPage() {
   } catch { /* no crítico */ }
 
   setResults(bubbleResults);
-  setStudentId(votedId);
+  setStudentId(votedRut ? [votedRut] : []);
   setScanCount((c) => c + 1);
   setDebugLog([
    `Votación: ${sessions.length} frames válidos, ${rejected} descartados (foco:${rejFocus} esquinas:${rejCorners} inválido:${rejInvalid})`,
@@ -415,7 +415,7 @@ export default function ScanPage() {
    corners: lastCorners,
    result: { valid: true, code: SCAN_CODES.GRADED },
    answers: bubbleResults.map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
-   id: votedId, photo: photoThumb, warp: warpThumb,
+   id: votedRut ? [votedRut] : [], rut: votedRut, dvOk: votedDvOk, photo: photoThumb, warp: warpThumb,
   });
 
   if (navigator.vibrate) navigator.vibrate(100);
@@ -888,7 +888,7 @@ export default function ScanPage() {
            </div>
            <div className="flex flex-col items-end gap-1">
             <div className="bg-green-500/10 text-green-500 px-3 py-1 rounded-full text-[10px] font-black border border-green-500/20">
-             ID: {studentId.join("") || "???"}
+             RUT: {studentId.join("") || "???"}
             </div>
             <button onClick={() => setShowDebug(!showDebug)} className="text-[9px] text-zinc-600 underline font-bold">
              {showDebug ? "Ocultar Log" : "Ver Log"}

@@ -50,11 +50,34 @@ export const ALL_ANCHORS: [number, number][] = [...CORNER_CENTERS, ...EDGE_ANCHO
 // ─── Cabecera ───
 export const NAME_X = 130, NAME_Y = 110, NAME_W = 430, NAME_H = 44;
 
-// ─── Grilla de ID (3 filas x 10 col) ───
+// ─── Grilla de ID (3 filas x 10 col) — LEGADO, reemplazado por RUT ───
 export const ID_X0 = 200;     // centro de la primera columna
 export const ID_Y0 = 210;     // centro de la primera fila
 export const ID_STEP = 30;
 export const ID_R = 9;
+
+// ─── Grilla de RUT (Chile): 8 columnas de digito + 1 de digito verificador ───
+// Columna por digito: el alumno marca un digito (0-9) por columna. La columna DV
+// agrega K (cuando el modulo 11 da 10). Ubicada a la derecha (zona libre).
+export const RUT_DIGITS = 8;            // columnas de digito (cuerpo del RUT)
+export const RUT_COLS = RUT_DIGITS + 1; // + columna del digito verificador (DV)
+export const RUT_X0 = 640;              // centro X de la primera columna
+export const RUT_COL_STEP = 40;
+export const RUT_Y0 = 252;              // centro Y de la fila del digito 0
+export const RUT_ROW_STEP = 27;
+export const RUT_ROWS = 10;             // digitos 0..9 (la columna DV agrega K en la fila 10)
+export const RUT_K_ROW = 10;            // fila de la K (solo columna DV)
+export const RUT_R = 8;
+
+/** Centro X de la columna c del RUT (0..RUT_COLS-1; la ultima es el DV). */
+export function rutColX(c: number): number {
+  return RUT_X0 + c * RUT_COL_STEP;
+}
+
+/** Centro Y de la fila del digito d (0..9, o 10 para la K del DV). */
+export function rutRowY(d: number): number {
+  return RUT_Y0 + d * RUT_ROW_STEP;
+}
 
 // ─── Grilla de preguntas ───
 export const Q_TOP = 340;     // Y del centro de la fila 1 (q=0) menos el offset interno

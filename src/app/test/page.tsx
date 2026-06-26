@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { TEST_IMAGE_BASE64, EXPECTED_ANSWERS, EXPECTED_ID } from "./test_image";
-import { findCorners, warpPerspective, gradeBubbles, readStudentId, type BubbleResult } from "@/lib/omr";
+import { TEST_IMAGE_BASE64, EXPECTED_ANSWERS, EXPECTED_RUT } from "./test_image";
+import { findCorners, warpPerspective, gradeBubbles, readRut, type BubbleResult } from "@/lib/omr";
 
 export default function TestPage() {
   const [log, setLog] = useState<string[]>([]);
@@ -101,18 +101,13 @@ export default function TestPage() {
       }
       addLog(`[BUBBLES] RESULT: ${correct}/20 correctas`);
 
-      // ─── ID ───
-      const idRows = readStudentId(warped);
-      let idMatch = 0;
-      for (let i = 0; i < idRows.length; i++) {
-        const ok = idRows[i] === EXPECTED_ID[i];
-        if (ok) idMatch++;
-        addLog(`[ID] fila${i}: detectado=${idRows[i]}  esperado=${EXPECTED_ID[i]}  ${ok ? "OK" : "FAIL"}`);
-      }
-      addLog(`[ID] RESULT: ${idMatch}/3 correctas`);
+      // ─── RUT ───
+      const rutRes = readRut(warped);
+      const rutOk = rutRes.rut === EXPECTED_RUT && rutRes.dvOk;
+      addLog(`[RUT] detectado=${rutRes.rut}  esperado=${EXPECTED_RUT}  DV=${rutRes.dvOk ? "OK" : "FAIL"}  ${rutOk ? "OK" : "FAIL"}`);
 
-      addLog(`\n[FINAL] ${correct === 20 && idMatch === 3 ? "TODAS LAS PRUEBAS PASARON" : "HAY FALLOS - revisar log arriba"}`);
-      if (correct === 20 && idMatch === 3) setPassed(true);
+      addLog(`\n[FINAL] ${correct === 20 && rutOk ? "TODAS LAS PRUEBAS PASARON" : "HAY FALLOS - revisar log arriba"}`);
+      if (correct === 20 && rutOk) setPassed(true);
 
     } catch (e) {
       addLog(`[ERROR] ${e}`);

@@ -761,5 +761,68 @@ export function readStudentId(imageData: ImageData, config: OMRConfig = DEFAULT_
   return rows;
 }
 
+// ─── 5. RUT (Chile): columna por digito + validacion del digito verificador ───
+export interface RutResult {
+  rut: string;        // "12345678-5" o "" si incompleto
+  dvOk: boolean;      // true si el DV marcado coincide con el calculado (modulo 11)
+  complete: boolean;  // true si todas las columnas necesarias se leyeron
+}
+
+/** Digito verificador chileno (modulo 11). Devuelve 0..10 (10 = K). */
+export function computeRutDV(body: number[]): number {
+  let sum = 0, mul = 2;
+  for (let i = body.length - 1; i >= 0; i--) {
+    sum += body[i] * mul;
+    mul = mul === 7 ? 2 : mul + 1;
+  }
+  const res = 11 - (sum % 11);
+  return res === 11 ? 0 : res; // res === 10 → K (se devuelve 10)
+}
+
+export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFIG): RutResult {
+  const { width, height, data } = imageData;
+  const gray = new Float32Array(width * height);
+  for (let i = 0; i < gray.length; i++) gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
+
+  const r = L.RUT_R;
+  // Para cada columna, elige la fila (digito) marcada con dominancia.
+  const picked: (number | null)[] = [];
+  for (let c = 0; c < L.RUT_COLS; c++) {
+    const isDV = c === L.RUT_COLS - 1;
+    const rowCount = isDV ? L.RUT_ROWS + 1 : L.RUT_ROWS; // la columna DV tiene K
+    const scores: number[] = [];
+    for (let d = 0; d < rowCount; d++) {
+      const cx = L.rutColX(c), cy = L.rutRowY(d);
+      let dark = 0, tot = 0;
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        const px = cx + dx, py = cy + dy;
+        if (px >= 0 && px < width && py >= 0 && py < height) { tot++; if (gray[py * width + px] < DARK_THRESH) dark++; }
+      }
+      scores.push(tot > 0 ? dark / tot : 0);
+    }
+    const maxS = Math.max(...scores);
+    const maxIdx = scores.indexOf(maxS);
+    const sorted = [...scores].sort((a, b) => b - a);
+    const dominates = sorted[0] - (sorted[1] ?? 0) > 0.10;
+    picked.push(maxS > 0.20 && dominates ? maxIdx : null);
+  }
+
+  // Cuerpo (8 columnas, alineado a la derecha): nulos iniciales = RUT mas corto.
+  const bodyCols = picked.slice(0, L.RUT_DIGITS);
+  const body: number[] = [];
+  let started = false, complete = true;
+  for (const d of bodyCols) {
+    if (d === null) { if (started) complete = false; }
+    else { started = true; body.push(d); }
+  }
+  const dvPicked = picked[L.RUT_COLS - 1];
+  if (dvPicked === null || body.length === 0) complete = false;
+
+  const dvStr = dvPicked === null ? "?" : dvPicked === 10 ? "K" : String(dvPicked);
+  const rut = body.length > 0 ? `${body.join("")}-${dvStr}` : "";
+  const dvOk = complete && dvPicked !== null && dvPicked === computeRutDV(body);
+  return { rut, dvOk, complete };
+}
+
 export { DEFAULT_CONFIG };
 

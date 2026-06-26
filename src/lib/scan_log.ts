@@ -22,6 +22,8 @@ export interface ScanLogPayload {
   result?: { valid: boolean; code?: number; reason?: string };
   answers?: { q: number; a: string; s: number[] }[];
   id?: string[];
+  rut?: string;       // RUT leido (ej. "12345678-5")
+  dvOk?: boolean;     // true si el digito verificador valida
   photo?: string | null;   // foto original reescalada (dataURL JPEG)
   warp?: string | null;    // warp reescalado (dataURL JPEG)
   corrected?: { q: number; a: string }[]; // correcciones del profesor (futuro)

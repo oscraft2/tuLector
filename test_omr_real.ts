@@ -5,8 +5,8 @@
  * self-contained test pipeline in test_omr.ts.
  */
 import { createCanvas, ImageData as CanvasImageData, loadImage } from "canvas";
-import { TEST_IMAGE_BASE64, EXPECTED_ANSWERS, EXPECTED_ID } from "./src/app/test/test_image";
-import { findCorners, gradeBubbles, readStudentId, warpImageData } from "./src/lib/omr";
+import { TEST_IMAGE_BASE64, EXPECTED_ANSWERS, EXPECTED_RUT } from "./src/app/test/test_image";
+import { findCorners, gradeBubbles, readRut, warpImageData } from "./src/lib/omr";
 import { TIMING_X, rowCY } from "./src/lib/sheet_layout";
 
 (globalThis as unknown as { ImageData: typeof CanvasImageData }).ImageData = CanvasImageData;
@@ -25,7 +25,7 @@ async function main() {
   const corners = findCorners(frame) ?? fail("Corners were not detected");
   const warped = warpImageData(frame, corners);
   const report = gradeBubbles(warped);
-  const idRows = readStudentId(warped);
+  const rutResult = readRut(warped);
 
   if (!report.valid) fail(`Grade report invalid: ${report.reason ?? "unknown reason"}`);
 
@@ -33,16 +33,14 @@ async function main() {
     .map((result, index) => ({ q: index + 1, got: result.answer, expected: EXPECTED_ANSWERS[index] }))
     .filter((row) => row.got !== row.expected);
 
-  const missedIds = idRows
-    .map((got, index) => ({ row: index, got, expected: EXPECTED_ID[index] }))
-    .filter((row) => row.got !== row.expected);
-
-  if (missedAnswers.length > 0 || missedIds.length > 0) {
-    console.log(JSON.stringify({ corners, missedAnswers, missedIds, valid: report.valid, reason: report.reason }, null, 2));
-    fail(`OMR fixture failed: ${missedAnswers.length} answer misses, ${missedIds.length} ID misses`);
+  if (missedAnswers.length > 0) {
+    console.log(JSON.stringify({ corners, missedAnswers, valid: report.valid, reason: report.reason }, null, 2));
+    fail(`OMR fixture failed: ${missedAnswers.length} answer misses`);
   }
+  if (rutResult.rut !== EXPECTED_RUT) fail(`RUT mismatch: got ${rutResult.rut}, expected ${EXPECTED_RUT}`);
+  if (!rutResult.dvOk) fail(`RUT DV no valido: ${rutResult.rut}`);
 
-  console.log(`OMR production smoke test passed: ${report.results.length}/20 answers, ${idRows.length}/3 ID rows`);
+  console.log(`OMR production smoke test passed: ${report.results.length}/20 answers, RUT ${rutResult.rut} (DV ${rutResult.dvOk ? "OK" : "FAIL"})`);
 
   // ─── Guardia de timing parcial (Fase 0.3): ocluir 4 marcas y verificar que
   // el registro interpola por regresion y sigue calificando 20/20. ───
