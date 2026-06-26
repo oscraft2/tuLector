@@ -95,7 +95,7 @@ function drawRut(ctx: Ctx2D, marks: SheetMarks): void {
   }
 }
 
-export function drawSheet(ctx: Ctx2D, marks: SheetMarks = {}): void {
+export function drawSheet(ctx: Ctx2D, marks: SheetMarks = {}, cfg: L.SheetConfig = L.DEFAULT_SHEET): void {
   // Fondo blanco
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, L.SHEET_W, L.SHEET_H);
@@ -118,9 +118,12 @@ export function drawSheet(ctx: Ctx2D, marks: SheetMarks = {}): void {
   // ─── Grilla de RUT (8 dígitos + DV con K) ───
   drawRut(ctx, marks);
 
-  // ─── Pista de temporizacion + grilla de preguntas ───
-  for (let q = 0; q < L.NUM_QUESTIONS; q++) {
-    const cy = L.rowCY(q);
+  // ─── Pista de temporizacion + grilla de preguntas (parametrica) ───
+  const ql = L.questionLayout(cfg);
+  const numFont = Math.max(11, Math.round(ql.rowH * 0.27));
+  const lblFont = Math.max(9, Math.round(ql.bubbleR * 0.85));
+  for (let q = 0; q < ql.numQuestions; q++) {
+    const cy = ql.rowCY(q);
 
     // marca de temporizacion (solida) alineada a la fila
     ctx.fillStyle = BLACK;
@@ -128,21 +131,23 @@ export function drawSheet(ctx: Ctx2D, marks: SheetMarks = {}): void {
 
     // numero de pregunta
     ctx.fillStyle = BLACK;
-    ctx.font = "16px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = `${numFont}px sans-serif`;
     ctx.fillText(`${q + 1}`, L.QNUM_X, cy + 6);
 
     // burbujas de opciones
-    for (let o = 0; o < L.NUM_OPTIONS; o++) {
+    for (let o = 0; o < ql.numOptions; o++) {
       const marked = !!(marks.filled && marks.answers?.[q] === o);
-      const cx = L.optX(o);
-      bubble(ctx, cx, cy, L.BUBBLE_R, marked);
+      const cx = ql.optX(o);
+      bubble(ctx, cx, cy, ql.bubbleR, marked);
       if (!marked) {
         // letra en gris claro dentro de la burbuja
         ctx.fillStyle = GRAY;
-        ctx.font = "13px sans-serif";
+        ctx.font = `${lblFont}px sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(L.OPTION_LABELS[o], cx, cy);
+        ctx.fillText(ql.labels[o], cx, cy);
         ctx.textAlign = "left";
         ctx.textBaseline = "alphabetic";
       }

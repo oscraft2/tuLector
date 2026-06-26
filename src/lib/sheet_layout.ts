@@ -102,6 +102,47 @@ export function rowCY(q: number): number {
   return Q_TOP + q * ROW_H + 14;
 }
 
+// ─── Layout PARAMÉTRICO (Fase C) ───────────────────────────────
+// Una sola columna por ahora; multi-columna es el siguiente incremento.
+// El default (20 preguntas / 5 opciones) reproduce EXACTAMENTE la hoja actual.
+export interface SheetConfig {
+  numQuestions: number;   // 1..~40 en una columna
+  numOptions: number;     // 3 | 4 | 5
+}
+
+export const DEFAULT_SHEET: SheetConfig = { numQuestions: NUM_QUESTIONS, numOptions: NUM_OPTIONS };
+
+export interface QLayout {
+  numQuestions: number;
+  numOptions: number;
+  labels: string;
+  rowH: number;        // separacion entre filas (ajustada al nº de preguntas)
+  bubbleR: number;     // radio de burbuja en la hoja
+  gradeR: number;      // radio de muestreo del motor
+  qTop: number;
+  rowCY(q: number): number;
+  optX(o: number): number;
+}
+
+const Q_AREA = 1200; // espacio vertical para preguntas (340 → 1540). 20*60 = 1200 (default exacto).
+
+/** Layout de la grilla de preguntas calculado desde el config. */
+export function questionLayout(cfg: SheetConfig = DEFAULT_SHEET): QLayout {
+  const n = Math.max(1, cfg.numQuestions);
+  const rowH = Math.max(30, Math.min(ROW_H, Math.floor(Q_AREA / n)));   // n=20 → 60 (exacto)
+  const bubbleR = Math.max(10, Math.min(BUBBLE_R, Math.round(rowH / 2) - 3)); // rowH 60 → 15
+  const gradeR = Math.max(6, Math.min(10, bubbleR - 5));                 // bubbleR 15 → 10
+  const rowOff = Math.round(rowH * 0.23);                                // 60 → 14
+  return {
+    numQuestions: n,
+    numOptions: cfg.numOptions,
+    labels: OPTION_LABELS.slice(0, cfg.numOptions),
+    rowH, bubbleR, gradeR, qTop: Q_TOP,
+    rowCY: (q) => Q_TOP + q * rowH + rowOff,
+    optX: (o) => OPT_X0 + o * OPT_STEP,
+  };
+}
+
 /** Centro X de la columna c de la grilla de ID. */
 export function idX(c: number): number {
   return ID_X0 + c * ID_STEP;

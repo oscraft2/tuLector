@@ -6,8 +6,9 @@
  */
 import { createCanvas, ImageData as CanvasImageData, loadImage } from "canvas";
 import { TEST_IMAGE_BASE64, EXPECTED_ANSWERS, EXPECTED_RUT } from "./src/app/test/test_image";
-import { findCorners, gradeBubbles, readRut, warpImageData } from "./src/lib/omr";
-import { TIMING_X, rowCY } from "./src/lib/sheet_layout";
+import { findCorners, gradeBubbles, readRut, warpImageData, DEFAULT_CONFIG } from "./src/lib/omr";
+import { TIMING_X, rowCY, SHEET_W, SHEET_H } from "./src/lib/sheet_layout";
+import { drawSheet, type Ctx2D } from "./src/lib/sheet_render";
 
 (globalThis as unknown as { ImageData: typeof CanvasImageData }).ImageData = CanvasImageData;
 
@@ -83,6 +84,27 @@ async function main() {
   const offMiss = r2.results.filter((x, i) => x.answer !== EXPECTED_ANSWERS[i]);
   if (offMiss.length > 0) fail(`offset warp: ${offMiss.length} respuestas erradas`);
   console.log(`Offset-warp guard passed: hoja no-canonica recuperada (esquinas TL=${c2[0]})`);
+
+  // ─── Guardia PARAMÉTRICO (Fase C): generar y leer una hoja con OTRO config
+  // (30 preguntas / 3 opciones, formato tipo EXANI México). Prueba que el layout
+  // paramétrico funciona de punta a punta. ───
+  const ans30 = Array.from({ length: 30 }, (_, i) => i % 3);
+  const cfg30 = { numQuestions: 30, numOptions: 3 };
+  const sheet30 = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheet30.getContext("2d") as unknown as Ctx2D, { answers: ans30, rut: "12345678-5", filled: true }, cfg30);
+  const img30 = await loadImage(sheet30.toDataURL("image/png"));
+  const cap30 = createCanvas(img30.width, img30.height);
+  cap30.getContext("2d").drawImage(img30, 0, 0);
+  const frame30 = cap30.getContext("2d").getImageData(0, 0, cap30.width, cap30.height) as unknown as globalThis.ImageData;
+  const corners30 = findCorners(frame30) ?? fail("parametrico: esquinas no detectadas");
+  const warped30 = warpImageData(frame30, corners30);
+  const config30 = { ...DEFAULT_CONFIG, numQuestions: 30, numOptions: 3, optionLabels: "ABC" };
+  const report30 = gradeBubbles(warped30, config30, corners30);
+  if (!report30.valid) fail(`parametrico 30q/3opt invalido: ${report30.reason}`);
+  const exp30 = ans30.map((a) => "ABC"[a]);
+  const miss30 = report30.results.filter((r, i) => r.answer !== exp30[i]);
+  if (miss30.length > 0) fail(`parametrico 30q/3opt: ${miss30.length} respuestas erradas`);
+  console.log(`Parametric guard passed: 30 preguntas / 3 opciones leidas OK (${report30.results.length}/30)`);
 }
 
 main().catch((error) => {

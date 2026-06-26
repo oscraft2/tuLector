@@ -524,16 +524,16 @@ function readTimingRows(gray: Float32Array, w: number, h: number): number[] {
  * "formato valido" y "registro por temporizacion" siempre concuerdan (antes
  * validaba con >=80% pero solo registraba con ==100%, auditoria A2).
  */
-function rowsFromTiming(centers: number[], numQuestions: number): number[] | null {
+function rowsFromTiming(centers: number[], numQuestions: number, ql: L.QLayout): number[] | null {
   const minPts = Math.max(6, Math.floor(numQuestions * 0.6));
   if (centers.length < minPts) return null;
 
   // Cada centro → indice de fila teorico mas cercano (dedup por indice).
   const byIndex = new Map<number, number>();
   for (const c of centers) {
-    const i = Math.round((c - L.Q_TOP - 14) / L.ROW_H);
+    const i = Math.round((c - ql.rowCY(0)) / ql.rowH);
     if (i < 0 || i >= numQuestions) continue;
-    const expected = L.rowCY(i);
+    const expected = ql.rowCY(i);
     const prev = byIndex.get(i);
     if (prev === undefined || Math.abs(c - expected) < Math.abs(prev - expected)) byIndex.set(i, c);
   }
@@ -550,7 +550,7 @@ function rowsFromTiming(centers: number[], numQuestions: number): number[] | nul
   const b = (sc - a * si) / n;
 
   // Sanidad: la pendiente debe parecerse al paso de fila real.
-  if (a < L.ROW_H * 0.7 || a > L.ROW_H * 1.3) return null;
+  if (a < ql.rowH * 0.7 || a > ql.rowH * 1.3) return null;
 
   const rowY: number[] = [];
   for (let q = 0; q < numQuestions; q++) rowY.push(Math.round(a * q + b));
@@ -569,11 +569,12 @@ function validateFormat(gray: Float32Array, w: number, h: number, config: OMRCon
     }
   }
 
-  // 2. La pista de temporizacion debe poder ajustarse a las NUM_QUESTIONS filas
+  // 2. La pista de temporizacion debe poder ajustarse a las numQuestions filas
   //    (mismo criterio que el registro en gradeBubbles).
+  const ql = L.questionLayout({ numQuestions: config.numQuestions, numOptions: config.numOptions });
   const rows = readTimingRows(gray, w, h);
-  if (!rowsFromTiming(rows, L.NUM_QUESTIONS)) {
-    return { valid: false, reason: `Pista de temporizacion insuficiente (${rows.length}/${L.NUM_QUESTIONS})` };
+  if (!rowsFromTiming(rows, config.numQuestions, ql)) {
+    return { valid: false, reason: `Pista de temporizacion insuficiente (${rows.length}/${config.numQuestions})` };
   }
 
   return { valid: true };
@@ -610,9 +611,10 @@ function darkAtBubbles(gray: Float32Array, w: number, h: number, rowY: number[],
 /** Fallback software cuando la pista de temporizacion no se lee: offset (dx,dy). */
 function findGridOffset(gray: Float32Array, w: number, h: number, config: OMRConfig): { dx: number; dy: number } {
   const { numQuestions, numOptions } = config;
+  const ql = L.questionLayout({ numQuestions, numOptions });
   let bestDx = 0, bestDy = 0, bestDark = -1;
   for (let dy = -CALIB.gridSearchDy; dy <= CALIB.gridSearchDy; dy += CALIB.gridSearchStep) {
-    const rowY = Array.from({ length: numQuestions }, (_, q) => L.rowCY(q) + dy);
+    const rowY = Array.from({ length: numQuestions }, (_, q) => ql.rowCY(q) + dy);
     for (let dx = -CALIB.gridSearchDx; dx <= CALIB.gridSearchDx; dx += CALIB.gridSearchStep) {
       const darkSum = darkAtBubbles(gray, w, h, rowY, numOptions, dx);
       if (darkSum > bestDark) { bestDark = darkSum; bestDx = dx; bestDy = dy; }
@@ -654,10 +656,13 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
     return { results: [], valid: false, reason: formatCheck.reason };
   }
 
+  // Layout parametrico (default 20/5 reproduce la hoja actual).
+  const ql = L.questionLayout({ numQuestions, numOptions });
+
   // Registro de filas: preferimos los Y fisicos de la pista de temporizacion;
-  // si no se leen las NUM_QUESTIONS marcas, caemos al offset software.
+  // si no se leen las marcas, caemos al offset software.
   const timingRows = readTimingRows(gray, width, height);
-  const fitted = rowsFromTiming(timingRows, numQuestions); // tolera marcas faltantes
+  const fitted = rowsFromTiming(timingRows, numQuestions, ql); // tolera marcas faltantes
   let rowY: number[];
   let gridDx: number;
   if (fitted) {
@@ -666,7 +671,7 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
   } else {
     const off = findGridOffset(gray, width, height, config);
     gridDx = off.dx;
-    rowY = Array.from({ length: numQuestions }, (_, q) => L.rowCY(q) + off.dy);
+    rowY = Array.from({ length: numQuestions }, (_, q) => ql.rowCY(q) + off.dy);
   }
   const diag: GradeDiag = { usedTiming: !!fitted, timingRows: timingRows.length, gridDx };
 
@@ -681,7 +686,7 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
 
     for (let o = 0; o < numOptions; o++) {
       const cx = L.optX(o) + gridDx;
-      const { score, glare } = classifyBubble(gray, width, cx, cy, CALIB.bubbleRadius);
+      const { score, glare } = classifyBubble(gray, width, cx, cy, ql.gradeR);
       scores.push(score);
       glares.push(glare);
     }
