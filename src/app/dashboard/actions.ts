@@ -170,6 +170,7 @@ export async function updateSchoolSettings(formData: FormData) {
     country_code: country.code,
     region: String(formData.get("region") ?? "") || null,
     city: String(formData.get("city") ?? "") || null,
+    rbd: String(formData.get("rbd") ?? "") || null,
     branding_primary_color: String(formData.get("branding_primary_color") ?? "#111827"),
     timezone: String(formData.get("timezone") ?? country.timezone),
     ...defaults,

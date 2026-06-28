@@ -25,6 +25,8 @@ export type DashboardSchool = {
   scans_limit: number | null;
   scans_used: number | null;
   created_at: string;
+  rbd?: string | null;
+  institucion_tipo?: string | null;
   branding_logo_url?: string | null;
   branding_primary_color?: string | null;
   timezone?: string | null;

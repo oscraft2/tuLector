@@ -10,19 +10,25 @@ import { checkAndTriggerQuotaAlerts } from "@/lib/quota_alerts";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const { supabase, school, countryProfile, locale, user, userSchools } = await getDashboardContext();
+  const { supabase, school, countryProfile, locale } = await getDashboardContext();
   const t = getDashboardMessages(locale);
-  const [{ count: quizzesCount }, { count: studentsCount }, { data: papers }, { data: quizzes }] = await Promise.all([
+  
+  const [{ count: quizzesCount }, { count: studentsCount }, { data: papers }, { data: quizzes }, simceResult] = await Promise.all([
     supabase.from("quizzes").select("id", { count: "exact", head: true }).is("archived_at", null),
     supabase.from("students").select("id", { count: "exact", head: true }),
     supabase.from("papers").select("id, score, total, status, scanned_at, quiz_id").order("scanned_at", { ascending: false }).limit(5),
     supabase.from("quizzes").select("id, title, subject, grade, created_at").is("archived_at", null).order("created_at", { ascending: false }).limit(5),
+    school.rbd
+      ? supabase.from("simce_resultados").select("agno, grado, asignatura, puntaje_promedio, nivel_insuficiente_pct, nivel_elemental_pct, nivel_adecuado_pct, alumnos_evaluados").eq("rbd", school.rbd).order("agno", { ascending: false })
+      : Promise.resolve({ data: [] }),
     checkAndTriggerQuotaAlerts(school.id),
   ]);
+
   const scansUsed = school.scans_used ?? 0;
   const scansLimit = school.scans_limit ?? 0;
   const validPapers = papers?.filter((p) => typeof p.score === "number" && typeof p.total === "number") ?? [];
   const avg = validPapers.length ? Math.round(validPapers.reduce((sum, p) => sum + ((p.score ?? 0) / Math.max(1, p.total ?? 1)) * 100, 0) / validPapers.length) : 0;
+  const simceData = simceResult?.data ?? [];
 
   return (
     <>
@@ -31,11 +37,12 @@ export default async function DashboardPage() {
         <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">{t.dashboard}</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5b6472]">Consola web para administrar cursos, alumnos, ensayos, claves, resultados y exportaciones. La lectura OMR ocurre desde la app movil sincronizada.</p>
       </div>
+      
       <div className="space-y-6">
         <div className="flex flex-col gap-4 rounded-md border border-[#e6e8eb] bg-white p-5 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm font-semibold text-[#111827]">{school.name}</p>
-            <p className="mt-1 text-sm text-[#4b5563]">Plan {school.plan} · {countryProfile.profileName}</p>
+            <p className="mt-1 text-sm text-[#4b5563]">Plan {school.plan} · {countryProfile.profileName} {school.rbd ? `· RBD: ${school.rbd}` : ""}</p>
           </div>
           <LanguageSwitcher locale={locale} />
         </div>
@@ -64,24 +71,79 @@ export default async function DashboardPage() {
         </KPIGrid>
 
         <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-md border border-[#e6e8eb] bg-white p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold">Ensayos recientes</h2>
-              <Link href="/dashboard/quizzes" className="text-sm font-semibold text-[#4b5563] hover:text-[#111827]">Ver todos</Link>
+          <div className="space-y-6">
+            {/* Recent Quizzes */}
+            <div className="rounded-md border border-[#e6e8eb] bg-white p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-base font-semibold">Ensayos recientes</h2>
+                <Link href="/dashboard/quizzes" className="text-sm font-semibold text-[#4b5563] hover:text-[#111827]">Ver todos</Link>
+              </div>
+              <DataTable
+                columns={["Ensayo", "Asignatura", "Curso", "Accion"]}
+                rows={quizzes ?? []}
+                empty="Crea tu primer ensayo para generar hojas y sincronizar la app."
+                renderRow={(quiz) => (
+                  <tr key={quiz.id} className="border-b border-[#eef0f3] last:border-0">
+                    <td className="px-5 py-4 font-semibold">{quiz.title}</td>
+                    <td className="px-5 py-4 text-[#4b5563]">{quiz.subject ?? "-"}</td>
+                    <td className="px-5 py-4 text-[#4b5563]">{quiz.grade ?? "-"}</td>
+                    <td className="px-5 py-4"><Link href={`/dashboard/quizzes/${quiz.id}`} className="font-semibold underline">Abrir</Link></td>
+                  </tr>
+                )}
+              />
             </div>
-            <DataTable
-              columns={["Ensayo", "Asignatura", "Curso", "Accion"]}
-              rows={quizzes ?? []}
-              empty="Crea tu primer ensayo para generar hojas y sincronizar la app."
-              renderRow={(quiz) => (
-                <tr key={quiz.id} className="border-b border-[#eef0f3] last:border-0">
-                  <td className="px-5 py-4 font-semibold">{quiz.title}</td>
-                  <td className="px-5 py-4 text-[#4b5563]">{quiz.subject ?? "-"}</td>
-                  <td className="px-5 py-4 text-[#4b5563]">{quiz.grade ?? "-"}</td>
-                  <td className="px-5 py-4"><Link href={`/dashboard/quizzes/${quiz.id}`} className="font-semibold underline">Abrir</Link></td>
-                </tr>
+
+            {/* SIMCE Historical Results */}
+            <div className="rounded-md border border-[#e6e8eb] bg-white p-5">
+              <h2 className="text-base font-semibold">Resultados Históricos SIMCE Oficiales (Establecimiento)</h2>
+              <p className="mt-1 text-xs text-[#5b6472]">
+                Historial de puntajes y niveles de logro para el RBD: <span className="font-mono font-bold text-[#07305f]">{school.rbd ?? "Sin configurar"}</span>
+              </p>
+              {school.rbd ? (
+                simceData.length > 0 ? (
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-[#eef0f3] text-xs font-semibold uppercase tracking-wider text-[#5b6472]">
+                          <th className="py-2 pr-2">Año</th>
+                          <th className="py-2 pr-2">Grado</th>
+                          <th className="py-2 pr-2">Asignatura</th>
+                          <th className="py-2 pr-2">Puntaje</th>
+                          <th className="py-2 pr-2 text-right">Niveles (Insuf. / Elem. / Adec.)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#eef0f3]">
+                        {simceData.map((row: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-gray-50 text-xs">
+                            <td className="py-3 pr-2 font-semibold">{row.agno}</td>
+                            <td className="py-3 pr-2">{row.grado}</td>
+                            <td className="py-3 pr-2">{row.asignatura}</td>
+                            <td className="py-3 pr-2 font-bold text-[#07305f]">{row.puntaje_promedio} pts</td>
+                            <td className="py-3 pr-2 text-right font-mono text-[#4b5563]">
+                              {row.nivel_insuficiente_pct !== null ? `${Math.round(row.nivel_insuficiente_pct)}%` : "-"} /{" "}
+                              {row.nivel_elemental_pct !== null ? `${Math.round(row.nivel_elemental_pct)}%` : "-"} /{" "}
+                              {row.nivel_adecuado_pct !== null ? `${Math.round(row.nivel_adecuado_pct)}%` : "-"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="mt-4 text-xs text-[#5b6472] italic">No se encontraron registros del SIMCE históricos para este RBD en la base de datos.</p>
+                )
+              ) : (
+                <div className="mt-4 rounded-md bg-amber-50 p-4 text-xs text-amber-800">
+                  <p className="font-semibold">⚠️ RBD no configurado</p>
+                  <p className="mt-1">
+                    Para visualizar las estadísticas oficiales e históricas del SIMCE asociadas a tu colegio, por favor registra el RBD en la sección de{" "}
+                    <Link href="/dashboard/settings" className="underline font-bold">
+                      Configuración
+                    </Link>.
+                  </p>
+                </div>
               )}
-            />
+            </div>
           </div>
 
           <div className="space-y-6">
@@ -89,10 +151,10 @@ export default async function DashboardPage() {
             <div className="rounded-md border border-[#e6e8eb] bg-white p-5">
               <h2 className="text-base font-semibold">Flujo correcto</h2>
               <div className="mt-4 grid gap-3 text-sm">
-                <Link href="/dashboard/quizzes" className="rounded-md border border-[#e6e8eb] px-4 py-3 font-semibold">1. Crear ensayo y clave</Link>
-                <Link href="/sheet" className="rounded-md border border-[#e6e8eb] px-4 py-3 font-semibold">2. Generar hoja v2</Link>
-                <Link href="/scan" className="rounded-md border border-[#e6e8eb] px-4 py-3 font-semibold">3. Leer desde app movil</Link>
-                <Link href="/dashboard/papers" className="rounded-md border border-[#e6e8eb] px-4 py-3 font-semibold">4. Revisar y exportar</Link>
+                <Link href="/dashboard/quizzes" className="rounded-md border border-[#e6e8eb] px-4 py-3 font-semibold hover:bg-gray-50 transition-colors">1. Crear ensayo y clave</Link>
+                <Link href="/sheet" className="rounded-md border border-[#e6e8eb] px-4 py-3 font-semibold hover:bg-gray-50 transition-colors">2. Generar hoja v2</Link>
+                <Link href="/scan" className="rounded-md border border-[#e6e8eb] px-4 py-3 font-semibold hover:bg-gray-50 transition-colors">3. Leer desde app movil</Link>
+                <Link href="/dashboard/papers" className="rounded-md border border-[#e6e8eb] px-4 py-3 font-semibold hover:bg-gray-50 transition-colors">4. Revisar y exportar</Link>
               </div>
             </div>
           </div>
