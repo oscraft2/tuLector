@@ -343,20 +343,30 @@ export function warpImageData(
 
   const outData = new ImageData(W, H);
   const srcW = sourceData.width, srcH = sourceData.height;
+  const sd = sourceData.data, od = outData.data;
   for (let dy = 0; dy < H; dy++) {
     for (let dx = 0; dx < W; dx++) {
       const denom = h[6] * dx + h[7] * dy + 1;
       const sx = (h[0] * dx + h[1] * dy + h[2]) / denom;
       const sy = (h[3] * dx + h[4] * dy + h[5]) / denom;
-      const six = Math.round(sx), siy = Math.round(sy);
-      const di = dy * W + dx;
-      if (six >= 0 && six < srcW && siy >= 0 && siy < srcH) {
-        const si = siy * srcW + six;
-        outData.data[di * 4] = sourceData.data[si * 4]; outData.data[di * 4 + 1] = sourceData.data[si * 4 + 1];
-        outData.data[di * 4 + 2] = sourceData.data[si * 4 + 2]; outData.data[di * 4 + 3] = 255;
+      const di = (dy * W + dx) * 4;
+      const x0 = Math.floor(sx), y0 = Math.floor(sy);
+      if (x0 >= 0 && x0 < srcW - 1 && y0 >= 0 && y0 < srcH - 1) {
+        // Interpolacion BILINEAL de los 4 vecinos. Mejor que vecino-mas-cercano,
+        // sobre todo al agrandar una captura de baja resolucion: la burbuja queda
+        // pareja en vez de "pixelada" → score mas fiable.
+        const fx = sx - x0, fy = sy - y0;
+        const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
+        const i00 = (y0 * srcW + x0) * 4, i10 = i00 + 4, i01 = i00 + srcW * 4, i11 = i01 + 4;
+        od[di]     = (sd[i00]     * w00 + sd[i10]     * w10 + sd[i01]     * w01 + sd[i11]     * w11) | 0;
+        od[di + 1] = (sd[i00 + 1] * w00 + sd[i10 + 1] * w10 + sd[i01 + 1] * w01 + sd[i11 + 1] * w11) | 0;
+        od[di + 2] = (sd[i00 + 2] * w00 + sd[i10 + 2] * w10 + sd[i01 + 2] * w01 + sd[i11 + 2] * w11) | 0;
+        od[di + 3] = 255;
+      } else if (sx >= 0 && sx < srcW && sy >= 0 && sy < srcH) {
+        const si = (Math.round(sy) * srcW + Math.round(sx)) * 4; // borde: vecino mas cercano
+        od[di] = sd[si]; od[di + 1] = sd[si + 1]; od[di + 2] = sd[si + 2]; od[di + 3] = 255;
       } else {
-        outData.data[di * 4] = 255; outData.data[di * 4 + 1] = 255;
-        outData.data[di * 4 + 2] = 255; outData.data[di * 4 + 3] = 255;
+        od[di] = 255; od[di + 1] = 255; od[di + 2] = 255; od[di + 3] = 255;
       }
     }
   }
