@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { localizedHref, publicCopy, type PublicLocale } from "@/lib/public_i18n";
+import { TuLectorLogo } from "@/components/TuLectorLogo";
 
 type PublicHeaderProps = {
   locale?: PublicLocale;
@@ -11,10 +12,7 @@ export function PublicHeader({ locale = "es" }: PublicHeaderProps) {
   return (
     <header className="sticky top-0 z-30 border-b border-[#e6e8eb] bg-white/95 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 md:px-8">
-        <Link href={localizedHref("/", locale)} className="flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[#111827] text-sm font-bold text-white">TL</span>
-          <span className="text-lg font-semibold tracking-tight text-[#111827]">TuLector</span>
-        </Link>
+        <TuLectorLogo href={localizedHref("/", locale)} />
         <nav className="hidden items-center gap-7 text-sm font-semibold text-[#4b5563] md:flex">
           <Link href={localizedHref("/scan", locale)} className="hover:text-[#111827]">{copy.scan}</Link>
           <Link href={localizedHref("/sheet", locale)} className="hover:text-[#111827]">{copy.sheet}</Link>

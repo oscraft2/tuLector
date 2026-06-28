@@ -41,3 +41,6 @@ debug/
 tsconfig.tsbuildinfo
 
 .env*
+
+# scratch files
+scratch/

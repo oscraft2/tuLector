@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
-import { DashboardShell } from "@/components/dashboard/DashboardNav";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { StatusPill } from "@/components/AppShell";
 import { startScanForQuiz } from "@/app/dashboard/actions";
+import { PageHeader } from "@/components/dashboard/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -15,14 +15,47 @@ export default async function QuizDetailPage({ params }: PageProps) {
   const { supabase, locale } = await getDashboardContext();
   const [{ data: quiz }, { data: papers }, { data: metadata }] = await Promise.all([
     supabase.from("quizzes").select("*").eq("id", id).single(),
-    supabase.from("papers").select("id,student_name,student_id,score,total,status,scanned_at").eq("quiz_id", id).order("scanned_at", { ascending: false }),
+    supabase.from("papers").select("id,student_name,student_id,score,total,status,scanned_at,equivalent_score,grade").eq("quiz_id", id).order("scanned_at", { ascending: false }),
     supabase.from("question_metadata").select("question_number,axis_name,skill_name,difficulty").eq("quiz_id", id).order("question_number"),
   ]);
   if (!quiz) notFound();
   const avg = papers?.length ? Math.round(papers.reduce((s, p) => s + ((p.score ?? 0) / Math.max(1, p.total ?? quiz.num_questions)) * 100, 0) / papers.length) : 0;
 
+  const isPAES = quiz.evaluation_type === "paes";
+  const isSIMCE = quiz.evaluation_type === "simce";
+
+  const getScoreDisplay = (paper: any) => {
+    if (isPAES) {
+      return `${paper.equivalent_score ?? Math.round(100 + ((paper.score ?? 0) / (paper.total || quiz.num_questions)) * 900)} pts PAES`;
+    }
+    if (isSIMCE) {
+      return `${paper.equivalent_score ?? Math.round(100 + ((paper.score ?? 0) / (paper.total || quiz.num_questions)) * 300)} pts SIMCE`;
+    }
+    const defaultGrade = paper.grade || (paper.total ? calculateGradeFallback(paper.score, paper.total) : "-");
+    return `Nota ${defaultGrade}`;
+  };
+
+  const getVariantLabel = () => {
+    if (!quiz.evaluation_variant) return "Personalizado";
+    const labels: Record<string, string> = {
+      paes_m1: "PAES Competencia Matemática 1 (M1)",
+      paes_m2: "PAES Competencia Matemática 2 (M2)",
+      paes_lectora: "PAES Competencia Lectora",
+      paes_ciencias: "PAES Ciencias",
+      paes_historia: "PAES Historia",
+      simce_4b_mate: "SIMCE 4° Básico - Matemática",
+      simce_4b_lectura: "SIMCE 4° Básico - Lectura",
+      simce_8b_mate: "SIMCE 8° Básico - Matemática",
+      simce_8b_lectura: "SIMCE 8° Básico - Lectura",
+      simce_2m_mate: "SIMCE II Medio - Matemática",
+      simce_2m_lectura: "SIMCE II Medio - Lectura",
+    };
+    return labels[quiz.evaluation_variant] || quiz.evaluation_variant;
+  };
+
   return (
-    <DashboardShell locale={locale} title={quiz.title} description="Detalle del ensayo, clave, lecturas sincronizadas y analisis por item.">
+    <>
+      <PageHeader title={quiz.title} description={`Evaluación: ${getVariantLabel()}. Detalle del ensayo, clave, lecturas sincronizadas y analisis por item.`} />
       <div className="space-y-6">
         <section className="grid gap-4 md:grid-cols-5">
           <Info label="Preguntas" value={quiz.num_questions} />
@@ -37,14 +70,20 @@ export default async function QuizDetailPage({ params }: PageProps) {
             <div className="flex gap-2"><Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold">Generar hoja</Link><form action={startScanForQuiz}><input type="hidden" name="quiz_id" value={quiz.id} /><button className="rounded-md bg-[#07305f] px-4 py-2 text-sm font-semibold text-white">Abrir lector</button></form></div>
           </div>
         </section>
-        <DataTable columns={["Alumno", "Puntaje", "Estado", "Fecha"]} rows={papers ?? []} empty="Aun no hay lecturas sincronizadas para este ensayo." renderRow={(paper) => (
-          <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0"><td className="px-5 py-4 font-semibold">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</td><td className="px-5 py-4">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</td><td className="px-5 py-4"><StatusPill>{paper.status ?? "active"}</StatusPill></td><td className="px-5 py-4 text-[#5b6472]">{new Date(paper.scanned_at).toLocaleString("es-CL")}</td></tr>
+        <DataTable columns={["Alumno", "Respuestas Correctas", "Resultado Equivalente", "Estado", "Fecha"]} rows={papers ?? []} empty="Aun no hay lecturas sincronizadas para este ensayo." renderRow={(paper) => (
+          <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0">
+            <td className="px-5 py-4 font-semibold">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</td>
+            <td className="px-5 py-4">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</td>
+            <td className="px-5 py-4 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
+            <td className="px-5 py-4"><StatusPill>{paper.status ?? "active"}</StatusPill></td>
+            <td className="px-5 py-4 text-[#5b6472]">{new Date(paper.scanned_at).toLocaleString("es-CL")}</td>
+          </tr>
         )} />
         <DataTable columns={["Pregunta", "Eje", "Habilidad", "Dificultad"]} rows={metadata ?? []} empty="Sin metadatos curriculares por item." renderRow={(row) => (
           <tr key={row.question_number} className="border-b border-[#eef0f3] last:border-0"><td className="px-5 py-4 font-semibold">{row.question_number}</td><td className="px-5 py-4 text-[#5b6472]">{row.axis_name ?? "-"}</td><td className="px-5 py-4 text-[#5b6472]">{row.skill_name ?? "-"}</td><td className="px-5 py-4 text-[#5b6472]">{row.difficulty ?? "-"}</td></tr>
         )} />
       </div>
-    </DashboardShell>
+    </>
   );
 }
 
@@ -52,4 +91,12 @@ function Info({ label, value }: { label: string; value: string | number }) {
   return <div className="rounded-md border border-[#e1e5ea] bg-white p-5"><p className="text-sm text-[#5b6472]">{label}</p><p className="mt-2 text-2xl font-semibold">{value}</p></div>;
 }
 
-
+function calculateGradeFallback(score: number, total: number): string {
+  if (total <= 0) return "1.0";
+  const pct = score / total;
+  const exigencia = 0.6;
+  const grade = pct >= exigencia
+    ? ((pct - exigencia) / (1 - exigencia)) * (7.0 - 4.0) + 4.0
+    : (pct / exigencia) * (4.0 - 1.0) + 1.0;
+  return grade.toFixed(1);
+}

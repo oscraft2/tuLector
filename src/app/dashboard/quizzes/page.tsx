@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { getDashboardMessages, formatDate } from "@/locales";
-import { DashboardShell } from "@/components/dashboard/DashboardNav";
 import { AnswerKeyEditor } from "@/components/dashboard/AnswerKeyEditor";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { createQuiz, archiveQuiz, duplicateQuiz, startScanForQuiz } from "@/app/dashboard/actions";
 import { QUIZ_MAX_QUESTIONS } from "@/lib/quiz_constraints";
+import { PageHeader } from "@/components/dashboard/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,8 @@ export default async function QuizzesPage() {
   const { data: quizzes } = await supabase.from("quizzes").select("id,title,subject,grade,num_questions,options_per_question,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false });
 
   return (
-    <DashboardShell locale={locale} title={t.quizzes} description="Crea ensayos, define claves, duplica instrumentos y genera hojas v2 imprimibles para leerlas luego desde la app movil.">
+    <>
+      <PageHeader title={t.quizzes} description="Crea ensayos, define claves, duplica instrumentos y genera hojas v2 imprimibles para leerlas luego desde la app movil." />
       <div className="grid gap-6 xl:grid-cols-[430px_1fr]">
         <form action={createQuiz} className="rounded-md border border-[#e1e5ea] bg-white p-5">
           <h2 className="text-xl font-semibold">Nuevo ensayo</h2>
@@ -52,7 +53,6 @@ export default async function QuizzesPage() {
           )}
         />
       </div>
-    </DashboardShell>
+    </>
   );
 }
-

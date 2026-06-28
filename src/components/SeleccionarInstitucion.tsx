@@ -26,12 +26,13 @@ type InstitutionResult = {
 type Result = SchoolResult | InstitutionResult;
 
 interface Props {
-  onSelect: (item: Result, tab: Tab) => void;
+  tab: Tab;
+  onSelect: (item: Result) => void;
   defaultValue?: string;
+  onManualMode?: (initialName: string) => void;
 }
 
-export default function SeleccionarInstitucion({ onSelect, defaultValue }: Props) {
-  const [tab, setTab] = useState<Tab>("colegio");
+export default function SeleccionarInstitucion({ tab, onSelect, defaultValue, onManualMode }: Props) {
   const [query, setQuery] = useState(defaultValue ?? "");
   const [results, setResults] = useState<Result[]>([]);
   const [open, setOpen] = useState(false);
@@ -84,28 +85,18 @@ export default function SeleccionarInstitucion({ onSelect, defaultValue }: Props
   function handleSelect(item: Result) {
     setQuery("nombre" in item ? item.nombre : "");
     setOpen(false);
-    onSelect(item, tab);
+    onSelect(item);
   }
+
+  // Clear query when tab changes from parent
+  useEffect(() => {
+    setQuery("");
+    setResults([]);
+    setOpen(false);
+  }, [tab]);
 
   return (
     <div ref={containerRef} className="relative">
-      <div className="mb-2 flex gap-1 rounded-lg border border-[#d8dde3] p-0.5 bg-[#f3f4f6]">
-        <button
-          type="button"
-          onClick={() => { setTab("colegio"); setQuery(""); setResults([]); setOpen(false); }}
-          className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${tab === "colegio" ? "bg-white text-[#07305f] shadow-sm" : "text-[#6b7280] hover:text-[#111827]"}`}
-        >
-          Colegio
-        </button>
-        <button
-          type="button"
-          onClick={() => { setTab("superior"); setQuery(""); setResults([]); setOpen(false); }}
-          className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${tab === "superior" ? "bg-white text-[#07305f] shadow-sm" : "text-[#6b7280] hover:text-[#111827]"}`}
-        >
-          Inst. Superior
-        </button>
-      </div>
-
       <input
         ref={inputRef}
         type="text"
@@ -155,8 +146,17 @@ export default function SeleccionarInstitucion({ onSelect, defaultValue }: Props
       )}
 
       {open && !loading && query.length >= 2 && results.length === 0 && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border border-[#d8dde3] bg-white px-3 py-2 text-sm text-[#6b7280] shadow-lg">
-          Sin resultados. Puedes escribir el nombre manualmente.
+        <div className="absolute z-50 mt-1 w-full rounded-md border border-[#d8dde3] bg-white px-3 py-2 text-sm text-[#6b7280] shadow-lg flex flex-col gap-1">
+          <div>Sin resultados.</div>
+          {onManualMode && (
+            <button
+              type="button"
+              onClick={() => onManualMode(query)}
+              className="text-left font-semibold text-[#07305f] underline hover:text-[#0a4587]"
+            >
+              Hacer click aquí para registrar "{query}" manualmente.
+            </button>
+          )}
         </div>
       )}
     </div>

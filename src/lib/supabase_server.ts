@@ -63,17 +63,74 @@ export async function getDashboardContext() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/auth");
 
-  const { data: membership, error: membershipError } = await supabase
-    .from("school_members")
-    .select("id, school_id, user_id, role, created_at")
+  const cookieStore = await cookies();
+  const activeSchoolId = cookieStore.get("tulector_active_school_id")?.value;
+
+  let membership: any = null;
+
+  // Check if user is platform staff (allows impersonation)
+  const { data: staffMember } = await supabase
+    .from("platform_users")
+    .select("role")
     .eq("user_id", user.id)
-    .order("created_at", { ascending: true })
-    .limit(1)
+    .is("revoked_at", null)
     .maybeSingle();
 
-  if (membershipError) throw new Error(membershipError.message);
+  const isStaff = staffMember !== null;
+
+  // Try to use school ID from cookie if it's valid for this user
+  if (activeSchoolId) {
+    const { data } = await supabase
+      .from("school_members")
+      .select("id, school_id, user_id, role, created_at")
+      .eq("user_id", user.id)
+      .eq("school_id", activeSchoolId)
+      .maybeSingle();
+    membership = data;
+
+    // Staff impersonation override: if user is staff and has school ID cookie, grant session
+    if (!membership && isStaff) {
+      membership = {
+        id: "impersonated-session",
+        school_id: activeSchoolId,
+        user_id: user.id,
+        role: "admin",
+        created_at: new Date().toISOString(),
+      };
+    }
+  }
+
+  // Fallback to the first school membership
+  if (!membership) {
+    const { data, error: membershipError } = await supabase
+      .from("school_members")
+      .select("id, school_id, user_id, role, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (membershipError) throw new Error(membershipError.message);
+    membership = data;
+
+    // Set cookie for active school
+    if (membership) {
+      try {
+        cookieStore.set("tulector_active_school_id", membership.school_id, {
+          path: "/",
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+        });
+      } catch {
+        // Cookies can only be set in Server Actions / Route Handlers, not Server Components
+      }
+    }
+  }
+
   if (!membership) redirect("/dashboard/onboarding");
 
+  // Fetch school details
   const { data: school, error: schoolError } = await supabase
     .from("schools")
     .select("*")
@@ -81,6 +138,18 @@ export async function getDashboardContext() {
     .single();
 
   if (schoolError) throw new Error(schoolError.message);
+
+  // Fetch all school memberships for this user (for the switcher)
+  const { data: allMemberships } = await supabase
+    .from("school_members")
+    .select("id, school_id, role, schools(name)")
+    .eq("user_id", user.id);
+
+  const userSchools = (allMemberships ?? []).map((m: any) => ({
+    id: m.school_id,
+    name: m.schools?.name || "Colegio sin nombre",
+    role: m.role,
+  }));
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -96,6 +165,7 @@ export async function getDashboardContext() {
     countryProfile: resolveCountryProfile((school as DashboardSchool).country_code),
     locale: ((profile?.locale as DashboardLocale | undefined) ?? "es-CL"),
     isAdmin: membership.role === "admin",
+    userSchools,
   };
 }
 

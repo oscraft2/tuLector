@@ -1,8 +1,8 @@
 import { getDashboardContext } from "@/lib/supabase_server";
-import { DashboardShell } from "@/components/dashboard/DashboardNav";
 import { StatusPill } from "@/components/AppShell";
 import { updateSchoolSettings } from "@/app/dashboard/actions";
 import { countryProfiles } from "@/lib/country_profiles";
+import { PageHeader } from "@/components/dashboard/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,8 @@ export default async function SettingsPage() {
   const email = user.email ?? "usuario@tulector.cl";
   const initials = email.slice(0, 2).toUpperCase();
   return (
-    <DashboardShell locale={locale} title="Cuenta de usuario" description="Administra tu perfil, seguridad y preferencias" organizationName={school.name} userInitials={initials}>
+    <>
+      <PageHeader title="Cuenta de usuario" description="Administra tu perfil, seguridad y preferencias" />
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-6">
           <section className="rounded-md border border-[#d8dde3] bg-white p-5">
@@ -27,7 +28,7 @@ export default async function SettingsPage() {
           <section className="rounded-md border border-[#d8dde3] bg-white p-5"><h2 className="text-xl font-semibold">Sincronizacion movil</h2><div className="mt-4 flex gap-4"><span className="grid h-8 w-8 place-items-center rounded-full bg-[#22a05a] text-white">✓</span><div><p className="font-semibold text-[#087a36]">Conectado a la app TuLector</p><p className="mt-2 text-sm text-[#5b6472]">Ultima sincronizacion: pendiente de evento real</p></div></div><button className="mt-6 w-full rounded-md border border-[#ef4444] px-4 py-2 text-sm font-semibold text-[#dc2626]">Cerrar sesion en dispositivos</button></section>
         </div>
       </div>
-    </DashboardShell>
+    </>
   );
 }
 
@@ -35,4 +36,3 @@ function Field({ label, value }: { label: string; value: string }) { return <div
 function FieldInput({ name, label, defaultValue, disabled }: { name: string; label: string; defaultValue: string; disabled: boolean }) { return <label className="text-sm font-semibold">{label}<input name={name} defaultValue={defaultValue} disabled={disabled} className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal disabled:bg-[#f4f6f8]" /></label>; }
 function ProfileBox({ profileName, summary, grading }: { profileName: string; summary: string; grading: string }) { return <div className="rounded-md border border-[#e1e5ea] bg-[#f8fafc] p-3 text-sm"><p className="font-semibold text-[#111827]">{profileName}</p><p className="mt-1 leading-5 text-[#5b6472]">{summary}</p><p className="mt-2 font-semibold text-[#07305f]">{grading}</p></div>; }
 function Row({ label, value, action }: { label: string; value: string; action: string }) { return <div className="flex items-center justify-between gap-3 py-4"><div><p className="text-sm font-medium">{label}</p><p className="mt-1 text-sm text-[#5b6472]">{value}</p></div><button className="rounded-md border border-[#9aa8ba] px-4 py-2 text-sm font-semibold text-[#07305f]">{action}</button></div>; }
-

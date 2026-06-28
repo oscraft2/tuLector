@@ -1,6 +1,12 @@
 import { AppShell } from "@/components/AppShell";
 import { getDashboardMessages, type DashboardLocale } from "@/locales";
 
+type UserSchool = {
+  id: string;
+  name: string;
+  role: string;
+};
+
 export function DashboardShell({
   locale,
   title,
@@ -8,6 +14,8 @@ export function DashboardShell({
   children,
   organizationName,
   userInitials,
+  userSchools,
+  activeSchoolId,
 }: {
   locale: DashboardLocale;
   title: string;
@@ -15,6 +23,8 @@ export function DashboardShell({
   children: React.ReactNode;
   organizationName?: string;
   userInitials?: string;
+  userSchools?: UserSchool[];
+  activeSchoolId?: string;
 }) {
   const t = getDashboardMessages(locale);
   const nav = [
@@ -36,6 +46,8 @@ export function DashboardShell({
       nav={nav}
       organizationName={organizationName}
       userInitials={userInitials}
+      userSchools={userSchools}
+      activeSchoolId={activeSchoolId}
     >
       {children}
     </AppShell>

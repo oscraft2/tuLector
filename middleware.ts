@@ -16,6 +16,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(callbackUrl);
   }
 
+  // For dashboard routes, set pathname header so the layout can detect onboarding
+  if (pathname.startsWith("/dashboard")) {
+    const response = NextResponse.next({
+      request: { headers: new Headers(request.headers) },
+    });
+    response.headers.set("x-pathname", pathname);
+    return response;
+  }
+
   if (!pathname.startsWith(adminPrefix)) return NextResponse.next();
 
   const response = NextResponse.next({ request });
@@ -50,5 +59,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/admin/:path*"],
+  matcher: ["/", "/admin/:path*", "/dashboard/:path*"],
 };

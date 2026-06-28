@@ -1,10 +1,10 @@
 import { getDashboardContext } from "@/lib/supabase_server";
 import { getDashboardMessages } from "@/locales";
-import { DashboardShell } from "@/components/dashboard/DashboardNav";
 import { InviteForm } from "@/components/dashboard/InviteForm";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { StatusPill } from "@/components/AppShell";
 import { inviteMember, revokeMember } from "@/app/dashboard/actions";
+import { PageHeader } from "@/components/dashboard/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,8 @@ export default async function TeamPage() {
     supabase.from("invitations").select("id,email,role,status,created_at").order("created_at", { ascending: false }),
   ]);
   return (
-    <DashboardShell locale={locale} title={t.team} description="Administra miembros del colegio. Solo admin puede invitar, cambiar roles o revocar accesos.">
+    <>
+      <PageHeader title={t.team} description="Administra miembros del colegio. Solo admin puede invitar, cambiar roles o revocar accesos." />
       <div className="space-y-6">
         {isAdmin ? <InviteForm action={inviteMember} /> : <div className="rounded-md border border-[#e1e5ea] bg-white p-5 text-sm text-[#5b6472]">Tu rol no permite invitar miembros.</div>}
         <DataTable columns={["Usuario", "Rol", "Creado", "Accion"]} rows={members ?? []} empty="No hay miembros visibles." renderRow={(member) => (
@@ -26,6 +27,6 @@ export default async function TeamPage() {
           <tr key={invite.id} className="border-b border-[#eef0f3] last:border-0"><td className="px-5 py-4 font-semibold">{invite.email}</td><td className="px-5 py-4">{invite.role}</td><td className="px-5 py-4"><StatusPill>{invite.status}</StatusPill></td><td className="px-5 py-4 text-[#5b6472]">{new Date(invite.created_at).toLocaleDateString("es-CL")}</td></tr>
         )} />
       </div>
-    </DashboardShell>
+    </>
   );
 }

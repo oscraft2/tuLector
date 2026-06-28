@@ -1,69 +1,68 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useTransition, type ReactNode } from "react";
 import { SchoolSelectSwitcher } from "@/components/dashboard/SchoolSelectSwitcher";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
 
-type NavItem = {
-  href: string;
-  label: string;
-  active?: boolean;
-};
+type NavItem = { href: string; label: string };
+type UserSchool = { id: string; name: string; role: string };
 
-type UserSchool = {
-  id: string;
-  name: string;
-  role: string;
-};
-
-type AppShellProps = {
-  eyebrow: string;
-  title: string;
-  description: string;
+type Props = {
   nav: NavItem[];
-  mode: "client" | "admin";
-  organizationName?: string;
-  userName?: string;
-  userInitials?: string;
-  children: React.ReactNode;
+  organizationName: string;
+  userInitials: string;
+  userName: string;
+  children: ReactNode;
   userSchools?: UserSchool[];
   activeSchoolId?: string;
 };
 
-export function AppShell({
-  eyebrow,
-  title,
-  description,
+export function DashboardLayoutShell({
   nav,
-  mode,
-  organizationName = mode === "admin" ? "TuLector Inc." : "Institucion",
-  userName = mode === "admin" ? "Admin" : "Usuario",
-  userInitials = mode === "admin" ? "TL" : "MP",
+  organizationName,
+  userInitials,
+  userName,
   children,
   userSchools,
   activeSchoolId,
-}: AppShellProps) {
+}: Props) {
+  const pathname = usePathname();
+  const [isPending] = useTransition();
+
+  function isActive(href: string) {
+    if (href === "/dashboard") return pathname === "/dashboard";
+    return pathname.startsWith(href);
+  }
+
   return (
     <main className="min-h-screen bg-[#fafafa] text-[#0b1220]" style={{ fontFamily: '"Source Sans 3", "Noto Sans", "Segoe UI", Arial, sans-serif' }}>
       <div className="grid min-h-screen lg:grid-cols-[244px_1fr]">
+        {/* ── Sidebar ── */}
         <aside className="border-b border-[#e1e5ea] bg-white lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
           <div className="flex h-full flex-col">
             <div className="flex h-20 items-center px-6">
-              <TuLectorLogo href={mode === "admin" ? "/admin" : "/dashboard"} />
+              <TuLectorLogo href="/dashboard" />
             </div>
 
             <nav className="flex-1 space-y-1 px-4 py-4" aria-label="Navegacion principal">
-              {nav.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={item.active ? "page" : undefined}
-                  className={item.active
-                    ? "flex items-center gap-3 rounded-md bg-[#eef4ff] px-4 py-3 text-sm font-semibold text-[#07305f]"
-                    : "flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium text-[#1f2937] hover:bg-[#f4f6f8] hover:text-[#07305f]"}
-                >
-                  <NavIcon active={Boolean(item.active)} />
-                  <span>{item.label}</span>
-                </Link>
-              ))}
+              {nav.map((item) => {
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    className={active
+                      ? "flex items-center gap-3 rounded-md bg-[#eef4ff] px-4 py-3 text-sm font-semibold text-[#07305f]"
+                      : "flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium text-[#1f2937] hover:bg-[#f4f6f8] hover:text-[#07305f] transition-colors duration-150"}
+                  >
+                    <NavIcon active={active} />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
             </nav>
 
             <div className="border-t border-[#e1e5ea] px-4 py-4">
@@ -74,7 +73,9 @@ export function AppShell({
           </div>
         </aside>
 
+        {/* ── Main content area ── */}
         <section className="flex min-w-0 flex-col">
+          {/* Header */}
           <header className="sticky top-0 z-20 border-b border-[#e1e5ea] bg-white/95 backdrop-blur">
             <div className="flex min-h-20 flex-col gap-3 px-5 py-3 md:px-10 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
@@ -107,18 +108,17 @@ export function AppShell({
             </div>
           </header>
 
-          <div className="flex-1 px-5 py-7 md:px-10">
-            <div className="mb-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7280]">{eyebrow}</p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">{title}</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5b6472]">{description}</p>
-            </div>
+          {/* Page content with smooth transition */}
+          <div
+            className={`flex-1 px-5 py-7 md:px-10 transition-opacity duration-200 ${isPending ? "opacity-60" : "opacity-100"}`}
+          >
             {children}
           </div>
 
+          {/* Footer */}
           <footer className="border-t border-[#e1e5ea] bg-white px-5 py-5 md:px-10">
             <div className="flex flex-col gap-3 text-sm text-[#5b6472] md:flex-row md:items-center md:justify-between">
-              <TuLectorLogo href={mode === "admin" ? "/admin" : "/dashboard"} size="sm" />
+              <TuLectorLogo href="/dashboard" size="sm" />
               <div className="flex flex-wrap gap-8">
                 <Link href="/privacy" className="hover:text-[#07305f]">Privacidad</Link>
                 <Link href="/terms" className="hover:text-[#07305f]">Terminos</Link>
@@ -138,37 +138,6 @@ function NavIcon({ active }: { active: boolean }) {
   return (
     <span className={active ? "grid h-5 w-5 place-items-center text-[#07305f]" : "grid h-5 w-5 place-items-center text-[#111827]"} aria-hidden="true">
       <span className="h-3.5 w-3.5 rounded-sm border-2 border-current" />
-    </span>
-  );
-}
-
-export function StatGrid({ items }: { items: readonly { label: string; value: string; delta: string }[] }) {
-  return (
-    <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-      {items.map((item) => (
-        <article key={item.label} className="rounded-md border border-[#e1e5ea] bg-white p-5">
-          <p className="text-sm font-medium text-[#6b7280]">{item.label}</p>
-          <p className="mt-3 text-3xl font-semibold tracking-tight">{item.value}</p>
-          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.1em] text-[#4b5563]">{item.delta}</p>
-        </article>
-      ))}
-    </section>
-  );
-}
-
-export function SectionTitle({ title, action }: { title: string; action?: string }) {
-  return (
-    <div className="mb-4 flex items-center justify-between gap-3">
-      <h2 className="text-xl font-semibold">{title}</h2>
-      {action ? <button className="rounded-md border border-[#cfd6df] px-3 py-2 text-sm font-semibold text-[#07305f] hover:bg-[#f4f6f8]">{action}</button> : null}
-    </div>
-  );
-}
-
-export function StatusPill({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex rounded-md bg-[#eaf2ff] px-2.5 py-1 text-xs font-semibold text-[#07305f]">
-      {children}
     </span>
   );
 }

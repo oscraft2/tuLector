@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { getDashboardMessages } from "@/locales";
-import { DashboardShell } from "@/components/dashboard/DashboardNav";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { StatusPill } from "@/components/AppShell";
+import { PageHeader } from "@/components/dashboard/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,8 @@ export default async function PapersPage() {
   const t = getDashboardMessages(locale);
   const { data: papers } = await supabase.from("papers").select("id,quiz_id,student_name,student_id,score,total,status,image_url,storage_path,scanned_at").order("scanned_at", { ascending: false }).limit(100);
   return (
-    <DashboardShell locale={locale} title={t.papers} description="Lecturas sincronizadas desde la app movil. Desde aqui se auditan, anulan, corrigen manualmente y alimentan ground truth para entrenamiento.">
+    <>
+      <PageHeader title={t.papers} description="Lecturas sincronizadas desde la app movil. Desde aqui se auditan, anulan, corrigen manualmente y alimentan ground truth para entrenamiento." />
       <DataTable columns={["Alumno", "Puntaje", "Estado", "Foto", "Fecha", "Accion"]} rows={papers ?? []} empty="La app todavia no ha sincronizado lecturas." renderRow={(paper) => (
         <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0">
           <td className="px-5 py-4 font-semibold">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</td>
@@ -23,6 +24,6 @@ export default async function PapersPage() {
           <td className="px-5 py-4"><Link href={`/dashboard/results/${paper.quiz_id}`} className="font-semibold underline">Resultado</Link></td>
         </tr>
       )} />
-    </DashboardShell>
+    </>
   );
 }

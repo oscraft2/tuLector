@@ -29,9 +29,23 @@ export async function completeOnboarding(formData: FormData) {
     scans_used: 0,
     ...defaults,
   }).select("id").single();
-  if (error) throw new Error(error.message);
 
-  await supabase.from("school_members").insert({ school_id: school.id, user_id: user.id, role: "admin" });
-  await supabase.from("profiles").upsert({ user_id: user.id, locale: country.locale });
+  if (error) {
+    console.error("completeOnboarding ERROR inserting school:", error);
+    throw new Error(error.message);
+  }
+
+  const { error: memberError } = await supabase.from("school_members").insert({ school_id: school.id, user_id: user.id, role: "admin" });
+  if (memberError) {
+    console.error("completeOnboarding ERROR inserting school member:", memberError);
+    throw new Error(memberError.message);
+  }
+
+  const { error: profileError } = await supabase.from("profiles").upsert({ user_id: user.id, locale: country.locale });
+  if (profileError) {
+    console.error("completeOnboarding ERROR upserting profile:", profileError);
+    throw new Error(profileError.message);
+  }
+
   redirect("/dashboard/settings");
 }

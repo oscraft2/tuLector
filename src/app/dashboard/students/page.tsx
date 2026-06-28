@@ -1,9 +1,9 @@
 import { getDashboardContext } from "@/lib/supabase_server";
 import { getDashboardMessages } from "@/locales";
-import { DashboardShell } from "@/components/dashboard/DashboardNav";
 import { CSVImport } from "@/components/dashboard/CSVImport";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { importStudents, logExport } from "@/app/dashboard/actions";
+import { PageHeader } from "@/components/dashboard/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,8 @@ export default async function StudentsPage() {
   const t = getDashboardMessages(locale);
   const { data: students } = await supabase.from("students").select("id,student_id,rut,name,course,grade,created_at").order("name");
   return (
-    <DashboardShell locale={locale} title={t.students} description="Administra alumnos por RUT, nombre y curso. La importacion valida RUT chileno y evita duplicados por colegio.">
+    <>
+      <PageHeader title={t.students} description="Administra alumnos por RUT, nombre y curso. La importacion valida RUT chileno y evita duplicados por colegio." />
       <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
         <CSVImport action={importStudents} />
         <div className="space-y-4">
@@ -24,6 +25,6 @@ export default async function StudentsPage() {
           )} />
         </div>
       </div>
-    </DashboardShell>
+    </>
   );
 }

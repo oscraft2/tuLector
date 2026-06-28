@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { localeLabels, localizedHref, publicCopy, publicLocales, type PublicLocale } from "@/lib/public_i18n";
+import { TuLectorLogo } from "@/components/TuLectorLogo";
 
 type PublicFooterProps = {
   locale?: PublicLocale;
@@ -14,12 +15,7 @@ export function PublicFooter({ locale = "es" }: PublicFooterProps) {
       <div className="mx-auto max-w-7xl px-5 py-10 md:px-8 lg:py-12">
         <div className="grid gap-10 lg:grid-cols-[1.35fr_2fr]">
           <div className="max-w-sm">
-            <Link href={localizedHref("/", locale)} className="flex items-center gap-3">
-              <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[#111827] text-sm font-bold text-white">
-                TL
-              </span>
-              <span className="text-lg font-semibold text-[#111827]">TuLector</span>
-            </Link>
+            <TuLectorLogo href={localizedHref("/", locale)} />
             <p className="mt-4 text-sm leading-6">{copy.tagline}</p>
             <p className="mt-4 text-sm font-medium text-[#111827]">{copy.location}</p>
             <a href={`mailto:${copy.contact}`} className="mt-5 inline-flex text-sm font-semibold text-[#111827] hover:underline">

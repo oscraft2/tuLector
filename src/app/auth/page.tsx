@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { AuthError } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase";
+import { TuLectorLogo } from "@/components/TuLectorLogo";
 
 export default function AuthPage() {
   return (
@@ -96,7 +97,7 @@ function AuthForm() {
     <main className="min-h-screen bg-[#fafafa] px-5 py-10 text-[#0b1220]">
       <div className="mx-auto grid min-h-[calc(100vh-80px)] max-w-6xl items-center gap-10 lg:grid-cols-[1fr_420px]">
         <section className="max-w-xl">
-          <Link href="/" className="text-3xl font-semibold tracking-tight text-[#07305f]">TuLector</Link>
+          <TuLectorLogo href="/" size="lg" />
           <p className="mt-10 text-sm font-semibold uppercase tracking-[0.16em] text-[#6b7280]">Cuenta sincronizada</p>
           <h1 className="mt-4 text-5xl font-semibold tracking-tight md:text-6xl">Web y app con una sola sesion.</h1>
           <p className="mt-6 text-lg leading-8 text-[#5b6472]">Administra ensayos y alumnos desde la web. Escanea hojas desde la app movil con la misma cuenta Supabase.</p>

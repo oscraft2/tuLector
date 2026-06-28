@@ -15,6 +15,7 @@ import {
   optionLabelsFor,
 } from "@/lib/quiz_constraints";
 import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
+import { sendTemplatedEmail } from "@/lib/email";
 
 export async function updateLocale(formData: FormData) {
   const { supabase, user } = await getDashboardContext();
@@ -38,6 +39,8 @@ export async function createQuiz(formData: FormData) {
   const numQuestions = normalizeQuestionCount(formData.get("num_questions"));
   const numOptions = normalizeQuizOptions(formData.get("options_per_question"));
   const answerKey = normalizeAnswerKeyForOptions(formData.get("answer_key_clean") ?? formData.get("answer_key"), numOptions);
+  const evalType = String(formData.get("evaluation_type") ?? "custom");
+  const evalVariant = String(formData.get("evaluation_variant") ?? "") || null;
   if (!title) throw new Error("Ingresa un titulo para el ensayo.");
   if (answerKey.length !== numQuestions) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
   await supabase.from("quizzes").insert({
@@ -51,6 +54,8 @@ export async function createQuiz(formData: FormData) {
     answer_key: answerKey,
     subject: String(formData.get("subject") ?? "") || null,
     grade: String(formData.get("grade") ?? "") || null,
+    evaluation_type: evalType,
+    evaluation_variant: evalVariant,
   });
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/quizzes");
@@ -109,12 +114,39 @@ export async function importStudents(formData: FormData) {
 }
 
 export async function inviteMember(formData: FormData) {
-  const { supabase, user, school, isAdmin } = await getDashboardContext();
+  const { supabase, user, school, isAdmin, locale } = await getDashboardContext();
   if (!isAdmin) throw new Error("Solo admin puede invitar miembros.");
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const role = String(formData.get("role") ?? "teacher");
   if (!email || !["admin", "teacher", "viewer"].includes(role)) return;
-  await supabase.from("invitations").insert({ school_id: school.id, email, role, invited_by: user.id });
+
+  const { data, error } = await supabase
+    .from("invitations")
+    .insert({ school_id: school.id, email, role, invited_by: user.id })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(`Error al crear la invitación: ${error.message}`);
+  }
+
+  if (data) {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+    const inviteLink = `${siteUrl}/auth?mode=register&invite_id=${data.id}`;
+
+    await sendTemplatedEmail({
+      to: email,
+      templateKey: "invitation",
+      locale,
+      variables: {
+        invited_by_email: user.email ?? "Un administrador",
+        school_name: school.name,
+        role: role === "admin" ? "Administrador" : role === "teacher" ? "Profesor" : "Observador",
+        invite_link: inviteLink,
+      },
+    });
+  }
+
   revalidatePath("/dashboard/team");
 }
 
@@ -176,5 +208,31 @@ export async function startScanForQuiz(formData: FormData) {
     maxAge: 60 * 60 * 8,
   });
   redirect("/scan");
+}
+
+export async function switchActiveSchool(formData: FormData) {
+  const { supabase, user } = await getDashboardContext();
+  const schoolId = String(formData.get("school_id") ?? "");
+  if (!schoolId) return;
+
+  const { data: membership } = await supabase
+    .from("school_members")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("school_id", schoolId)
+    .maybeSingle();
+
+  if (membership) {
+    const cookieStore = await cookies();
+    cookieStore.set("tulector_active_school_id", schoolId, {
+      path: "/",
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+    });
+  }
+
+  revalidatePath("/dashboard");
+  redirect("/dashboard");
 }
 
