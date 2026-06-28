@@ -23,9 +23,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const userInitials = email.slice(0, 2).toUpperCase();
 
   const nav = [
-    { href: "/dashboard", label: t.dashboard },
-    { href: "/dashboard/quizzes", label: t.quizzes },
-    { href: "/dashboard/students", label: t.students },
+    { href: "/dashboard", label: "Resumen" },
+    { href: "/dashboard/students", label: "Gestión de alumnos" },
+    { href: "/dashboard/quizzes", label: "Ensayos" },
     { href: "/dashboard/papers", label: t.papers },
     { href: "/dashboard/team", label: t.team },
     { href: "/dashboard/billing", label: t.billing },

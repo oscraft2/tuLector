@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useTransition, type ReactNode } from "react";
+import { useTransition, useState, type ReactNode } from "react";
 import { SchoolSelectSwitcher } from "@/components/dashboard/SchoolSelectSwitcher";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
 
@@ -30,6 +30,7 @@ export function DashboardLayoutShell({
 }: Props) {
   const pathname = usePathname();
   const [isPending] = useTransition();
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   function isActive(href: string) {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -38,36 +39,50 @@ export function DashboardLayoutShell({
 
   return (
     <main className="min-h-screen bg-[#fafafa] text-[#0b1220]" style={{ fontFamily: '"Source Sans 3", "Noto Sans", "Segoe UI", Arial, sans-serif' }}>
-      <div className="grid min-h-screen lg:grid-cols-[244px_1fr]">
+      <div 
+        className="grid min-h-screen transition-all duration-300 ease-in-out"
+        style={{
+          gridTemplateColumns: isCollapsed ? "72px 1fr" : "244px 1fr"
+        }}
+      >
         {/* ── Sidebar ── */}
-        <aside className="border-b border-[#e1e5ea] bg-white lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+        <aside className="border-b border-[#e1e5ea] bg-white lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r overflow-hidden transition-all duration-300 ease-in-out">
           <div className="flex h-full flex-col">
-            <div className="flex h-20 items-center px-6">
-              <TuLectorLogo href="/dashboard" />
+            <div className="flex h-20 items-center px-4 transition-all duration-300 ease-in-out">
+              <TuLectorLogo href="/dashboard" collapsed={isCollapsed} />
             </div>
 
-            <nav className="flex-1 space-y-1 px-4 py-4" aria-label="Navegacion principal">
+            <nav className="flex-1 space-y-1 px-3 py-4" aria-label="Navegacion principal">
               {nav.map((item) => {
                 const active = isActive(item.href);
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
+                    title={isCollapsed ? item.label : undefined}
                     aria-current={active ? "page" : undefined}
                     className={active
-                      ? "flex items-center gap-3 rounded-md bg-[#eef4ff] px-4 py-3 text-sm font-semibold text-[#07305f]"
-                      : "flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium text-[#1f2937] hover:bg-[#f4f6f8] hover:text-[#07305f] transition-colors duration-150"}
+                      ? "flex items-center gap-3 rounded-md bg-[#eef4ff] px-3 py-3 text-sm font-semibold text-[#07305f] transition-all duration-150"
+                      : "flex items-center gap-3 rounded-md px-3 py-3 text-sm font-medium text-[#1f2937] hover:bg-[#f4f6f8] hover:text-[#07305f] transition-all duration-150"}
                   >
                     <NavIcon active={active} />
-                    <span>{item.label}</span>
+                    {!isCollapsed && (
+                      <span className="truncate transition-opacity duration-300">{item.label}</span>
+                    )}
                   </Link>
                 );
               })}
             </nav>
 
-            <div className="border-t border-[#e1e5ea] px-4 py-4">
-              <button className="flex w-full items-center justify-center rounded-md px-3 py-2 text-[#4b5563] hover:bg-[#f4f6f8]" aria-label="Contraer menu">
-                <span className="text-xl leading-none">&laquo;</span>
+            <div className="border-t border-[#e1e5ea] px-3 py-4">
+              <button 
+                onClick={() => setIsCollapsed(!isCollapsed)}
+                className="flex w-full items-center justify-center rounded-md px-3 py-2 text-[#4b5563] hover:bg-[#f4f6f8] transition-all duration-150" 
+                aria-label={isCollapsed ? "Expandir menu" : "Contraer menu"}
+              >
+                <span className="text-xl leading-none font-bold">
+                  {isCollapsed ? "»" : "«"}
+                </span>
               </button>
             </div>
           </div>
@@ -136,7 +151,7 @@ export function DashboardLayoutShell({
 
 function NavIcon({ active }: { active: boolean }) {
   return (
-    <span className={active ? "grid h-5 w-5 place-items-center text-[#07305f]" : "grid h-5 w-5 place-items-center text-[#111827]"} aria-hidden="true">
+    <span className={active ? "grid h-5 w-5 place-items-center text-[#07305f] shrink-0" : "grid h-5 w-5 place-items-center text-[#111827] shrink-0"} aria-hidden="true">
       <span className="h-3.5 w-3.5 rounded-sm border-2 border-current" />
     </span>
   );
