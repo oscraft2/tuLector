@@ -499,9 +499,14 @@ function readTimingRows(gray: Float32Array, w: number, h: number): number[] {
   const bandW = x1 - x0 + 1;
   const minDark = Math.max(6, Math.round(L.TIMING_W * 0.4));
 
+  // Solo la banda de las filas de preguntas: ignora la cabecera y la franja del
+  // código de hoja (que cruza la columna de temporización por arriba y, si no, se
+  // contaria como una marca extra → conteo != numQuestions, frames rechazados).
+  const yStart = Math.max(0, Math.round((L.Q_TOP - L.ROW_H) / L.SHEET_H * h));
+
   const centers: number[] = [];
   let runStart = -1, runSum = 0, runW = 0;
-  for (let y = 0; y < h; y++) {
+  for (let y = yStart; y < h; y++) {
     let dark = 0;
     for (let x = x0; x <= x1; x++) if (gray[y * w + x] < 100) dark++;
     const isMark = dark >= minDark;

@@ -30,6 +30,12 @@ async function main() {
 
   if (!report.valid) fail(`Grade report invalid: ${report.reason ?? "unknown reason"}`);
 
+  // Guardia anti-regresión: la franja del código NO debe contarse como marca de
+  // temporización (si cruza la columna, daría 21 y la votación rechaza el frame).
+  if (report.diag?.timingRows !== 20) {
+    fail(`timingRows=${report.diag?.timingRows} (esperado 20): la franja del código contamina la pista`);
+  }
+
   const missedAnswers = report.results
     .map((result, index) => ({ q: index + 1, got: result.answer, expected: EXPECTED_ANSWERS[index] }))
     .filter((row) => row.got !== row.expected);
