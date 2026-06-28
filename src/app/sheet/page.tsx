@@ -4,22 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { drawSheet, type Ctx2D } from "@/lib/sheet_render";
 import { SHEET_W, SHEET_H } from "@/lib/sheet_layout";
-import { SHEET_CODE_VERSION, type SheetCodeData } from "@/lib/sheet_code";
 
 // RUT de prueba con DV valido (modulo 11): 12.345.678-5. Sirve para imprimir una
 // hoja patron perfecta y verificar el lector de RUT sin depender del marcado a mano.
 const DEFAULT_TEST_RUT = "12345678-5";
-
-// Código demo para la hoja genérica de /sheet (sin prueba asociada). Cuando se
-// genere desde una prueba real, el sheetId vendrá del id del paper/quiz.
-const DEMO_CODE: SheetCodeData = { version: SHEET_CODE_VERSION, sheetId: 1, page: 1, pagesTotal: 1 };
 
 export default function SheetPage() {
   const previewRef = useRef<HTMLCanvasElement>(null);
   const [fillRut, setFillRut] = useState(false);
   const [rut, setRut] = useState(DEFAULT_TEST_RUT);
 
-  const marks = fillRut ? { rut, filled: true, code: DEMO_CODE } : { code: DEMO_CODE };
+  // Sin franja de código por ahora (interfería arriba). Se reintroducirá compacta.
+  const marks = fillRut ? { rut, filled: true } : {};
 
   // Render de vista previa (mismo codigo que la descarga y que el fixture).
   useEffect(() => {
