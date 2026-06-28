@@ -236,3 +236,57 @@ export async function switchActiveSchool(formData: FormData) {
   redirect("/dashboard");
 }
 
+export async function createCourse(formData: FormData) {
+  const { supabase, school } = await getDashboardContext();
+  const name = String(formData.get("name") ?? "").trim();
+  const grade = String(formData.get("grade") ?? "").trim();
+
+  if (!name || !grade) throw new Error("Nombre y curso son obligatorios.");
+
+  await supabase.from("courses").insert({
+    school_id: school.id,
+    name,
+    grade,
+  });
+
+  revalidatePath("/dashboard/students");
+  revalidatePath("/dashboard/quizzes");
+}
+
+export async function deleteCourse(formData: FormData) {
+  const { supabase } = await getDashboardContext();
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  await supabase.from("courses").delete().eq("id", id);
+
+  revalidatePath("/dashboard/students");
+  revalidatePath("/dashboard/quizzes");
+}
+
+export async function createStudent(formData: FormData) {
+  const { supabase, user, school } = await getDashboardContext();
+  const name = String(formData.get("name") ?? "").trim();
+  const rut = String(formData.get("rut") ?? "").trim();
+  const course = String(formData.get("course") ?? "").trim();
+
+  if (!name || !rut || !course) throw new Error("Nombre, RUT y curso son obligatorios.");
+  if (!validateRut(rut)) throw new Error("El RUT chileno ingresado no es válido.");
+
+  const normalized = normalizeRut(rut);
+
+  await supabase.from("students").upsert({
+    school_id: school.id,
+    user_id: user.id,
+    student_id: normalized,
+    rut: normalized,
+    name,
+    grade: course,
+    course,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "school_id,student_id" });
+
+  revalidatePath("/dashboard/students");
+}
+
+
