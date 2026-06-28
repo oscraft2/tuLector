@@ -6,7 +6,7 @@
  */
 import { createCanvas, ImageData as CanvasImageData, loadImage } from "canvas";
 import { TEST_IMAGE_BASE64, EXPECTED_ANSWERS, EXPECTED_RUT, EXPECTED_CODE } from "./src/app/test/test_image";
-import { findCorners, gradeBubbles, readRut, readSheetCode, warpImageData, DEFAULT_CONFIG } from "./src/lib/omr";
+import { findCorners, gradeBubbles, readRut, readSheetCode, warpImageData, warpSheet, DEFAULT_CONFIG } from "./src/lib/omr";
 import { TIMING_X, rowCY, SHEET_W, SHEET_H } from "./src/lib/sheet_layout";
 import { drawSheet, type Ctx2D } from "./src/lib/sheet_render";
 
@@ -24,7 +24,7 @@ async function main() {
 
   const frame = ctx.getImageData(0, 0, canvas.width, canvas.height) as unknown as globalThis.ImageData;
   const corners = findCorners(frame) ?? fail("Corners were not detected");
-  const warped = warpImageData(frame, corners);
+  const warped = warpSheet(frame, corners); // warp por bloques (12 anclas) con fallback
   const report = gradeBubbles(warped);
   const rutResult = readRut(warped);
 
@@ -112,6 +112,34 @@ async function main() {
   const rutDrift = readRut(warpedDrift);
   if (rutDrift.rut !== EXPECTED_RUT) fail(`deriva: RUT leido ${rutDrift.rut} != ${EXPECTED_RUT}`);
   console.log(`Drift guard passed: RUT ${rutDrift.rut} recuperado con escala horizontal perturbada (dvComputed=${rutDrift.dvComputed})`);
+
+  // ─── Guardia de WARP POR BLOQUES (12 anclas): deforma la hoja con un "pandeo"
+  // NO lineal (paper bow) que la homografia de 4 esquinas no puede corregir.
+  // warpSheet (12 anclas) debe recuperar el RUT; el de 4 esquinas falla. ───
+  const bow = (s: globalThis.ImageData, amp: number): globalThis.ImageData => {
+    const bw = s.width, bh = s.height, sdat = s.data;
+    const out = new CanvasImageData(bw, bh) as unknown as globalThis.ImageData;
+    const od = out.data;
+    for (let y = 0; y < bh; y++) {
+      const shift = amp * Math.sin((Math.PI * y) / bh); // 0 en bordes, max al centro
+      for (let x = 0; x < bw; x++) {
+        const sx = Math.round(x - shift);
+        const di = (y * bw + x) * 4;
+        if (sx >= 0 && sx < bw) {
+          const si = (y * bw + sx) * 4;
+          od[di] = sdat[si]; od[di + 1] = sdat[si + 1]; od[di + 2] = sdat[si + 2]; od[di + 3] = 255;
+        } else { od[di] = 255; od[di + 1] = 255; od[di + 2] = 255; od[di + 3] = 255; }
+      }
+    }
+    return out;
+  };
+  const bowed = bow(frame, 45);
+  const cBow = findCorners(bowed) ?? fail("pandeo: esquinas no detectadas");
+  const rutBow4 = readRut(warpImageData(bowed, cBow)); // 4 esquinas: deberia fallar
+  const rutBow12 = readRut(warpSheet(bowed, cBow));    // 12 anclas: deberia recuperar
+  if (rutBow12.rut !== EXPECTED_RUT) fail(`bloque: warpSheet no recupero el RUT bajo pandeo (${rutBow12.rut})`);
+  if (rutBow4.rut === EXPECTED_RUT) console.warn(`  (nota: 4-esquinas tambien leyo bien con amp=45; subir para contraste)`);
+  console.log(`Block-warp guard passed: pandeo amp=45 → 4-esquinas="${rutBow4.rut}" vs 12-anclas="${rutBow12.rut}" ✓`);
 
   // ─── Guardia PARAMÉTRICO (Fase C): generar y leer una hoja con OTRO config
   // (30 preguntas / 3 opciones, formato tipo EXANI México). Prueba que el layout

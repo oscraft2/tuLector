@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { findCorners, gradeBubbles, readRut, readSheetCode, warpImageData, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
+import { findCorners, gradeBubbles, readRut, readSheetCode, warpSheet, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H } from "@/lib/sheet_layout";
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
@@ -223,7 +223,7 @@ export default function ScanPage() {
    const srcImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
    // Warp directo (mismo motor que el test). Antes via Web Worker duplicado que
    // se colgaba si solve8x8 fallaba y dejaba borde negro (auditorias P1-3/P1-4).
-   const warped = warpImageData(srcImageData, corners, config);
+   const warped = warpSheet(srcImageData, corners, config);
    addLog(`Warped: ${warped.width}x${warped.height}`);
 
    // Thumbnails: foto original + warp (para diagnostico y dataset).
@@ -352,7 +352,7 @@ export default function ScanPage() {
    if (isFrameSharp(frame) <= VOTE_FOCUS_MIN) { rejFocus++; await sleep(40); continue; }
    const corners = findCorners(frame, config);
    if (!corners) { rejCorners++; await sleep(40); continue; }
-   const warped = warpImageData(frame, corners, config);
+   const warped = warpSheet(frame, corners, config);
    const report = gradeBubbles(warped, config, corners);
    if (!report.valid || report.diag?.timingRows !== VOTE_MARKS_REQUIRED) { rejInvalid++; await sleep(40); continue; }
    const rutR = readRut(warped, config);

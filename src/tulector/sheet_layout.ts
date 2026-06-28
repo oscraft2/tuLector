@@ -30,22 +30,36 @@ export const ID_COLS = 10;
 export const ANCHOR_SIZE = 40;   // lado del cuadrado solido de esquina/borde
 export const ANCHOR_HALF = ANCHOR_SIZE / 2;
 
-// Esquinas en orden TL, TR, BR, BL (coincide con el orden del motor).
+// ─── Grilla de anclas 3×4 (12 zonas) para registro POR BLOQUES (warp bilineal) ──
+// Las 4 esquinas + 8 anclas intermedias en una grilla. Posiciones elegidas para
+// caer en zonas en blanco (no chocan con NOMBRE, RUT ni preguntas). El warp por
+// bloques rectifica cada celda con sus 4 anclas locales → corrige la deformación
+// del centro/arriba que el warp de 4 esquinas dejaba (donde se perdía el RUT).
+export const ANCHOR_GRID_X = [70, 580, SHEET_W - 70];          // 3 columnas: 70, 580, 1130
+export const ANCHOR_GRID_Y = [70, 640, 1100, SHEET_H - 70];    // 4 filas: 70, 640, 1100, 1580
+
+// Las 12 anclas en orden FILA-mayor (fila 0 izq→der, luego fila 1, ...).
+export const GRID_ANCHORS: [number, number][] = (() => {
+  const out: [number, number][] = [];
+  for (const y of ANCHOR_GRID_Y) for (const x of ANCHOR_GRID_X) out.push([x, y]);
+  return out;
+})();
+
+// Esquinas en orden TL, TR, BR, BL (lo que consume el motor: warp/validateFormat).
 export const CORNER_CENTERS: [number, number][] = [
-  [70, 70],
-  [SHEET_W - 70, 70],
-  [SHEET_W - 70, SHEET_H - 70],
-  [70, SHEET_H - 70],
+  [ANCHOR_GRID_X[0], ANCHOR_GRID_Y[0]],                        // TL
+  [ANCHOR_GRID_X[2], ANCHOR_GRID_Y[0]],                        // TR
+  [ANCHOR_GRID_X[2], ANCHOR_GRID_Y[3]],                        // BR
+  [ANCHOR_GRID_X[0], ANCHOR_GRID_Y[3]],                        // BL
 ];
 
-// Anclas intermedias: RETIRADAS. El motor nunca las usaba (auditorías P1-6) y,
-// peor, las laterales caen dentro de las zonas de búsqueda de esquinas (28% y 72%
-// de alto) y el detector las confundía con esquinas → cuadriláteros falsos en
-// fotos reales. Se vuelve a 4 esquinas + pista de temporización (que sí registra).
-// Para registro por bloques futuro habría que detectarlas explícitamente (Fase 4).
-export const EDGE_ANCHORS: [number, number][] = [];
+// Las 8 anclas intermedias (no esquina).
+const isCornerAnchor = (x: number, y: number) =>
+  (x === ANCHOR_GRID_X[0] || x === ANCHOR_GRID_X[2]) && (y === ANCHOR_GRID_Y[0] || y === ANCHOR_GRID_Y[3]);
+export const EDGE_ANCHORS: [number, number][] = GRID_ANCHORS.filter(([x, y]) => !isCornerAnchor(x, y));
 
-export const ALL_ANCHORS: [number, number][] = [...CORNER_CENTERS, ...EDGE_ANCHORS];
+// El render dibuja las 12.
+export const ALL_ANCHORS: [number, number][] = GRID_ANCHORS;
 
 // ─── Cabecera ───
 export const NAME_X = 130, NAME_Y = 110, NAME_W = 430, NAME_H = 44;

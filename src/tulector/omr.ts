@@ -126,7 +126,8 @@ function validateQuad(c: [number, number][]): boolean {
  * oscuro por zona". Robusto a que la hoja no llene el cuadro, a fondos y a
  * perspectiva moderada. Reemplaza el detector que fallaba en fotos reales.
  */
-function findCornersByBlobs(gray: Uint8Array, w: number, h: number): [number, number][] | null {
+/** Encuentra todos los blobs cuadrados sólidos (anclas) por componentes conectados. */
+function findAnchorBlobs(gray: Uint8Array, w: number, h: number): { x: number; y: number; area: number }[] {
   const otsu = otsuThreshold(gray);
   const thr = Math.min(otsu, 150); // dark = gray < thr
   const minDim = Math.min(w, h);
@@ -159,7 +160,11 @@ function findCornersByBlobs(gray: Uint8Array, w: number, h: number): [number, nu
     if (count / (bw * bh) < 0.78) continue;          // solido (excluye circulos ~0.78)
     cands.push({ x: sx / count, y: sy / count, area: count });
   }
+  return cands;
+}
 
+function findCornersByBlobs(gray: Uint8Array, w: number, h: number): [number, number][] | null {
+  const cands = findAnchorBlobs(gray, w, h);
   if (cands.length < 4) return null;
 
   // Asignacion por puntos extremos: las 4 esquinas del conjunto de cuadrados.
@@ -380,6 +385,117 @@ export function warpPerspective(
 ): ImageData {
   const srcData = sourceCtx.getImageData(0, 0, sourceCtx.canvas.width, sourceCtx.canvas.height);
   return warpImageData(srcData, corners, config);
+}
+
+// ─── Registro por bloques: 12 anclas + warp bilineal (etapa 4) ────────────────
+/** Homografía que mapea los 4 puntos `dst` (canónicos) → `src` (en la foto). */
+function solveHomography(dst: number[], src: number[]): number[] | null {
+  const A: number[][] = [], b: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    A.push([dst[i * 2], dst[i * 2 + 1], 1, 0, 0, 0, -src[i * 2] * dst[i * 2], -src[i * 2] * dst[i * 2 + 1]]);
+    A.push([0, 0, 0, dst[i * 2], dst[i * 2 + 1], 1, -src[i * 2 + 1] * dst[i * 2], -src[i * 2 + 1] * dst[i * 2 + 1]]);
+    b.push(src[i * 2]); b.push(src[i * 2 + 1]);
+  }
+  return solve8x8(A, b);
+}
+
+function applyH(h: number[], x: number, y: number): [number, number] {
+  const denom = h[6] * x + h[7] * y + 1;
+  return [(h[0] * x + h[1] * y + h[2]) / denom, (h[3] * x + h[4] * y + h[5]) / denom];
+}
+
+/**
+ * Detecta las 12 anclas en la foto: parte de la homografía de 4 esquinas para
+ * PREDECIR dónde cae cada ancla canónica, y se "engancha" al blob real más cercano.
+ * Los blobs reales capturan la deformación que el warp global no corrige (es el
+ * punto del registro por bloques). Devuelve 12 posiciones (orden de GRID_ANCHORS)
+ * o null si no se puede estimar.
+ */
+function findAllAnchors(imageData: ImageData, corners: [number, number][]): [number, number][] | null {
+  const { width: w, height: h, data } = imageData;
+  const gray = new Uint8Array(w * h);
+  for (let i = 0; i < gray.length; i++) {
+    const j = i * 4;
+    gray[i] = Math.round(data[j] * 0.299 + data[j + 1] * 0.587 + data[j + 2] * 0.114);
+  }
+  const blobs = findAnchorBlobs(gray, w, h);
+  const dst: number[] = [], src: number[] = [];
+  for (let i = 0; i < 4; i++) { dst.push(L.CORNER_CENTERS[i][0], L.CORNER_CENTERS[i][1]); src.push(corners[i][0], corners[i][1]); }
+  const H = solveHomography(dst, src);
+  if (!H) return null;
+
+  const tol = Math.min(w, h) * 0.06; // ventana de snap (±6% del lado menor; < separación entre anclas)
+  const tol2 = tol * tol;
+  const out: [number, number][] = [];
+  for (const [cx, cy] of L.GRID_ANCHORS) {
+    const [px, py] = applyH(H, cx, cy); // posición predicha por la homografía global
+    let best: { x: number; y: number } | null = null, bestD = tol2;
+    for (const bcand of blobs) {
+      const ddx = bcand.x - px, ddy = bcand.y - py, d = ddx * ddx + ddy * ddy;
+      if (d < bestD) { bestD = d; best = bcand; }
+    }
+    out.push(best ? [best.x, best.y] : [px, py]); // fallback a la predicción si no hay blob
+  }
+  return out;
+}
+
+/** Muestrea (bilineal) el píxel fuente `(sx,sy)` en `od[di..]`. */
+function sampleBilinear(sd: Uint8ClampedArray, srcW: number, srcH: number, sx: number, sy: number, od: Uint8ClampedArray, di: number): void {
+  const x0 = Math.floor(sx), y0 = Math.floor(sy);
+  if (x0 >= 0 && x0 < srcW - 1 && y0 >= 0 && y0 < srcH - 1) {
+    const fx = sx - x0, fy = sy - y0;
+    const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
+    const i00 = (y0 * srcW + x0) * 4, i10 = i00 + 4, i01 = i00 + srcW * 4, i11 = i01 + 4;
+    od[di]     = (sd[i00]     * w00 + sd[i10]     * w10 + sd[i01]     * w01 + sd[i11]     * w11) | 0;
+    od[di + 1] = (sd[i00 + 1] * w00 + sd[i10 + 1] * w10 + sd[i01 + 1] * w01 + sd[i11 + 1] * w11) | 0;
+    od[di + 2] = (sd[i00 + 2] * w00 + sd[i10 + 2] * w10 + sd[i01 + 2] * w01 + sd[i11 + 2] * w11) | 0;
+    od[di + 3] = 255;
+  } else if (sx >= 0 && sx < srcW && sy >= 0 && sy < srcH) {
+    const si = (Math.round(sy) * srcW + Math.round(sx)) * 4;
+    od[di] = sd[si]; od[di + 1] = sd[si + 1]; od[di + 2] = sd[si + 2]; od[di + 3] = 255;
+  } else {
+    od[di] = 255; od[di + 1] = 255; od[di + 2] = 255; od[di + 3] = 255;
+  }
+}
+
+/**
+ * Warp POR BLOQUES: cada celda de la grilla 3×4 se rectifica con sus 4 anclas
+ * locales (interpolación bilineal). Corrige la deformación del centro/arriba que
+ * el warp de 4 esquinas dejaba — la causa de que el RUT fallara en ángulo.
+ */
+export function warpBilinear(sourceData: ImageData, anchors: [number, number][], config: OMRConfig = DEFAULT_CONFIG): ImageData {
+  const { sheetWidth: W, sheetHeight: H } = config;
+  const gx = L.ANCHOR_GRID_X, gy = L.ANCHOR_GRID_Y;
+  const nx = gx.length, ny = gy.length;
+  const outData = new ImageData(W, H);
+  const srcW = sourceData.width, srcH = sourceData.height;
+  const sd = sourceData.data, od = outData.data;
+
+  for (let dy = 0; dy < H; dy++) {
+    let j = 0; while (j < ny - 2 && dy > gy[j + 1]) j++;
+    const v = (dy - gy[j]) / (gy[j + 1] - gy[j]);
+    const rowA = j * nx, rowB = (j + 1) * nx;
+    for (let dx = 0; dx < W; dx++) {
+      let i = 0; while (i < nx - 2 && dx > gx[i + 1]) i++;
+      const u = (dx - gx[i]) / (gx[i + 1] - gx[i]);
+      const a00 = anchors[rowA + i], a10 = anchors[rowA + i + 1], a01 = anchors[rowB + i], a11 = anchors[rowB + i + 1];
+      const c00 = (1 - u) * (1 - v), c10 = u * (1 - v), c01 = (1 - u) * v, c11 = u * v;
+      const sx = c00 * a00[0] + c10 * a10[0] + c01 * a01[0] + c11 * a11[0];
+      const sy = c00 * a00[1] + c10 * a10[1] + c01 * a01[1] + c11 * a11[1];
+      sampleBilinear(sd, srcW, srcH, sx, sy, od, (dy * W + dx) * 4);
+    }
+  }
+  return outData;
+}
+
+/**
+ * Punto de entrada del rectificado: intenta el warp por bloques (12 anclas);
+ * si no logra estimar las anclas, cae al warp clásico de 4 esquinas.
+ */
+export function warpSheet(imageData: ImageData, corners: [number, number][], config: OMRConfig = DEFAULT_CONFIG): ImageData {
+  const anchors = findAllAnchors(imageData, corners);
+  if (!anchors) return warpImageData(imageData, corners, config);
+  return warpBilinear(imageData, anchors, config);
 }
 
 function solve8x8(A: number[][], b: number[]): number[] | null {
