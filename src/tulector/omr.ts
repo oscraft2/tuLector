@@ -896,12 +896,17 @@ export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFI
 
   const r = L.RUT_R;
   // Para cada columna: refina su offset propio y elige la fila (digito) marcada.
+  // Registro ACUMULATIVO: cada columna se refina partiendo del offset de la
+  // anterior, no del global → sigue la deriva de escala a lo ancho del bloque
+  // (col0 lee bien pero la derecha se corre: error de escala horizontal del warp).
   const picked: (number | null)[] = [];
   const cols: RutColDiag[] = [];
+  let baseDx = regDx, baseDy = regDy;
   for (let c = 0; c < L.RUT_COLS; c++) {
     const isDV = c === L.RUT_COLS - 1;
     const rowCount = isDV ? L.RUT_ROWS + 1 : L.RUT_ROWS; // la columna DV tiene K
-    const { dx: colDx, dy: colDy } = refineRutCol(gray, width, height, c, regDx, regDy);
+    const { dx: colDx, dy: colDy } = refineRutCol(gray, width, height, c, baseDx, baseDy);
+    baseDx = colDx; baseDy = colDy; // la siguiente columna arranca desde aqui
     const scores: number[] = [];
     for (let d = 0; d < rowCount; d++) {
       const cx = L.rutColX(c) + colDx, cy = L.rutRowY(d) + colDy;

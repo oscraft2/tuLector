@@ -98,6 +98,21 @@ async function main() {
   if (offMiss.length > 0) fail(`offset warp: ${offMiss.length} respuestas erradas`);
   console.log(`Offset-warp guard passed: hoja no-canonica recuperada (esquinas TL=${c2[0]})`);
 
+  // ─── Guardia de DERIVA horizontal (registro acumulativo por columna): warpea
+  // con las esquinas derechas movidas hacia adentro → el bloque RUT se corre
+  // progresivamente (error de escala horizontal, como en fotos reales). Sin
+  // registro acumulativo las columnas de la derecha caen en blanco. ───
+  const driftCorners: [number, number][] = [
+    [corners[0][0], corners[0][1]],
+    [corners[1][0] - 16, corners[1][1]],   // TR hacia adentro
+    [corners[2][0] - 16, corners[2][1]],   // BR hacia adentro
+    [corners[3][0], corners[3][1]],
+  ];
+  const warpedDrift = warpImageData(frame, driftCorners);
+  const rutDrift = readRut(warpedDrift);
+  if (rutDrift.rut !== EXPECTED_RUT) fail(`deriva: RUT leido ${rutDrift.rut} != ${EXPECTED_RUT}`);
+  console.log(`Drift guard passed: RUT ${rutDrift.rut} recuperado con escala horizontal perturbada (dvComputed=${rutDrift.dvComputed})`);
+
   // ─── Guardia PARAMÉTRICO (Fase C): generar y leer una hoja con OTRO config
   // (30 preguntas / 3 opciones, formato tipo EXANI México). Prueba que el layout
   // paramétrico funciona de punta a punta. ───
