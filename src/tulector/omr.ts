@@ -8,8 +8,9 @@
  *      clasificador multi-feature por burbuja.
  *   4. Lectura de ID de estudiante (umbral de oscuridad por burbuja).
  *
- * Las constantes de calibracion (CALIB) son la UNICA fuente de verdad y deben
- * mantenerse identicas en el motor nativo (mobile/native/omr_engine.cpp).
+ * Las constantes de calibracion (CALIB) son la UNICA fuente de verdad. La app
+ * movil usa Capacitor y reutiliza ESTE motor TS (el motor C++/Flutter quedo
+ * deprecado y eliminado; ver docs/apk-plan.md).
  */
 
 import * as L from "./sheet_layout";
@@ -519,10 +520,7 @@ function solve8x8(A: number[][], b: number[]): number[] | null {
 const DARK_THRESH = 70;
 const GLARE_THRESH = 220;
 
-/**
- * Calibracion del clasificador. UNICA fuente de verdad: debe replicarse
- * byte-a-byte en mobile/native/omr_engine.cpp (constexpr CALIB_*).
- */
+/** Calibracion del clasificador. UNICA fuente de verdad (motor TS; ver docs/apk-plan.md). */
 const CALIB = {
   bubbleRadius: 10,   // radio de muestreo del ROI por burbuja
   relThresh: 0.55,    // umbral relativo al mejor score de la pregunta

@@ -10,7 +10,9 @@ tener lógica de visión/OMR; solo consume este módulo.
 - `sheet_render.ts` — generador de hoja (`drawSheet`), compartido con el fixture.
 - `omr_worker.ts` — wrapper de warp.
 
-El motor nativo (C++) está en `mobile/native/` y replica esta lógica.
+> La app móvil se construye con **Capacitor** (reusa este motor TS), NO con Flutter.
+> El motor C++ nativo y el proyecto Flutter (`mobile/`) están **DEPRECADOS y eliminados**.
+> Ver `docs/apk-plan.md`.
 
 ## Imports
 Código nuevo: `import { ... } from "@/tulector/omr"`.
@@ -18,6 +20,6 @@ Los paths viejos `@/lib/omr`, `@/lib/sheet_layout`, etc. siguen funcionando como
 **shims** de re-exportación (compatibilidad). Se pueden migrar y borrar luego.
 
 ## Regla de oro
-- Cambios de motor/hoja → tocan **solo** `src/tulector/` (+ `mobile/native/` para C++)
+- Cambios de motor/hoja → tocan **solo** `src/tulector/`
   y se verifican con `npm run test:omr` (default 20/20 + RUT + paramétrico).
 - Cambios de UI → todo lo demás. Así motor y UI no chocan.

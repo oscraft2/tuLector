@@ -5,7 +5,6 @@
  *   - el generador de hoja (src/app/sheet/page.tsx via sheet_render.ts)
  *   - el motor (src/lib/omr.ts)
  *   - el generador de fixture de prueba (scripts/gen_fixture.ts)
- *   - el motor nativo (mobile/native/omr_engine.cpp) replica estos numeros.
  *
  * Diseño (inspirado en principios OMR, NO copiado):
  *   - 4 anclas de esquina SOLIDAS (blob denso e inequivoco para detectar).
