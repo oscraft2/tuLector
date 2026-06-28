@@ -405,9 +405,10 @@ const CALIB = {
   gridSearchDx: 6,    // rango +-px de busqueda horizontal de la grilla
   gridSearchDy: 8,    // rango +-px de busqueda vertical de la grilla
   gridSearchStep: 2,  // paso de la busqueda de offset
-  rutSearchDx: 8,     // rango +-px de busqueda del bloque RUT (sin ancla propia)
-  rutSearchDy: 10,    // rango +-px vertical del RUT; < pitch de fila para no saltar de digito
+  rutSearchDx: 10,    // rango +-px de busqueda global del bloque RUT (sin ancla propia)
+  rutSearchDy: 18,    // rango +-px vertical del RUT (antes 10 se topaba en fotos anguladas)
   rutSearchStep: 2,   // paso de la busqueda de offset del RUT
+  rutColRefine: 6,    // rango +-px del ajuste fino POR COLUMNA sobre el offset global
 } as const;
 
 /**  multi-feature bubble classifier */
@@ -774,18 +775,22 @@ export interface RutColDiag {
   picked: number | null;  // digito elegido (10 = K en la columna DV) o null si no se leyo
   top: number;            // score del mas oscuro (0..1)
   margin: number;         // top - 2do score (dominancia; <0.10 → descartado)
+  cdx: number;            // ajuste X fino propio de la columna (sobre el offset global)
+  cdy: number;            // ajuste Y fino propio de la columna
 }
 export interface RutDiag {
-  dx: number;             // offset X aplicado al bloque RUT por el registro local
-  dy: number;             // offset Y aplicado al bloque RUT por el registro local
+  dx: number;             // offset X global aplicado al bloque RUT
+  dy: number;             // offset Y global aplicado al bloque RUT
+  dvComputed: boolean;    // true si el DV se calculo (cuerpo confiable, DV no legible)
   cols: RutColDiag[];     // diagnostico por columna (cuerpo + DV)
 }
 
 export interface RutResult {
-  rut: string;        // "12345678-5" o "" si incompleto
-  dvOk: boolean;      // true si el DV marcado coincide con el calculado (modulo 11)
-  complete: boolean;  // true si todas las columnas necesarias se leyeron
-  diag?: RutDiag;     // registro local + scores por columna (para analisis remoto)
+  rut: string;          // "17517808-2" o "" si incompleto
+  dvOk: boolean;        // true si el DV LEIDO coincide con el calculado (verificado)
+  complete: boolean;    // true si todas las columnas del cuerpo se leyeron
+  dvComputed?: boolean; // true si el DV se relleno por calculo (no se leyo de la hoja)
+  diag?: RutDiag;       // registro local + scores por columna (para analisis remoto)
 }
 
 /** Oscuridad concentrada en los centros de burbuja del RUT para un offset (dx,dy). */
@@ -827,6 +832,42 @@ function findRutOffset(gray: Float32Array, w: number, h: number): { dx: number; 
   return { dx: bestDx, dy: bestDy };
 }
 
+/** Oscuridad sobre los centros de burbuja de UNA columna del RUT (para refinarla). */
+function darkAtRutCol(gray: Float32Array, w: number, h: number, c: number, dx: number, dy: number): number {
+  const r = L.RUT_R;
+  const rowCount = c === L.RUT_COLS - 1 ? L.RUT_ROWS + 1 : L.RUT_ROWS;
+  let darkSum = 0;
+  for (let d = 0; d < rowCount; d++) {
+    const cx = L.rutColX(c) + dx, cy = L.rutRowY(d) + dy;
+    for (let yy = -r; yy <= r; yy++) {
+      const py = cy + yy;
+      if (py < 0 || py >= h) continue;
+      for (let xx = -r; xx <= r; xx++) {
+        const px = cx + xx;
+        if (px >= 0 && px < w && gray[py * w + px] < DARK_THRESH) darkSum++;
+      }
+    }
+  }
+  return darkSum;
+}
+
+/**
+ * Refina el offset de UNA columna alrededor del global. El offset unico corrige
+ * el grueso, pero una columna del extremo (p.ej. el DV) puede quedar fuera por
+ * un leve error de escala/cizalla; cada columna engancha su propia grilla de
+ * anillos. Columnas ya bien registradas devuelven ~(0,0): no degrada el caso ideal.
+ */
+function refineRutCol(gray: Float32Array, w: number, h: number, c: number, baseDx: number, baseDy: number): { dx: number; dy: number } {
+  let bestDx = baseDx, bestDy = baseDy, bestDark = -1;
+  for (let ddy = -CALIB.rutColRefine; ddy <= CALIB.rutColRefine; ddy += 2) {
+    for (let ddx = -CALIB.rutColRefine; ddx <= CALIB.rutColRefine; ddx += 2) {
+      const dk = darkAtRutCol(gray, w, h, c, baseDx + ddx, baseDy + ddy);
+      if (dk > bestDark) { bestDark = dk; bestDx = baseDx + ddx; bestDy = baseDy + ddy; }
+    }
+  }
+  return { dx: bestDx, dy: bestDy };
+}
+
 /** Digito verificador chileno (modulo 11). Devuelve 0..10 (10 = K). */
 export function computeRutDV(body: number[]): number {
   let sum = 0, mul = 2;
@@ -848,15 +889,16 @@ export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFI
   const { dx: regDx, dy: regDy } = findRutOffset(gray, width, height);
 
   const r = L.RUT_R;
-  // Para cada columna, elige la fila (digito) marcada con dominancia.
+  // Para cada columna: refina su offset propio y elige la fila (digito) marcada.
   const picked: (number | null)[] = [];
   const cols: RutColDiag[] = [];
   for (let c = 0; c < L.RUT_COLS; c++) {
     const isDV = c === L.RUT_COLS - 1;
     const rowCount = isDV ? L.RUT_ROWS + 1 : L.RUT_ROWS; // la columna DV tiene K
+    const { dx: colDx, dy: colDy } = refineRutCol(gray, width, height, c, regDx, regDy);
     const scores: number[] = [];
     for (let d = 0; d < rowCount; d++) {
-      const cx = L.rutColX(c) + regDx, cy = L.rutRowY(d) + regDy;
+      const cx = L.rutColX(c) + colDx, cy = L.rutRowY(d) + colDy;
       let dark = 0, tot = 0;
       for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
         const px = cx + dx, py = cy + dy;
@@ -870,24 +912,41 @@ export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFI
     const margin = sorted[0] - (sorted[1] ?? 0);
     const pick = maxS > 0.20 && margin > 0.10 ? maxIdx : null;
     picked.push(pick);
-    cols.push({ picked: pick, top: Math.round(maxS * 1000) / 1000, margin: Math.round(margin * 1000) / 1000 });
+    cols.push({
+      picked: pick, top: Math.round(maxS * 1000) / 1000, margin: Math.round(margin * 1000) / 1000,
+      cdx: colDx - regDx, cdy: colDy - regDy,
+    });
   }
 
   // Cuerpo (8 columnas, alineado a la derecha): nulos iniciales = RUT mas corto.
   const bodyCols = picked.slice(0, L.RUT_DIGITS);
   const body: number[] = [];
-  let started = false, complete = true;
+  let started = false, bodyComplete = true;
   for (const d of bodyCols) {
-    if (d === null) { if (started) complete = false; }
+    if (d === null) { if (started) bodyComplete = false; }
     else { started = true; body.push(d); }
   }
   const dvPicked = picked[L.RUT_COLS - 1];
-  if (dvPicked === null || body.length === 0) complete = false;
 
-  const dvStr = dvPicked === null ? "?" : dvPicked === 10 ? "K" : String(dvPicked);
+  // El DV es un checksum (modulo 11) del cuerpo. Si el cuerpo se leyo completo y
+  // confiable pero la burbuja del DV no se logra leer (columna del borde, foto
+  // angulada), lo CALCULAMOS para entregar el RUT completo igual.
+  let dvOk = false;
+  let dvComputed = false;
+  let dvStr = "?";
+  if (dvPicked !== null) {
+    dvStr = dvPicked === 10 ? "K" : String(dvPicked);
+    dvOk = bodyComplete && body.length > 0 && dvPicked === computeRutDV(body);
+  } else if (bodyComplete && body.length >= 7) {
+    // Cuerpo confiable, DV ilegible → calcular el DV (no verificado por lectura).
+    const cdv = computeRutDV(body);
+    dvStr = cdv === 10 ? "K" : String(cdv);
+    dvComputed = true;
+  }
+
+  const complete = bodyComplete && body.length > 0 && (dvPicked !== null || dvComputed);
   const rut = body.length > 0 ? `${body.join("")}-${dvStr}` : "";
-  const dvOk = complete && dvPicked !== null && dvPicked === computeRutDV(body);
-  return { rut, dvOk, complete, diag: { dx: regDx, dy: regDy, cols } };
+  return { rut, dvOk, complete, dvComputed, diag: { dx: regDx, dy: regDy, dvComputed, cols } };
 }
 
 export { DEFAULT_CONFIG };

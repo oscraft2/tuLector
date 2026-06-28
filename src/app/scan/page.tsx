@@ -248,7 +248,7 @@ export default function ScanPage() {
     });
 
    if (report.diag) addLog(`Registro: ${report.diag.usedTiming ? `temporizacion (${report.diag.timingRows} marcas)` : "offset software"}, dx=${report.diag.gridDx}`);
-   if (rutR.diag) addLog(`RUT: offset dx=${rutR.diag.dx} dy=${rutR.diag.dy} → ${rutR.rut || "—"} DV=${rutR.dvOk ? "OK" : "—"}`);
+   if (rutR.diag) addLog(`RUT: offset dx=${rutR.diag.dx} dy=${rutR.diag.dy} → ${rutR.rut || "—"} DV=${rutR.dvOk ? "OK" : rutR.dvComputed ? "calc" : "—"}`);
 
    if (!report.valid) {
     addLog(`ERR[${SCAN_CODES.WRONG_FORMAT}]: ${report.reason}`);
