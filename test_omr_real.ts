@@ -5,8 +5,8 @@
  * self-contained test pipeline in test_omr.ts.
  */
 import { createCanvas, ImageData as CanvasImageData, loadImage } from "canvas";
-import { TEST_IMAGE_BASE64, EXPECTED_ANSWERS, EXPECTED_RUT } from "./src/app/test/test_image";
-import { findCorners, gradeBubbles, readRut, warpImageData, DEFAULT_CONFIG } from "./src/lib/omr";
+import { TEST_IMAGE_BASE64, EXPECTED_ANSWERS, EXPECTED_RUT, EXPECTED_CODE } from "./src/app/test/test_image";
+import { findCorners, gradeBubbles, readRut, readSheetCode, warpImageData, DEFAULT_CONFIG } from "./src/lib/omr";
 import { TIMING_X, rowCY, SHEET_W, SHEET_H } from "./src/lib/sheet_layout";
 import { drawSheet, type Ctx2D } from "./src/lib/sheet_render";
 
@@ -41,7 +41,14 @@ async function main() {
   if (rutResult.rut !== EXPECTED_RUT) fail(`RUT mismatch: got ${rutResult.rut}, expected ${EXPECTED_RUT}`);
   if (!rutResult.dvOk) fail(`RUT DV no valido: ${rutResult.rut}`);
 
-  console.log(`OMR production smoke test passed: ${report.results.length}/20 answers, RUT ${rutResult.rut} (DV ${rutResult.dvOk ? "OK" : "FAIL"})`);
+  // Código de hoja: leer del warp y verificar guías + CRC + campos.
+  const codeRead = readSheetCode(warped);
+  if (!codeRead) fail("Código de hoja no leído (null)");
+  if (JSON.stringify(codeRead) !== JSON.stringify(EXPECTED_CODE)) {
+    fail(`Código de hoja distinto: ${JSON.stringify(codeRead)} vs ${JSON.stringify(EXPECTED_CODE)}`);
+  }
+
+  console.log(`OMR production smoke test passed: ${report.results.length}/20 answers, RUT ${rutResult.rut} (DV ${rutResult.dvOk ? "OK" : "FAIL"}), code sheetId=${codeRead.sheetId} p${codeRead.page}/${codeRead.pagesTotal}`);
 
   // ─── Guardia de timing parcial (Fase 0.3): ocluir 4 marcas y verificar que
   // el registro interpola por regresion y sigue calificando 20/20. ───

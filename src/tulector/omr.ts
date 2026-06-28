@@ -13,6 +13,7 @@
  */
 
 import * as L from "./sheet_layout";
+import { decodeSheetCode, type SheetCodeData } from "./sheet_code";
 
 export interface OMRConfig {
   numQuestions: number; numOptions: number; optionLabels: string;
@@ -947,6 +948,58 @@ export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFI
   const complete = bodyComplete && body.length > 0 && (dvPicked !== null || dvComputed);
   const rut = body.length > 0 ? `${body.join("")}-${dvStr}` : "";
   return { rut, dvOk, complete, dvComputed, diag: { dx: regDx, dy: regDy, dvComputed, cols } };
+}
+
+// ─── 6. Código de hoja (franja OMR-nativa; ver docs/codigo-hoja-spec.md) ──────
+/** Oscuridad concentrada en los centros de celda del código para un offset (dx,dy). */
+function darkAtCode(gray: Float32Array, w: number, h: number, dx: number, dy: number): number {
+  const r = L.CODE_R;
+  let darkSum = 0;
+  for (let i = 0; i < L.CODE_CELLS; i++) {
+    const cx = L.codeCellX(i) + dx, cy = L.CODE_Y + dy;
+    for (let yy = -r; yy <= r; yy++) {
+      const py = cy + yy;
+      if (py < 0 || py >= h) continue;
+      for (let xx = -r; xx <= r; xx++) {
+        const px = cx + xx;
+        if (px >= 0 && px < w && gray[py * w + px] < DARK_THRESH) darkSum++;
+      }
+    }
+  }
+  return darkSum;
+}
+
+/**
+ * Lee el código de hoja del warp. Registra la franja (las celdas llenas dan el
+ * pico), muestrea cada celda y decodifica con verificación de guías + CRC.
+ * Devuelve null si no hay código (hoja vieja) o no valida (ilegible).
+ */
+export function readSheetCode(imageData: ImageData): SheetCodeData | null {
+  const { width, height, data } = imageData;
+  const gray = new Float32Array(width * height);
+  for (let i = 0; i < gray.length; i++) gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
+
+  // Registro local de la franja (misma idea que findRutOffset).
+  let bestDx = 0, bestDy = 0, bestDark = -1;
+  for (let dy = -CALIB.rutSearchDy; dy <= CALIB.rutSearchDy; dy += CALIB.rutSearchStep) {
+    for (let dx = -CALIB.rutSearchDx; dx <= CALIB.rutSearchDx; dx += CALIB.rutSearchStep) {
+      const dk = darkAtCode(gray, width, height, dx, dy);
+      if (dk > bestDark) { bestDark = dk; bestDx = dx; bestDy = dy; }
+    }
+  }
+
+  const r = L.CODE_R;
+  const bits: number[] = [];
+  for (let i = 0; i < L.CODE_CELLS; i++) {
+    const cx = L.codeCellX(i) + bestDx, cy = L.CODE_Y + bestDy;
+    let dark = 0, tot = 0;
+    for (let yy = -r; yy <= r; yy++) for (let xx = -r; xx <= r; xx++) {
+      const px = cx + xx, py = cy + yy;
+      if (px >= 0 && px < width && py >= 0 && py < height) { tot++; if (gray[py * width + px] < DARK_THRESH) dark++; }
+    }
+    bits.push(tot > 0 && dark / tot > 0.45 ? 1 : 0);
+  }
+  return decodeSheetCode(bits);
 }
 
 export { DEFAULT_CONFIG };

@@ -5,6 +5,7 @@
  * impresa y la imagen de test sean identicas (no pueden divergir).
  */
 import * as L from "./sheet_layout";
+import { encodeSheetCode, type SheetCodeData } from "./sheet_code";
 
 // Subconjunto minimo de CanvasRenderingContext2D que usamos (compatible con
 // el navegador y con node-canvas).
@@ -31,6 +32,8 @@ export interface SheetMarks {
   rut?: string;
   /** Si true, rellena las marcas (para el fixture de prueba). */
   filled?: boolean;
+  /** Código de hoja a imprimir (versión, id de prueba, página). */
+  code?: SheetCodeData;
 }
 
 const BLACK = "#000000";
@@ -95,6 +98,25 @@ function drawRut(ctx: Ctx2D, marks: SheetMarks): void {
   }
 }
 
+/** Dibuja la franja del código de hoja (celdas llenas=1, contorno tenue=0). */
+function drawSheetCode(ctx: Ctx2D, data: SheetCodeData): void {
+  const bits = encodeSheetCode(data);
+  const s = L.CODE_CELL, half = s / 2;
+  for (let i = 0; i < bits.length; i++) {
+    const x = L.codeCellX(i), y = L.CODE_Y;
+    if (bits[i]) {
+      ctx.fillStyle = BLACK;
+      ctx.fillRect(x - half, y - half, s, s);
+    } else {
+      // Contorno tenue: marca visualmente la celda sin contaminar el muestreo
+      // (el motor muestrea solo el interior, radio CODE_R < half).
+      ctx.strokeStyle = GRAY;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - half, y - half, s, s);
+    }
+  }
+}
+
 export function drawSheet(ctx: Ctx2D, marks: SheetMarks = {}, cfg: L.SheetConfig = L.DEFAULT_SHEET): void {
   // Fondo blanco
   ctx.fillStyle = "#ffffff";
@@ -114,6 +136,9 @@ export function drawSheet(ctx: Ctx2D, marks: SheetMarks = {}, cfg: L.SheetConfig
   ctx.textBaseline = "alphabetic";
   ctx.font = "bold 20px sans-serif";
   ctx.fillText("NOMBRE", L.NAME_X + 6, L.NAME_Y - 8);
+
+  // ─── Código de hoja (franja superior) ───
+  if (marks.code) drawSheetCode(ctx, marks.code);
 
   // ─── Grilla de RUT (8 dígitos + DV con K) ───
   drawRut(ctx, marks);

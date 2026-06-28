@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { findCorners, gradeBubbles, readRut, warpImageData, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
+import { findCorners, gradeBubbles, readRut, readSheetCode, warpImageData, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H } from "@/lib/sheet_layout";
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
@@ -235,6 +235,7 @@ export default function ScanPage() {
 
    const report = gradeBubbles(warped, config, corners);
    const rutR = readRut(warped, config);
+   const codeR = readSheetCode(warped);
    const idRows = rutR.rut ? [rutR.rut] : [];
    const scores = (report.results ?? []).map(r => ({ q: r.question, a: r.answer, s: r.scores }));
 
@@ -242,13 +243,14 @@ export default function ScanPage() {
     saveScanLog({
      v: SCAN_LOG_VERSION, type, source, sheet: "v2", ts: new Date().toISOString(),
      frame: { w: canvas.width, h: canvas.height },
-     diag: { ...report.diag, rut: rutR.diag } as unknown as Record<string, unknown>,
+     diag: { ...report.diag, rut: rutR.diag, code: codeR } as unknown as Record<string, unknown>,
      corners, result: { valid, code, reason: report.reason },
      answers: scores, id: idRows, rut: rutR.rut, dvOk: rutR.dvOk, photo: photoThumb, warp: warpThumb,
     });
 
    if (report.diag) addLog(`Registro: ${report.diag.usedTiming ? `temporizacion (${report.diag.timingRows} marcas)` : "offset software"}, dx=${report.diag.gridDx}`);
    if (rutR.diag) addLog(`RUT: offset dx=${rutR.diag.dx} dy=${rutR.diag.dy} → ${rutR.rut || "—"} DV=${rutR.dvOk ? "OK" : rutR.dvComputed ? "calc" : "—"}`);
+   addLog(`Código hoja: ${codeR ? `id=${codeR.sheetId} v${codeR.version} p${codeR.page}/${codeR.pagesTotal}` : "no detectado"}`);
 
    if (!report.valid) {
     addLog(`ERR[${SCAN_CODES.WRONG_FORMAT}]: ${report.reason}`);
@@ -401,13 +403,15 @@ export default function ScanPage() {
   ]);
   setPhase("result");
 
+  const codeR = readSheetCode(lastWarp);
+
   await saveScanLog({
    v: SCAN_LOG_VERSION, type: "scan", source: "camera", sheet: "v2", ts: new Date().toISOString(),
    frame: { w: lastFrame.width, h: lastFrame.height },
    diag: {
     voted: true, frames: sessions.length, rejected,
     rejFocus, rejCorners, rejInvalid, timingRows: lastTiming,
-    reads: frameReads, rut: repRutSession.rutDiag,
+    reads: frameReads, rut: repRutSession.rutDiag, code: codeR,
    },
    corners: lastCorners,
    result: { valid: true, code: SCAN_CODES.GRADED },

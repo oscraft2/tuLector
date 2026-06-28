@@ -50,6 +50,20 @@ export const ALL_ANCHORS: [number, number][] = [...CORNER_CENTERS, ...EDGE_ANCHO
 // ─── Cabecera ───
 export const NAME_X = 130, NAME_Y = 110, NAME_W = 430, NAME_H = 44;
 
+// ─── Código de hoja (franja OMR-nativa; ver docs/codigo-hoja-spec.md) ───
+// Banda superior, bajo las esquinas y la caja de NOMBRE; 46 celdas a lo ancho.
+export const CODE_Y = 180;      // centro Y de la franja
+export const CODE_X0 = 110;     // centro X de la primera celda
+export const CODE_CELL = 16;    // lado del cuadrado impreso
+export const CODE_STEP = 22;    // separacion horizontal entre celdas (centro a centro)
+export const CODE_R = 6;        // radio de muestreo del motor por celda (interior a la celda)
+export const CODE_CELLS = 46;   // total de celdas (ver sheet_code.ts)
+
+/** Centro X de la celda i del código de hoja. */
+export function codeCellX(i: number): number {
+  return CODE_X0 + i * CODE_STEP;
+}
+
 // ─── Grilla de ID (3 filas x 10 col) — LEGADO, reemplazado por RUT ───
 export const ID_X0 = 200;     // centro de la primera columna
 export const ID_Y0 = 210;     // centro de la primera fila

@@ -16,20 +16,21 @@ multipágina, reensambla las páginas. Estado: **propuesta v1, sin implementar.*
 Una **franja horizontal de celdas cuadradas** (lleno = bit 1, vacío = bit 0), en una
 posición fija de la hoja, dentro del espacio canónico `1200×1650`.
 
-Constantes propuestas (irían en `sheet_layout.ts`):
+Constantes (implementadas en `sheet_layout.ts`):
 
 ```
-CODE_Y        = 180     // centro Y de la franja (banda superior, bajo las esquinas)
+CODE_Y        = 180     // centro Y de la franja (banda superior, bajo NOMBRE)
 CODE_X0       = 110     // centro X de la primera celda
-CODE_CELL     = 18      // lado del cuadrado impreso
-CODE_STEP     = 24      // separación horizontal entre celdas (centro a centro)
-CODE_R        = 7       // radio de muestreo del motor por celda
+CODE_CELL     = 16      // lado del cuadrado impreso
+CODE_STEP     = 22      // separación horizontal entre celdas (centro a centro)
+CODE_R        = 6       // radio de muestreo del motor por celda (interior a la celda)
 CODE_CELLS    = 46      // total de celdas (ver estructura)
-codeCellX(i)  = CODE_X0 + i * CODE_STEP   // → 110 .. 1190 con 46 celdas
+codeCellX(i)  = CODE_X0 + i * CODE_STEP   // → 110 .. 1100 con 46 celdas
 ```
 
-46 celdas × 24px = 1104px de ancho: cabe con márgenes. Si en pruebas físicas las celdas
-salen muy chicas para el ángulo real, la v1.1 puede partir la franja en **2 filas de 23**.
+46 celdas × 22px = 1012px de ancho (centro final 1100): cabe con holgura. Si en pruebas
+físicas las celdas salen muy chicas para el ángulo real, la v1.1 puede partir la franja
+en **2 filas de 23**.
 
 ## Estructura de bits (izquierda → derecha)
 
