@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useTransition, useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useTransition, useState, useEffect, useRef, type ReactNode } from "react";
 import { SchoolSelectSwitcher } from "@/components/dashboard/SchoolSelectSwitcher";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
+import { createClient } from "@/lib/supabase";
 
 type NavItem = { href: string; label: string };
 type UserSchool = { id: string; name: string; role: string };
@@ -29,12 +30,34 @@ export function DashboardLayoutShell({
   activeSchoolId,
 }: Props) {
   const pathname = usePathname();
+  const router = useRouter();
   const [isPending] = useTransition();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  
+  const supabase = createClient();
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowProfileMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   function isActive(href: string) {
     if (href === "/dashboard") return pathname === "/dashboard";
     return pathname.startsWith(href);
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push("/auth");
+    router.refresh();
   }
 
   return (
@@ -115,10 +138,53 @@ export function DashboardLayoutShell({
                   <span aria-hidden="true" className="text-xl">♧</span>
                   <span className="absolute right-0 top-0 flex h-5 w-5 items-center justify-center rounded-full bg-[#073b7a] text-[11px] font-semibold text-white">3</span>
                 </button>
-                <button className="flex items-center gap-3" aria-label={`Cuenta de ${userName}`}>
-                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#07305f] text-base font-semibold text-white shadow-sm">{userInitials}</span>
-                  <span className="hidden text-[#111827] md:block" aria-hidden="true">⌄</span>
-                </button>
+                
+                {/* Profile Dropdown */}
+                <div className="relative" ref={menuRef}>
+                  <button 
+                    onClick={() => setShowProfileMenu(!showProfileMenu)}
+                    className="flex items-center gap-3 focus:outline-none" 
+                    aria-label={`Cuenta de ${userName}`}
+                  >
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#07305f] text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity">
+                      {userInitials}
+                    </span>
+                    <span className="hidden text-[#111827] md:block" aria-hidden="true">⌄</span>
+                  </button>
+
+                  {showProfileMenu && (
+                    <div className="absolute right-0 mt-2 w-56 rounded-md border border-[#e1e5ea] bg-white shadow-lg z-30 divide-y divide-[#eef0f3]">
+                      <div className="px-4 py-3 text-sm text-[#111827]">
+                        <p className="font-semibold text-xs text-[#5b6472] uppercase tracking-wider">Usuario activo</p>
+                        <p className="font-medium truncate mt-1">{userName}</p>
+                      </div>
+                      <div className="py-1">
+                        <Link 
+                          href="/dashboard/settings" 
+                          onClick={() => setShowProfileMenu(false)}
+                          className="block px-4 py-2 text-sm text-[#1f2937] hover:bg-[#f4f6f8] hover:text-[#07305f]"
+                        >
+                          Configuración
+                        </Link>
+                        <Link 
+                          href="/dashboard/billing" 
+                          onClick={() => setShowProfileMenu(false)}
+                          className="block px-4 py-2 text-sm text-[#1f2937] hover:bg-[#f4f6f8] hover:text-[#07305f]"
+                        >
+                          Planes y Cuotas
+                        </Link>
+                      </div>
+                      <div className="py-1">
+                        <button
+                          onClick={handleLogout}
+                          className="flex w-full text-left px-4 py-2 text-sm text-red-600 font-medium hover:bg-red-50"
+                        >
+                          Cerrar sesión
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </header>
