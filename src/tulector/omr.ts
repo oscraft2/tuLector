@@ -405,6 +405,9 @@ const CALIB = {
   gridSearchDx: 6,    // rango +-px de busqueda horizontal de la grilla
   gridSearchDy: 8,    // rango +-px de busqueda vertical de la grilla
   gridSearchStep: 2,  // paso de la busqueda de offset
+  rutSearchDx: 8,     // rango +-px de busqueda del bloque RUT (sin ancla propia)
+  rutSearchDy: 10,    // rango +-px vertical del RUT; < pitch de fila para no saltar de digito
+  rutSearchStep: 2,   // paso de la busqueda de offset del RUT
 } as const;
 
 /**  multi-feature bubble classifier */
@@ -767,10 +770,61 @@ export function readStudentId(imageData: ImageData, config: OMRConfig = DEFAULT_
 }
 
 // ─── 5. RUT (Chile): columna por digito + validacion del digito verificador ───
+export interface RutColDiag {
+  picked: number | null;  // digito elegido (10 = K en la columna DV) o null si no se leyo
+  top: number;            // score del mas oscuro (0..1)
+  margin: number;         // top - 2do score (dominancia; <0.10 → descartado)
+}
+export interface RutDiag {
+  dx: number;             // offset X aplicado al bloque RUT por el registro local
+  dy: number;             // offset Y aplicado al bloque RUT por el registro local
+  cols: RutColDiag[];     // diagnostico por columna (cuerpo + DV)
+}
+
 export interface RutResult {
   rut: string;        // "12345678-5" o "" si incompleto
   dvOk: boolean;      // true si el DV marcado coincide con el calculado (modulo 11)
   complete: boolean;  // true si todas las columnas necesarias se leyeron
+  diag?: RutDiag;     // registro local + scores por columna (para analisis remoto)
+}
+
+/** Oscuridad concentrada en los centros de burbuja del RUT para un offset (dx,dy). */
+function darkAtRut(gray: Float32Array, w: number, h: number, dx: number, dy: number): number {
+  const r = L.RUT_R;
+  let darkSum = 0;
+  for (let c = 0; c < L.RUT_COLS; c++) {
+    const rowCount = c === L.RUT_COLS - 1 ? L.RUT_ROWS + 1 : L.RUT_ROWS;
+    for (let d = 0; d < rowCount; d++) {
+      const cx = L.rutColX(c) + dx, cy = L.rutRowY(d) + dy;
+      for (let yy = -r; yy <= r; yy++) {
+        const py = cy + yy;
+        if (py < 0 || py >= h) continue;
+        for (let xx = -r; xx <= r; xx++) {
+          const px = cx + xx;
+          if (px >= 0 && px < w && gray[py * w + px] < DARK_THRESH) darkSum++;
+        }
+      }
+    }
+  }
+  return darkSum;
+}
+
+/**
+ * Registro local del bloque RUT. A diferencia de las preguntas (que se anclan
+ * con la pista de temporizacion), el RUT no tiene anclas propias y se comia
+ * entero el error residual de la homografia → lectura inestable. Busca el offset
+ * (dx,dy) que maximiza la oscuridad sobre los centros de burbuja esperados. En
+ * un warp perfecto el optimo es (0,0), por lo que no degrada el caso ideal.
+ */
+function findRutOffset(gray: Float32Array, w: number, h: number): { dx: number; dy: number } {
+  let bestDx = 0, bestDy = 0, bestDark = -1;
+  for (let dy = -CALIB.rutSearchDy; dy <= CALIB.rutSearchDy; dy += CALIB.rutSearchStep) {
+    for (let dx = -CALIB.rutSearchDx; dx <= CALIB.rutSearchDx; dx += CALIB.rutSearchStep) {
+      const darkSum = darkAtRut(gray, w, h, dx, dy);
+      if (darkSum > bestDark) { bestDark = darkSum; bestDx = dx; bestDy = dy; }
+    }
+  }
+  return { dx: bestDx, dy: bestDy };
 }
 
 /** Digito verificador chileno (modulo 11). Devuelve 0..10 (10 = K). */
@@ -789,15 +843,20 @@ export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFI
   const gray = new Float32Array(width * height);
   for (let i = 0; i < gray.length; i++) gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
 
+  // Registro local del bloque RUT antes de muestrear (las preguntas se anclan
+  // con la pista de temporizacion; el RUT no tiene ancla → buscamos su offset).
+  const { dx: regDx, dy: regDy } = findRutOffset(gray, width, height);
+
   const r = L.RUT_R;
   // Para cada columna, elige la fila (digito) marcada con dominancia.
   const picked: (number | null)[] = [];
+  const cols: RutColDiag[] = [];
   for (let c = 0; c < L.RUT_COLS; c++) {
     const isDV = c === L.RUT_COLS - 1;
     const rowCount = isDV ? L.RUT_ROWS + 1 : L.RUT_ROWS; // la columna DV tiene K
     const scores: number[] = [];
     for (let d = 0; d < rowCount; d++) {
-      const cx = L.rutColX(c), cy = L.rutRowY(d);
+      const cx = L.rutColX(c) + regDx, cy = L.rutRowY(d) + regDy;
       let dark = 0, tot = 0;
       for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
         const px = cx + dx, py = cy + dy;
@@ -808,8 +867,10 @@ export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFI
     const maxS = Math.max(...scores);
     const maxIdx = scores.indexOf(maxS);
     const sorted = [...scores].sort((a, b) => b - a);
-    const dominates = sorted[0] - (sorted[1] ?? 0) > 0.10;
-    picked.push(maxS > 0.20 && dominates ? maxIdx : null);
+    const margin = sorted[0] - (sorted[1] ?? 0);
+    const pick = maxS > 0.20 && margin > 0.10 ? maxIdx : null;
+    picked.push(pick);
+    cols.push({ picked: pick, top: Math.round(maxS * 1000) / 1000, margin: Math.round(margin * 1000) / 1000 });
   }
 
   // Cuerpo (8 columnas, alineado a la derecha): nulos iniciales = RUT mas corto.
@@ -826,7 +887,7 @@ export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFI
   const dvStr = dvPicked === null ? "?" : dvPicked === 10 ? "K" : String(dvPicked);
   const rut = body.length > 0 ? `${body.join("")}-${dvStr}` : "";
   const dvOk = complete && dvPicked !== null && dvPicked === computeRutDV(body);
-  return { rut, dvOk, complete };
+  return { rut, dvOk, complete, diag: { dx: regDx, dy: regDy, cols } };
 }
 
 export { DEFAULT_CONFIG };

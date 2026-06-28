@@ -62,12 +62,12 @@ export const ID_R = 9;
 export const RUT_DIGITS = 8;            // columnas de digito (cuerpo del RUT)
 export const RUT_COLS = RUT_DIGITS + 1; // + columna del digito verificador (DV)
 export const RUT_X0 = 640;              // centro X de la primera columna
-export const RUT_COL_STEP = 40;
+export const RUT_COL_STEP = 44;         // (era 40) burbujas mas grandes → mas separacion
 export const RUT_Y0 = 252;              // centro Y de la fila del digito 0
-export const RUT_ROW_STEP = 27;
+export const RUT_ROW_STEP = 34;         // (era 27) holgura entre filas para tolerar jitter de warp
 export const RUT_ROWS = 10;             // digitos 0..9 (la columna DV agrega K en la fila 10)
 export const RUT_K_ROW = 10;            // fila de la K (solo columna DV)
-export const RUT_R = 8;
+export const RUT_R = 11;                // (era 8) radio de burbuja y de muestreo; mas robusto al registro
 
 /** Centro X de la columna c del RUT (0..RUT_COLS-1; la ultima es el DV). */
 export function rutColX(c: number): number {

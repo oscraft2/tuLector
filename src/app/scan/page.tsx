@@ -242,12 +242,13 @@ export default function ScanPage() {
     saveScanLog({
      v: SCAN_LOG_VERSION, type, source, sheet: "v2", ts: new Date().toISOString(),
      frame: { w: canvas.width, h: canvas.height },
-     diag: report.diag as unknown as Record<string, unknown>,
+     diag: { ...report.diag, rut: rutR.diag } as unknown as Record<string, unknown>,
      corners, result: { valid, code, reason: report.reason },
      answers: scores, id: idRows, rut: rutR.rut, dvOk: rutR.dvOk, photo: photoThumb, warp: warpThumb,
     });
 
    if (report.diag) addLog(`Registro: ${report.diag.usedTiming ? `temporizacion (${report.diag.timingRows} marcas)` : "offset software"}, dx=${report.diag.gridDx}`);
+   if (rutR.diag) addLog(`RUT: offset dx=${rutR.diag.dx} dy=${rutR.diag.dy} → ${rutR.rut || "—"} DV=${rutR.dvOk ? "OK" : "—"}`);
 
    if (!report.valid) {
     addLog(`ERR[${SCAN_CODES.WRONG_FORMAT}]: ${report.reason}`);
@@ -325,7 +326,7 @@ export default function ScanPage() {
   setError("");
 
   const ctx = canvas.getContext("2d")!;
-  const sessions: { answers: string[]; rut: string; dvOk: boolean; scores: number[][] }[] = [];
+  const sessions: { answers: string[]; rut: string; dvOk: boolean; scores: number[][]; rutDiag: ReturnType<typeof readRut>["diag"] }[] = [];
   const frameReads: string[] = [];   // lectura de cada frame valido (para diagnostico)
   let lastFrame: ImageData | null = null;
   let lastCorners: [number, number][] | null = null;
@@ -351,7 +352,7 @@ export default function ScanPage() {
    if (!report.valid || report.diag?.timingRows !== VOTE_MARKS_REQUIRED) { rejInvalid++; await sleep(40); continue; }
    const rutR = readRut(warped, config);
    const reads = report.results.map((r) => r.answer);
-   sessions.push({ answers: reads, rut: rutR.rut, dvOk: rutR.dvOk, scores: report.results.map((r) => r.scores) });
+   sessions.push({ answers: reads, rut: rutR.rut, dvOk: rutR.dvOk, scores: report.results.map((r) => r.scores), rutDiag: rutR.diag });
    frameReads.push(reads.join(","));
    lastFrame = frame; lastCorners = corners; lastWarp = warped;
    lastTiming = report.diag?.timingRows ?? null;
@@ -374,7 +375,8 @@ export default function ScanPage() {
    voteField(sessions.map((s) => s.answers[q] ?? "-"))
   );
   const votedRut = voteField(sessions.map((s) => s.rut));
-  const votedDvOk = sessions.find((s) => s.rut === votedRut)?.dvOk ?? false;
+  const repRutSession = sessions.find((s) => s.rut === votedRut) ?? sessions[sessions.length - 1];
+  const votedDvOk = repRutSession.dvOk;
   const repScores = sessions[sessions.length - 1].scores;
   const bubbleResults: BubbleResult[] = votedAnswers.map((a, i) => ({
    question: i + 1, answer: a, scores: repScores[i] ?? [], correct: null,
@@ -405,7 +407,7 @@ export default function ScanPage() {
    diag: {
     voted: true, frames: sessions.length, rejected,
     rejFocus, rejCorners, rejInvalid, timingRows: lastTiming,
-    reads: frameReads,
+    reads: frameReads, rut: repRutSession.rutDiag,
    },
    corners: lastCorners,
    result: { valid: true, code: SCAN_CODES.GRADED },

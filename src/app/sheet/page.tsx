@@ -1,12 +1,20 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { drawSheet, type Ctx2D } from "@/lib/sheet_render";
 import { SHEET_W, SHEET_H } from "@/lib/sheet_layout";
 
+// RUT de prueba con DV valido (modulo 11): 12.345.678-5. Sirve para imprimir una
+// hoja patron perfecta y verificar el lector de RUT sin depender del marcado a mano.
+const DEFAULT_TEST_RUT = "12345678-5";
+
 export default function SheetPage() {
   const previewRef = useRef<HTMLCanvasElement>(null);
+  const [fillRut, setFillRut] = useState(false);
+  const [rut, setRut] = useState(DEFAULT_TEST_RUT);
+
+  const marks = fillRut ? { rut, filled: true } : {};
 
   // Render de vista previa (mismo codigo que la descarga y que el fixture).
   useEffect(() => {
@@ -15,8 +23,9 @@ export default function SheetPage() {
     canvas.width = SHEET_W;
     canvas.height = SHEET_H;
     const ctx = canvas.getContext("2d");
-    if (ctx) drawSheet(ctx as unknown as Ctx2D);
-  }, []);
+    if (ctx) drawSheet(ctx as unknown as Ctx2D, marks);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fillRut, rut]);
 
   const downloadPNG = async () => {
     const canvas = document.createElement("canvas");
@@ -24,12 +33,12 @@ export default function SheetPage() {
     canvas.height = SHEET_H * 2;
     const ctx = canvas.getContext("2d")!;
     ctx.scale(2, 2);
-    drawSheet(ctx as unknown as Ctx2D);
+    drawSheet(ctx as unknown as Ctx2D, marks);
     const blob = await new Promise<Blob>((r) => canvas.toBlob((b) => r(b!), "image/png"));
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "hoja_tulector.png";
+    a.download = fillRut ? `hoja_tulector_rut_${rut}.png` : "hoja_tulector.png";
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -47,6 +56,26 @@ export default function SheetPage() {
       <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
         <div className="bg-white rounded-xl overflow-hidden shadow-2xl">
           <canvas ref={previewRef} className="w-full h-auto block" style={{ aspectRatio: `${SHEET_W}/${SHEET_H}` }} />
+        </div>
+
+        {/* Hoja patron de RUT (DV valido) para probar el lector sin marcado a mano */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3 text-sm">
+          <label className="flex items-center gap-2 text-white font-semibold">
+            <input type="checkbox" checked={fillRut} onChange={(e) => setFillRut(e.target.checked)} />
+            Rellenar RUT de referencia (DV valido)
+          </label>
+          {fillRut && (
+            <input
+              value={rut}
+              onChange={(e) => setRut(e.target.value.toUpperCase())}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 font-mono text-white"
+              placeholder="12345678-5"
+            />
+          )}
+          <p className="text-zinc-400">
+            Imprime esta hoja con el RUT ya marcado para verificar el lector: si lo lee bien, la
+            geometria esta correcta. Por defecto <strong className="text-white">12.345.678-5</strong> (DV 5 valido).
+          </p>
         </div>
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-2 text-sm text-zinc-400">
