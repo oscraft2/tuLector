@@ -9,3 +9,27 @@
 body {
   font-family: var(--font-sans);
 }
+
+/* ─── App nativa (Capacitor): matar el "olor a web" ───
+   La clase `cap-native` la pone NativeBootstrap en <html> cuando corre en el APK.
+   Sin selección de texto ni resaltado de toque ni rebote de overscroll. */
+html.cap-native, html.cap-native body {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  overscroll-behavior-y: none;
+}
+/* NO usar user-select:none global (rompe el scroll táctil en WebView Android). */
+
+/* Safe areas (notch / barra de gestos) */
+.safe-pt { padding-top: max(env(safe-area-inset-top), 1rem); }
+.safe-pb { padding-bottom: max(env(safe-area-inset-bottom), 1rem); }
+
+/* Animaciones de entrada del login nativo (sin framer-motion) */
+@keyframes cap-fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes cap-pop { from { opacity: 0; transform: scale(0.85) translateY(-8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+@keyframes cap-sheet-up { from { opacity: 0; transform: translateY(48px); } to { opacity: 1; transform: translateY(0); } }
+.cap-anim-pop { animation: cap-pop 0.5s cubic-bezier(0.16,1,0.3,1) both; }
+.cap-anim-up { animation: cap-fade-up 0.45s ease both; }
+.cap-anim-sheet { animation: cap-sheet-up 0.5s cubic-bezier(0.16,1,0.3,1) 0.1s both; }
+.cap-delay-1 { animation-delay: 0.12s; }
+.cap-delay-2 { animation-delay: 0.2s; }
