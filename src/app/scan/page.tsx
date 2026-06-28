@@ -181,8 +181,12 @@ export default function ScanPage() {
   (async () => {
    try {
     if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+    // Resolucion alta: la hoja entra con mas pixeles → las burbujas chicas del RUT
+    // sobreviven el rectificado a 1200px (a 1080p quedaban borrosas, scores ~0.2).
+    // `ideal` deja que el dispositivo entregue lo maximo que soporte (cae a 1080p
+    // si no hay mas), asi que es seguro pedir 4K.
     const ms = await navigator.mediaDevices.getUserMedia({
-     video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+     video: { facingMode: "environment", width: { ideal: 3840 }, height: { ideal: 2160 } },
      audio: false,
     });
     if (cancelled) { ms.getTracks().forEach((t) => t.stop()); return; }
