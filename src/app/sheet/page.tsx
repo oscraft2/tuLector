@@ -2,89 +2,224 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { drawSheet, type Ctx2D } from "@/lib/sheet_render";
-import { SHEET_W, SHEET_H } from "@/lib/sheet_layout";
+import { SHEET_W, SHEET_H, type SheetConfig } from "@/lib/sheet_layout";
+import {
+  renderSheet, randomValidRut, randomAnswers, suggestColumns,
+  type Branding, type GroundTruthEntry,
+} from "@/lib/sheet_generator";
 
-// RUT de prueba con DV valido (modulo 11): 12.345.678-5. Sirve para imprimir una
-// hoja patron perfecta y verificar el lector de RUT sin depender del marcado a mano.
 const DEFAULT_TEST_RUT = "12345678-5";
+const LABELS = "ABCDE";
+
+/** Abre una ventana de impresión con una o varias hojas (una por página). */
+function printImages(dataUrls: string[]) {
+  const win = window.open("", "_blank");
+  if (!win) { alert("Permite las ventanas emergentes para imprimir."); return; }
+  const imgs = dataUrls.map((src) => `<img src="${src}" />`).join("");
+  win.document.write(`<!doctype html><html><head><title>TuLector — hojas</title>
+    <style>@page{size:Letter portrait;margin:8mm} html,body{margin:0;padding:0}
+    img{width:100%;display:block;page-break-after:always}</style></head>
+    <body>${imgs}</body></html>`);
+  win.document.close();
+  win.focus();
+  win.onload = () => setTimeout(() => win.print(), 250);
+}
+
+function downloadBlob(content: string, filename: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function SheetPage() {
   const previewRef = useRef<HTMLCanvasElement>(null);
+
+  // Config del lector
+  const [numQuestions, setNumQuestions] = useState(20);
+  const [numOptions, setNumOptions] = useState(5);
+  const [numColumns, setNumColumns] = useState(1);
+
+  // Branding
+  const [title, setTitle] = useState("");
+  const [school, setSchool] = useState("");
+  const [logo, setLogo] = useState<HTMLImageElement | null>(null);
+
+  // Hoja patrón (RUT de referencia)
   const [fillRut, setFillRut] = useState(false);
   const [rut, setRut] = useState(DEFAULT_TEST_RUT);
 
-  // Sin franja de código por ahora (interfería arriba). Se reintroducirá compacta.
+  // Beta
+  const [batchN, setBatchN] = useState(40);
+  const [busy, setBusy] = useState(false);
+
+  const cfg: SheetConfig = { numQuestions, numOptions, numColumns };
+  const branding: Branding = { title, school, logo };
   const marks = fillRut ? { rut, filled: true } : {};
 
-  // Render de vista previa (mismo codigo que la descarga y que el fixture).
+  // Vista previa (mismo render que la salida)
   useEffect(() => {
     const canvas = previewRef.current;
     if (!canvas) return;
     canvas.width = SHEET_W;
     canvas.height = SHEET_H;
     const ctx = canvas.getContext("2d");
-    if (ctx) drawSheet(ctx as unknown as Ctx2D, marks);
+    if (ctx) renderSheet(ctx, marks, cfg, branding);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fillRut, rut]);
+  }, [numQuestions, numOptions, numColumns, title, school, logo, fillRut, rut]);
 
-  const downloadPNG = async () => {
-    const canvas = document.createElement("canvas");
-    canvas.width = SHEET_W * 2;
-    canvas.height = SHEET_H * 2;
-    const ctx = canvas.getContext("2d")!;
-    ctx.scale(2, 2);
-    drawSheet(ctx as unknown as Ctx2D, marks);
-    const blob = await new Promise<Blob>((r) => canvas.toBlob((b) => r(b!), "image/png"));
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fillRut ? `hoja_tulector_rut_${rut}.png` : "hoja_tulector.png";
-    a.click();
-    URL.revokeObjectURL(url);
+  const onLogo = (file: File | undefined) => {
+    if (!file) { setLogo(null); return; }
+    const img = new Image();
+    img.onload = () => setLogo(img);
+    img.src = URL.createObjectURL(file);
   };
+
+  /** Renderiza una hoja a dataURL PNG (2x para nitidez de impresión). */
+  const renderToDataUrl = (m: { answers?: number[]; rut?: string; filled?: boolean }) => {
+    const c = document.createElement("canvas");
+    c.width = SHEET_W * 2; c.height = SHEET_H * 2;
+    const ctx = c.getContext("2d")!;
+    ctx.scale(2, 2);
+    renderSheet(ctx, m, cfg, branding);
+    return c.toDataURL("image/png");
+  };
+
+  const printOne = () => printImages([renderToDataUrl(marks)]);
+
+  const downloadPNG = () => {
+    const a = document.createElement("a");
+    a.href = renderToDataUrl(marks);
+    a.download = fillRut ? `hoja_tulector_${rut}.png` : "hoja_tulector.png";
+    a.click();
+  };
+
+  /** Beta: N hojas autollenadas (RUT+respuestas aleatorias) + verdad-terreno. */
+  const generateBatch = async () => {
+    setBusy(true);
+    await new Promise((r) => setTimeout(r, 30)); // deja pintar el "Generando…"
+    const urls: string[] = [];
+    const truth: GroundTruthEntry[] = [];
+    const usedRuts = new Set<string>();
+    for (let i = 1; i <= batchN; i++) {
+      let r = randomValidRut();
+      while (usedRuts.has(r)) r = randomValidRut();
+      usedRuts.add(r);
+      const ans = randomAnswers(numQuestions, numOptions);
+      urls.push(renderToDataUrl({ rut: r, answers: ans, filled: true }));
+      truth.push({ index: i, rut: r, answers: ans.map((a) => LABELS[a]) });
+    }
+    const meta = {
+      generadoEn: new Date().toISOString(),
+      config: { numQuestions, numOptions, numColumns },
+      total: batchN,
+      hojas: truth,
+    };
+    downloadBlob(JSON.stringify(meta, null, 2), `verdad_terreno_${batchN}_hojas.json`, "application/json");
+    printImages(urls);
+    setBusy(false);
+  };
+
+  const inputCls = "w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white";
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
         <Link href="/" className="text-sm text-zinc-400 hover:text-white">&larr; Inicio</Link>
-        <h1 className="text-lg font-bold">Hoja de respuestas</h1>
-        <button onClick={downloadPNG} className="px-3 py-1.5 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500">
-          Descargar PNG
+        <h1 className="text-lg font-bold">Generador de hojas</h1>
+        <button onClick={printOne} className="px-3 py-1.5 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500">
+          Imprimir
         </button>
       </header>
 
-      <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
-        <div className="bg-white rounded-xl overflow-hidden shadow-2xl">
-          <canvas ref={previewRef} className="w-full h-auto block" style={{ aspectRatio: `${SHEET_W}/${SHEET_H}` }} />
+      <main className="max-w-5xl mx-auto px-4 py-6 grid md:grid-cols-2 gap-6">
+        {/* Vista previa */}
+        <div className="space-y-3">
+          <div className="bg-white rounded-xl overflow-hidden shadow-2xl">
+            <canvas ref={previewRef} className="w-full h-auto block" style={{ aspectRatio: `${SHEET_W}/${SHEET_H}` }} />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={downloadPNG} className="flex-1 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm font-semibold hover:bg-zinc-700">
+              Descargar PNG
+            </button>
+            <button onClick={printOne} className="flex-1 py-2 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500">
+              Imprimir hoja
+            </button>
+          </div>
         </div>
 
-        {/* Hoja patron de RUT (DV valido) para probar el lector sin marcado a mano */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3 text-sm">
-          <label className="flex items-center gap-2 text-white font-semibold">
-            <input type="checkbox" checked={fillRut} onChange={(e) => setFillRut(e.target.checked)} />
-            Rellenar RUT de referencia (DV valido)
-          </label>
-          {fillRut && (
-            <input
-              value={rut}
-              onChange={(e) => setRut(e.target.value.toUpperCase())}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 font-mono text-white"
-              placeholder="12345678-5"
-            />
-          )}
-          <p className="text-zinc-400">
-            Imprime esta hoja con el RUT ya marcado para verificar el lector: si lo lee bien, la
-            geometria esta correcta. Por defecto <strong className="text-white">12.345.678-5</strong> (DV 5 valido).
-          </p>
-        </div>
+        {/* Controles */}
+        <div className="space-y-5 text-sm">
+          {/* Config del lector */}
+          <section className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+            <h3 className="font-bold text-white">Configuración</h3>
+            <label className="block">
+              <span className="text-zinc-400">N° de preguntas: <strong className="text-white">{numQuestions}</strong></span>
+              <input type="range" min={1} max={60} value={numQuestions}
+                onChange={(e) => { const n = +e.target.value; setNumQuestions(n); setNumColumns(suggestColumns(n)); }}
+                className="w-full" />
+            </label>
+            <div className="flex gap-3">
+              <label className="flex-1">
+                <span className="text-zinc-400">Opciones</span>
+                <select value={numOptions} onChange={(e) => setNumOptions(+e.target.value)} className={inputCls}>
+                  {[3, 4, 5].map((n) => <option key={n} value={n}>{n} ({LABELS.slice(0, n)})</option>)}
+                </select>
+              </label>
+              <label className="flex-1">
+                <span className="text-zinc-400">Columnas</span>
+                <select value={numColumns} onChange={(e) => setNumColumns(+e.target.value)} className={inputCls}>
+                  <option value={1}>1 columna</option>
+                  <option value={2}>2 columnas</option>
+                </select>
+              </label>
+            </div>
+            {numColumns === 2 && (
+              <p className="text-xs text-amber-400/80">⚠ El escaneo de 2 columnas se cablea en el lector aparte; para imprimir y probar el layout ya sirve.</p>
+            )}
+          </section>
 
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-2 text-sm text-zinc-400">
-          <h3 className="text-white font-semibold">Instrucciones</h3>
-          <p>1. Descarga el PNG o imprime (Ctrl+P)</p>
-          <p>2. Rellena la burbuja completa con <strong className="text-white">lápiz negro grueso</strong></p>
-          <p>3. Las 4 esquinas negras y las marcas del margen deben verse completas y sin tapar</p>
-          <p>4. Escaneo <strong className="text-green-400">automático</strong> al apuntar la cámara</p>
+          {/* Branding */}
+          <section className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+            <h3 className="font-bold text-white">Encabezado (colegio)</h3>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Título del ensayo (ej. Ensayo SIMCE Matemática)" className={inputCls} />
+            <input value={school} onChange={(e) => setSchool(e.target.value)} placeholder="Nombre del colegio" className={inputCls} />
+            <label className="block">
+              <span className="text-zinc-400">Logo (opcional)</span>
+              <input type="file" accept="image/*" onChange={(e) => onLogo(e.target.files?.[0])} className="w-full text-xs text-zinc-400 mt-1" />
+            </label>
+            {logo && <button onClick={() => setLogo(null)} className="text-xs text-red-400 hover:text-red-300">Quitar logo</button>}
+          </section>
+
+          {/* Hoja patrón RUT */}
+          <section className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+            <label className="flex items-center gap-2 text-white font-semibold">
+              <input type="checkbox" checked={fillRut} onChange={(e) => setFillRut(e.target.checked)} />
+              Rellenar RUT de referencia (DV válido)
+            </label>
+            {fillRut && (
+              <input value={rut} onChange={(e) => setRut(e.target.value.toUpperCase())} className={`${inputCls} font-mono`} placeholder="12345678-5" />
+            )}
+            <p className="text-zinc-400 text-xs">Imprime una hoja con el RUT ya marcado para verificar el lector sin marcado a mano.</p>
+          </section>
+
+          {/* Beta autollenado */}
+          <section className="bg-indigo-950/40 border border-indigo-800/60 rounded-xl p-4 space-y-3">
+            <h3 className="font-bold text-white">🧪 Beta — pruebas masivas (ideal vs real)</h3>
+            <p className="text-zinc-400 text-xs">
+              Genera <strong className="text-white">{batchN} hojas</strong> autollenadas con RUT y respuestas aleatorias + un archivo de
+              <strong className="text-white"> verdad-terreno</strong> (JSON). Imprime, escanea y contrasta. Ver <code>docs/plan-pruebas-lector.md</code>.
+            </p>
+            <label className="block">
+              <span className="text-zinc-400">Cantidad de hojas: <strong className="text-white">{batchN}</strong></span>
+              <input type="range" min={1} max={40} value={batchN} onChange={(e) => setBatchN(+e.target.value)} className="w-full" />
+            </label>
+            <button onClick={generateBatch} disabled={busy}
+              className="w-full py-2.5 bg-indigo-600 rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-50">
+              {busy ? "Generando…" : `Generar ${batchN} hojas + verdad-terreno`}
+            </button>
+          </section>
         </div>
       </main>
     </div>
