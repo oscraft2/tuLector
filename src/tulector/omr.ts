@@ -934,6 +934,7 @@ export interface RutDiag {
   dy: number;             // offset Y global aplicado al bloque RUT
   dvComputed: boolean;    // true si el DV se calculo (cuerpo confiable, DV no legible)
   cols: RutColDiag[];     // diagnostico por columna (cuerpo + DV)
+  timing?: number;        // marcas de la pista del RUT detectadas (11=ancla Y activa; 0=fallback)
 }
 
 export interface RutResult {
@@ -944,14 +945,50 @@ export interface RutResult {
   diag?: RutDiag;       // registro local + scores por columna (para analisis remoto)
 }
 
+/** Y de la fila d del RUT: el detectado por la pista de temporizacion, o el canonico. */
+function rutRowYat(d: number, rowYs: number[] | null): number {
+  return rowYs ? rowYs[d] : L.rutRowY(d);
+}
+
+/**
+ * Lee la pista de temporizacion PROPIA del RUT (marcas solidas a la izquierda de
+ * la grilla) → el Y de cada fila (0..9 + K). Ancla el Y igual que las preguntas,
+ * eliminando las lecturas parciales en frames movidos. Devuelve los 11 centros,
+ * o null si no detecta la cantidad exacta (hoja vieja sin pista → fallback a Y
+ * canonico, sin regresion).
+ */
+function readRutTimingY(gray: Float32Array, w: number, h: number): number[] | null {
+  const x0 = Math.max(0, Math.round(L.RUT_TIMING_X - L.RUT_TIMING_W / 2 - 3));
+  const x1 = Math.min(w - 1, Math.round(L.RUT_TIMING_X + L.RUT_TIMING_W / 2 + 3));
+  const minDark = Math.max(5, Math.round(L.RUT_TIMING_W * 0.4));
+  // Banda Y acotada al bloque RUT (ignora la franja del codigo y las preguntas).
+  const yLo = Math.max(0, L.rutRowY(0) - L.RUT_ROW_STEP);
+  const yHi = Math.min(h - 1, L.rutRowY(L.RUT_TIMING_ROWS - 1) + L.RUT_ROW_STEP);
+  const centers: number[] = [];
+  let runStart = -1, runSum = 0, runW = 0;
+  for (let y = yLo; y <= yHi; y++) {
+    let dark = 0;
+    for (let x = x0; x <= x1; x++) if (gray[y * w + x] < DARK_THRESH) dark++;
+    if (dark >= minDark) {
+      if (runStart < 0) { runStart = y; runSum = 0; runW = 0; }
+      runSum += y * dark; runW += dark;
+    } else if (runStart >= 0) {
+      if (y - runStart >= 3) centers.push(Math.round(runSum / Math.max(runW, 1)));
+      runStart = -1;
+    }
+  }
+  if (runStart >= 0) centers.push(Math.round(runSum / Math.max(runW, 1)));
+  return centers.length === L.RUT_TIMING_ROWS ? centers : null;
+}
+
 /** Oscuridad concentrada en los centros de burbuja del RUT para un offset (dx,dy). */
-function darkAtRut(gray: Float32Array, w: number, h: number, dx: number, dy: number): number {
+function darkAtRut(gray: Float32Array, w: number, h: number, dx: number, dy: number, rowYs: number[] | null): number {
   const r = L.RUT_R;
   let darkSum = 0;
   for (let c = 0; c < L.RUT_COLS; c++) {
     const rowCount = c === L.RUT_COLS - 1 ? L.RUT_ROWS + 1 : L.RUT_ROWS;
     for (let d = 0; d < rowCount; d++) {
-      const cx = L.rutColX(c) + dx, cy = L.rutRowY(d) + dy;
+      const cx = L.rutColX(c) + dx, cy = rutRowYat(d, rowYs) + dy;
       for (let yy = -r; yy <= r; yy++) {
         const py = cy + yy;
         if (py < 0 || py >= h) continue;
@@ -972,11 +1009,11 @@ function darkAtRut(gray: Float32Array, w: number, h: number, dx: number, dy: num
  * (dx,dy) que maximiza la oscuridad sobre los centros de burbuja esperados. En
  * un warp perfecto el optimo es (0,0), por lo que no degrada el caso ideal.
  */
-function findRutOffset(gray: Float32Array, w: number, h: number): { dx: number; dy: number } {
+function findRutOffset(gray: Float32Array, w: number, h: number, rowYs: number[] | null): { dx: number; dy: number } {
   let bestDx = 0, bestDy = 0, bestDark = -1;
   for (let dy = -CALIB.rutSearchDy; dy <= CALIB.rutSearchDy; dy += CALIB.rutSearchStep) {
     for (let dx = -CALIB.rutSearchDx; dx <= CALIB.rutSearchDx; dx += CALIB.rutSearchStep) {
-      const darkSum = darkAtRut(gray, w, h, dx, dy);
+      const darkSum = darkAtRut(gray, w, h, dx, dy, rowYs);
       if (darkSum > bestDark) { bestDark = darkSum; bestDx = dx; bestDy = dy; }
     }
   }
@@ -984,12 +1021,12 @@ function findRutOffset(gray: Float32Array, w: number, h: number): { dx: number; 
 }
 
 /** Oscuridad sobre los centros de burbuja de UNA columna del RUT (para refinarla). */
-function darkAtRutCol(gray: Float32Array, w: number, h: number, c: number, dx: number, dy: number): number {
+function darkAtRutCol(gray: Float32Array, w: number, h: number, c: number, dx: number, dy: number, rowYs: number[] | null): number {
   const r = L.RUT_R;
   const rowCount = c === L.RUT_COLS - 1 ? L.RUT_ROWS + 1 : L.RUT_ROWS;
   let darkSum = 0;
   for (let d = 0; d < rowCount; d++) {
-    const cx = L.rutColX(c) + dx, cy = L.rutRowY(d) + dy;
+    const cx = L.rutColX(c) + dx, cy = rutRowYat(d, rowYs) + dy;
     for (let yy = -r; yy <= r; yy++) {
       const py = cy + yy;
       if (py < 0 || py >= h) continue;
@@ -1008,11 +1045,11 @@ function darkAtRutCol(gray: Float32Array, w: number, h: number, c: number, dx: n
  * un leve error de escala/cizalla; cada columna engancha su propia grilla de
  * anillos. Columnas ya bien registradas devuelven ~(0,0): no degrada el caso ideal.
  */
-function refineRutCol(gray: Float32Array, w: number, h: number, c: number, baseDx: number, baseDy: number): { dx: number; dy: number } {
+function refineRutCol(gray: Float32Array, w: number, h: number, c: number, baseDx: number, baseDy: number, rowYs: number[] | null): { dx: number; dy: number } {
   let bestDx = baseDx, bestDy = baseDy, bestDark = -1;
   for (let ddy = -CALIB.rutColRefine; ddy <= CALIB.rutColRefine; ddy += 2) {
     for (let ddx = -CALIB.rutColRefine; ddx <= CALIB.rutColRefine; ddx += 2) {
-      const dk = darkAtRutCol(gray, w, h, c, baseDx + ddx, baseDy + ddy);
+      const dk = darkAtRutCol(gray, w, h, c, baseDx + ddx, baseDy + ddy, rowYs);
       if (dk > bestDark) { bestDark = dk; bestDx = baseDx + ddx; bestDy = baseDy + ddy; }
     }
   }
@@ -1035,9 +1072,14 @@ export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFI
   const gray = new Float32Array(width * height);
   for (let i = 0; i < gray.length; i++) gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
 
+  // Pista de temporizacion del RUT: ancla el Y de cada fila (0..9 + K). Si la hoja
+  // la trae y se detecta, el RUT deja de fallar en frames movidos. Hoja vieja sin
+  // pista → rowYs=null → fallback al Y canonico (sin regresion).
+  const rowYs = readRutTimingY(gray, width, height);
+
   // Registro local del bloque RUT antes de muestrear (las preguntas se anclan
-  // con la pista de temporizacion; el RUT no tiene ancla → buscamos su offset).
-  const { dx: regDx, dy: regDy } = findRutOffset(gray, width, height);
+  // con la pista de temporizacion; el RUT busca su offset, ahora con Y anclado).
+  const { dx: regDx, dy: regDy } = findRutOffset(gray, width, height, rowYs);
 
   const r = L.RUT_R;
   // Para cada columna: refina su offset propio y elige la fila (digito) marcada.
@@ -1050,11 +1092,11 @@ export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFI
   for (let c = 0; c < L.RUT_COLS; c++) {
     const isDV = c === L.RUT_COLS - 1;
     const rowCount = isDV ? L.RUT_ROWS + 1 : L.RUT_ROWS; // la columna DV tiene K
-    const { dx: colDx, dy: colDy } = refineRutCol(gray, width, height, c, baseDx, baseDy);
+    const { dx: colDx, dy: colDy } = refineRutCol(gray, width, height, c, baseDx, baseDy, rowYs);
     baseDx = colDx; baseDy = colDy; // la siguiente columna arranca desde aqui
     const scores: number[] = [];
     for (let d = 0; d < rowCount; d++) {
-      const cx = L.rutColX(c) + colDx, cy = L.rutRowY(d) + colDy;
+      const cx = L.rutColX(c) + colDx, cy = rutRowYat(d, rowYs) + colDy;
       let dark = 0, tot = 0;
       for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
         const px = cx + dx, py = cy + dy;
@@ -1102,7 +1144,7 @@ export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFI
 
   const complete = bodyComplete && body.length > 0 && (dvPicked !== null || dvComputed);
   const rut = body.length > 0 ? `${body.join("")}-${dvStr}` : "";
-  return { rut, dvOk, complete, dvComputed, diag: { dx: regDx, dy: regDy, dvComputed, cols } };
+  return { rut, dvOk, complete, dvComputed, diag: { dx: regDx, dy: regDy, dvComputed, cols, timing: rowYs ? rowYs.length : 0 } };
 }
 
 // ─── 6. Código de hoja (franja OMR-nativa; ver docs/codigo-hoja-spec.md) ──────

@@ -78,6 +78,12 @@ function drawRut(ctx: Ctx2D, marks: SheetMarks): void {
   for (let d = 0; d <= 9; d++) ctx.fillText(String(d), L.rutColX(0) - 28, L.rutRowY(d) + 4);
   ctx.fillText("K", L.rutColX(0) - 28, L.rutRowY(L.RUT_K_ROW) + 4);
 
+  // Pista de temporizacion del RUT: una marca solida por fila (0..9 + K).
+  ctx.fillStyle = BLACK;
+  for (let d = 0; d < L.RUT_TIMING_ROWS; d++) {
+    ctx.fillRect(L.RUT_TIMING_X - L.RUT_TIMING_W / 2, L.rutRowY(d) - L.RUT_TIMING_H / 2, L.RUT_TIMING_W, L.RUT_TIMING_H);
+  }
+
   const parsed = marks.rut ? parseRut(marks.rut) : { body: [], dv: -1 };
   const bodyOffset = L.RUT_DIGITS - parsed.body.length; // alinear a la derecha
 

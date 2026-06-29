@@ -96,6 +96,14 @@ export const RUT_ROWS = 10;             // digitos 0..9 (la columna DV agrega K 
 export const RUT_K_ROW = 10;            // fila de la K (solo columna DV)
 export const RUT_R = 11;                // (era 8) radio de burbuja y de muestreo; mas robusto al registro
 
+// Pista de temporizacion PROPIA del RUT: una marca solida por fila (0..9 + K),
+// a la izquierda de la grilla. Ancla el Y de cada fila igual que la pista de las
+// preguntas → el RUT deja de fallar en frames movidos (lecturas parciales).
+export const RUT_TIMING_X = 588;        // centro X de la columna de marcas del RUT
+export const RUT_TIMING_W = 18;         // ancho de cada marca
+export const RUT_TIMING_H = 14;         // alto de cada marca
+export const RUT_TIMING_ROWS = RUT_ROWS + 1; // 11: digitos 0..9 + fila K
+
 /** Centro X de la columna c del RUT (0..RUT_COLS-1; la ultima es el DV). */
 export function rutColX(c: number): number {
   return RUT_X0 + c * RUT_COL_STEP;
