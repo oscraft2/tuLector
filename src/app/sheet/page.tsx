@@ -60,6 +60,14 @@ export default function SheetPage() {
   const branding: Branding = { title, school, logo };
   const marks = fillRut ? { rut, filled: true } : {};
 
+  // Sincroniza la config con el escáner: /scan la lee de localStorage para leer
+  // la hoja con el MISMO nº de preguntas/opciones/columnas que se imprimió.
+  useEffect(() => {
+    try {
+      localStorage.setItem("tulector_scan_config", JSON.stringify({ numQuestions, numOptions, numColumns }));
+    } catch { /* sin storage */ }
+  }, [numQuestions, numOptions, numColumns]);
+
   // Vista previa (mismo render que la salida)
   useEffect(() => {
     const canvas = previewRef.current;

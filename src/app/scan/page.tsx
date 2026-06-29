@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { findCorners, gradeBubbles, readRut, readSheetCode, warpSheet, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
 import { isNativeApp, captureNativePhoto } from "@/lib/native/capacitor";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
-import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H, rutColX, rutRowY, RUT_COLS, RUT_ROWS, RUT_R } from "@/lib/sheet_layout";
+import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H, rutColX, rutRowY, RUT_COLS, RUT_ROWS, RUT_R, questionLayout } from "@/lib/sheet_layout";
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
 import { APP_VERSION } from "@/lib/version";
 
@@ -110,7 +110,6 @@ const VOTE_TARGET = 3;        // frames validos a votar (3 = RUT robusto, como c
 const VOTE_TIMEOUT_MS = 4000; // tiempo maximo de captura (mas margen para agarrar frames NITIDOS)
 const VOTE_MAX_ATTEMPTS = 45; // tope de frames inspeccionados
 const VOTE_FOCUS_MIN = 35;    // gate de foco: EXIGENTE — el RUT (burbujas chicas) necesita nitidez
-const VOTE_MARKS_REQUIRED = 20; // solo frames con la pista de temporizacion completa
 const BUILD_TAG = APP_VERSION; // versión visible (compartida con el menú)
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -147,6 +146,22 @@ export default function ScanPage() {
  const [capturing, setCapturing] = useState(false);
  const [answerKey, setAnswerKey] = useState<string[]>(DEFAULT_ANSWER_KEY);
  const [native, setNative] = useState(false);
+ // Config de lectura sincronizada con el generador (/sheet la guarda en localStorage).
+ const [scanCfg, setScanCfg] = useState({ numQuestions: 20, numOptions: 5, numColumns: 1 });
+ useEffect(() => {
+  let alive = true;
+  Promise.resolve().then(() => {
+   if (!alive) return;
+   try {
+    const raw = localStorage.getItem("tulector_scan_config");
+    if (raw) {
+     const c = JSON.parse(raw);
+     setScanCfg({ numQuestions: c.numQuestions || 20, numOptions: c.numOptions || 5, numColumns: c.numColumns || 1 });
+    }
+   } catch { /* sin config guardada → default */ }
+  });
+  return () => { alive = false; };
+ }, []);
  const [labeled, setLabeled] = useState(false);
 
  useEffect(() => { let a = true; Promise.resolve().then(() => { if (a) setNative(isNativeApp()); }); return () => { a = false; }; }, []);
@@ -192,7 +207,12 @@ export default function ScanPage() {
 
  const cooldownMs = SCAN_THRESHOLDS.scanCooldownMs;
  const stableFramesNeeded = 5;
- const config = DEFAULT_CONFIG;
+ // Config del lector = la del generador (nº preguntas/opciones/columnas). Esto
+ // sincroniza el motor con la hoja impresa (antes estaba fijo en 20/5/1 columna).
+ // useMemo: identidad estable → no re-dispara el loop de cámara (que depende de config).
+ const config = useMemo(() => ({ ...DEFAULT_CONFIG, numQuestions: scanCfg.numQuestions, numOptions: scanCfg.numOptions, optionLabels: "ABCDE".slice(0, scanCfg.numOptions), numColumns: scanCfg.numColumns }), [scanCfg]);
+ // Marcas de temporización requeridas = filas por columna (no el nº de preguntas).
+ const marksRequired = useMemo(() => questionLayout(config).rowsPerCol, [config]);
 
  // Iniciar camara
  useEffect(() => {
@@ -369,7 +389,7 @@ export default function ScanPage() {
    if (!corners) { rejCorners++; await sleep(40); continue; }
    const warped = warpSheet(frame, corners, config);
    const report = gradeBubbles(warped, config, corners);
-   if (!report.valid || report.diag?.timingRows !== VOTE_MARKS_REQUIRED) { rejInvalid++; await sleep(40); continue; }
+   if (!report.valid || report.diag?.timingRows !== marksRequired) { rejInvalid++; await sleep(40); continue; }
    const rutR = readRut(warped, config);
    const reads = report.results.map((r) => r.answer);
    sessions.push({ answers: reads, rut: rutR.rut, dvOk: rutR.dvOk, scores: report.results.map((r) => r.scores), features: report.results.map((r) => r.features), rutDiag: rutR.diag });
@@ -929,7 +949,7 @@ export default function ScanPage() {
           <div className="flex justify-between items-start mb-4">
            <div>
             <h2 className="text-2xl font-black text-white">{correct}<span className="text-zinc-500 text-lg font-bold">/20</span></h2>
-            <p className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Escaneo #{scanCount} · {answered} respondidas · {BUILD_TAG}</p>
+            <p className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Escaneo #{scanCount} · {answered} resp · {config.numQuestions}p/{config.numOptions}o/{config.numColumns}c · {BUILD_TAG}</p>
            </div>
            <div className="flex flex-col items-end gap-1">
             <div className="bg-green-500/10 text-green-500 px-3 py-1 rounded-full text-[10px] font-black border border-green-500/20">
