@@ -105,11 +105,12 @@ function canvasToDataUrl(canvas: HTMLCanvasElement): string {
 const DEFAULT_ANSWER_KEY = ["C","B","B","B","C","E","E","D","C","B","A","B","C","D","E","E","D","C","B","A"];
 
 // ─── Captura por votacion multi-frame (estabiliza el resultado) ───
-const VOTE_TARGET = 3;        // frames validos a juntar antes de votar (mas rapido)
-const VOTE_TIMEOUT_MS = 1800; // tiempo maximo de captura
-const VOTE_MAX_ATTEMPTS = 30; // tope de frames inspeccionados
-const VOTE_FOCUS_MIN = 35;    // gate de foco (Laplaciano), un poco mas permisivo
+const VOTE_TARGET = 2;        // frames validos a juntar antes de votar (menos = captura mas rapido)
+const VOTE_TIMEOUT_MS = 3500; // tiempo maximo de captura (mas margen en condiciones marginales)
+const VOTE_MAX_ATTEMPTS = 40; // tope de frames inspeccionados
+const VOTE_FOCUS_MIN = 25;    // gate de foco (Laplaciano), mas permisivo
 const VOTE_MARKS_REQUIRED = 20; // solo frames con la pista de temporizacion completa
+const BUILD_TAG = "b-0629a"; // versión visible para diagnosticar caché del WebView
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -919,7 +920,7 @@ export default function ScanPage() {
           <div className="flex justify-between items-start mb-4">
            <div>
             <h2 className="text-2xl font-black text-white">{correct}<span className="text-zinc-500 text-lg font-bold">/20</span></h2>
-            <p className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Escaneo #{scanCount} · {answered} respondidas</p>
+            <p className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Escaneo #{scanCount} · {answered} respondidas · {BUILD_TAG}</p>
            </div>
            <div className="flex flex-col items-end gap-1">
             <div className="bg-green-500/10 text-green-500 px-3 py-1 rounded-full text-[10px] font-black border border-green-500/20">
