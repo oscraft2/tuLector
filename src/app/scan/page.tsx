@@ -5,7 +5,7 @@ import Link from "next/link";
 import { findCorners, gradeBubbles, readRut, readSheetCode, warpSheet, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
 import { isNativeApp, captureNativePhoto } from "@/lib/native/capacitor";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
-import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H } from "@/lib/sheet_layout";
+import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H, rutColX, rutRowY, RUT_COLS, RUT_ROWS, RUT_R } from "@/lib/sheet_layout";
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
@@ -878,6 +878,13 @@ export default function ScanPage() {
              fill="none" stroke={["#ef4444","#f97316","#facc15","#22c55e","#3b82f6"][o]} strokeWidth="3" opacity="0.8" />
            ));
           })}
+          {/* Grilla del RUT (cian): así se ve si el muestreo cae sobre las burbujas */}
+          {Array.from({ length: RUT_COLS }, (_, c) =>
+           Array.from({ length: c === RUT_COLS - 1 ? RUT_ROWS + 1 : RUT_ROWS }, (_, d) => (
+            <circle key={`rut-${c}-${d}`} cx={rutColX(c)} cy={rutRowY(d)} r={RUT_R}
+             fill="none" stroke="#06b6d4" strokeWidth="3" opacity="0.85" />
+           ))
+          )}
          </svg>
         </div>
         <p className="text-[9px] text-zinc-500 mt-1">A=rojo B=naranja C=amarillo D=verde E=azul · posiciones de sheet_layout</p>
