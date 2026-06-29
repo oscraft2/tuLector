@@ -11,18 +11,20 @@ import {
 const DEFAULT_TEST_RUT = "12345678-5";
 const LABELS = "ABCDE";
 
-/** Abre una ventana de impresión con una o varias hojas (una por página). */
-function printImages(dataUrls: string[]) {
-  const win = window.open("", "_blank");
-  if (!win) { alert("Permite las ventanas emergentes para imprimir."); return; }
-  const imgs = dataUrls.map((src) => `<img src="${src}" />`).join("");
-  win.document.write(`<!doctype html><html><head><title>TuLector — hojas</title>
-    <style>@page{size:Letter portrait;margin:8mm} html,body{margin:0;padding:0}
-    img{width:100%;display:block;page-break-after:always}</style></head>
-    <body>${imgs}</body></html>`);
-  win.document.close();
-  win.focus();
-  win.onload = () => setTimeout(() => win.print(), 250);
+/** Exporta una o varias hojas a un PDF (una por página), ajustadas a Carta sin
+ * distorsión (preserva la proporción 1200×1650 → la geometría no se desconfigura). */
+async function exportPdf(dataUrls: string[], filename: string) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter" });
+  const PW = 612, PH = 792, ratio = SHEET_W / SHEET_H;
+  let w = PW, h = PW / ratio;
+  if (h > PH) { h = PH; w = PH * ratio; }
+  const x = (PW - w) / 2, y = (PH - h) / 2;
+  dataUrls.forEach((url, i) => {
+    if (i > 0) doc.addPage("letter", "portrait");
+    doc.addImage(url, "PNG", x, y, w, h);
+  });
+  doc.save(filename);
 }
 
 function downloadBlob(content: string, filename: string, type: string) {
@@ -86,7 +88,7 @@ export default function SheetPage() {
     return c.toDataURL("image/png");
   };
 
-  const printOne = () => printImages([renderToDataUrl(marks)]);
+  const pdfOne = () => exportPdf([renderToDataUrl(marks)], fillRut ? `hoja_tulector_${rut}.pdf` : "hoja_tulector.pdf");
 
   const downloadPNG = () => {
     const a = document.createElement("a");
@@ -117,7 +119,7 @@ export default function SheetPage() {
       hojas: truth,
     };
     downloadBlob(JSON.stringify(meta, null, 2), `verdad_terreno_${batchN}_hojas.json`, "application/json");
-    printImages(urls);
+    await exportPdf(urls, `hojas_prueba_${batchN}.pdf`);
     setBusy(false);
   };
 
@@ -128,8 +130,8 @@ export default function SheetPage() {
       <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
         <Link href="/" className="text-sm text-zinc-400 hover:text-white">&larr; Inicio</Link>
         <h1 className="text-lg font-bold">Generador de hojas</h1>
-        <button onClick={printOne} className="px-3 py-1.5 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500">
-          Imprimir
+        <button onClick={pdfOne} className="px-3 py-1.5 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500">
+          Descargar PDF
         </button>
       </header>
 
@@ -143,8 +145,8 @@ export default function SheetPage() {
             <button onClick={downloadPNG} className="flex-1 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm font-semibold hover:bg-zinc-700">
               Descargar PNG
             </button>
-            <button onClick={printOne} className="flex-1 py-2 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500">
-              Imprimir hoja
+            <button onClick={pdfOne} className="flex-1 py-2 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500">
+              Descargar PDF
             </button>
           </div>
         </div>
@@ -217,7 +219,7 @@ export default function SheetPage() {
             </label>
             <button onClick={generateBatch} disabled={busy}
               className="w-full py-2.5 bg-indigo-600 rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-50">
-              {busy ? "Generando…" : `Generar ${batchN} hojas + verdad-terreno`}
+              {busy ? "Generando PDF…" : `Generar ${batchN} hojas (PDF) + verdad-terreno`}
             </button>
           </section>
         </div>
