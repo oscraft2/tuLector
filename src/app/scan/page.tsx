@@ -8,6 +8,7 @@ import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H, rutColX, rutRowY, RUT_COLS, RUT_ROWS, RUT_R, questionLayout } from "@/lib/sheet_layout";
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
 import { APP_VERSION } from "@/lib/version";
+import { safeColumns, allowedColumns } from "@/lib/sheet_generator";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
 
@@ -791,14 +792,14 @@ export default function ScanPage() {
    {/* Config del lector: DEBE coincidir con la hoja impresa (preg / opciones / columnas) */}
    <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-zinc-950/90 border-b border-zinc-900 text-[10px] z-20">
     <span className="text-zinc-500 uppercase tracking-wide">Hoja</span>
-    <select value={scanCfg.numQuestions} onChange={(e) => updateCfg({ numQuestions: +e.target.value })} className="bg-zinc-800 rounded px-1.5 py-0.5">
+    <select value={scanCfg.numQuestions} onChange={(e) => { const n = +e.target.value; updateCfg({ numQuestions: n, numColumns: safeColumns(n, scanCfg.numColumns) }); }} className="bg-zinc-800 rounded px-1.5 py-0.5">
      {[10, 15, 20, 25, 30, 40, 50].map((n) => <option key={n} value={n}>{n} preg</option>)}
     </select>
     <select value={scanCfg.numOptions} onChange={(e) => updateCfg({ numOptions: +e.target.value })} className="bg-zinc-800 rounded px-1.5 py-0.5">
      {[3, 4, 5].map((n) => <option key={n} value={n}>{n} opc</option>)}
     </select>
     <select value={scanCfg.numColumns} onChange={(e) => updateCfg({ numColumns: +e.target.value })} className="bg-zinc-800 rounded px-1.5 py-0.5">
-     {[1, 2].map((n) => <option key={n} value={n}>{n} col</option>)}
+     {allowedColumns(scanCfg.numQuestions).map((n) => <option key={n} value={n}>{n} col</option>)}
     </select>
    </div>
 

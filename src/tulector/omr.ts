@@ -995,7 +995,30 @@ function readRutTimingY(gray: Float32Array, w: number, h: number): number[] | nu
     }
   }
   if (runStart >= 0) centers.push(Math.round(runSum / Math.max(runW, 1)));
-  return centers.length === L.RUT_TIMING_ROWS ? centers : null;
+
+  // Tolerante: en vez de exigir exactamente 11 marcas (frágil en foto real con
+  // ruido), ajusta una recta desde las que se detectaron (≥7) y reconstruye las
+  // 11 filas — igual que la pista de las preguntas. Así el RUT se ancla aunque
+  // una o dos marcas se pierdan o se peguen.
+  if (centers.length < 7) return null;
+  const byIndex = new Map<number, number>();
+  for (const c of centers) {
+    const i = Math.round((c - L.rutRowY(0)) / L.RUT_ROW_STEP);
+    if (i < 0 || i >= L.RUT_TIMING_ROWS) continue;
+    const expected = L.rutRowY(i);
+    const prev = byIndex.get(i);
+    if (prev === undefined || Math.abs(c - expected) < Math.abs(prev - expected)) byIndex.set(i, c);
+  }
+  const pts = [...byIndex.entries()];
+  if (pts.length < 7) return null;
+  let si = 0, sc = 0, sii = 0, sic = 0;
+  for (const [i, c] of pts) { si += i; sc += c; sii += i * i; sic += i * c; }
+  const denom = pts.length * sii - si * si;
+  if (Math.abs(denom) < 1e-6) return null;
+  const a = (pts.length * sic - si * sc) / denom;
+  const b = (sc - a * si) / pts.length;
+  if (a < L.RUT_ROW_STEP * 0.7 || a > L.RUT_ROW_STEP * 1.3) return null; // pendiente sana
+  return Array.from({ length: L.RUT_TIMING_ROWS }, (_, i) => Math.round(a * i + b));
 }
 
 /** Oscuridad concentrada en los centros de burbuja del RUT para un offset (dx,dy). */
