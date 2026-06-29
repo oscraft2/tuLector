@@ -213,6 +213,12 @@ export default function ScanPage() {
  const config = useMemo(() => ({ ...DEFAULT_CONFIG, numQuestions: scanCfg.numQuestions, numOptions: scanCfg.numOptions, optionLabels: "ABCDE".slice(0, scanCfg.numOptions), numColumns: scanCfg.numColumns }), [scanCfg]);
  // Marcas de temporización requeridas = filas por columna (no el nº de preguntas).
  const marksRequired = useMemo(() => questionLayout(config).rowsPerCol, [config]);
+ // Cambiar la config del lector desde el teléfono (debe coincidir con la hoja).
+ const updateCfg = (patch: Partial<typeof scanCfg>) => {
+  const next = { ...scanCfg, ...patch };
+  setScanCfg(next);
+  try { localStorage.setItem("tulector_scan_config", JSON.stringify(next)); } catch { /* sin storage */ }
+ };
 
  // Iniciar camara
  useEffect(() => {
@@ -781,6 +787,20 @@ export default function ScanPage() {
      {showDebug ? "Ocultar" : "Diagnostico"}
     </button>
    </header>
+
+   {/* Config del lector: DEBE coincidir con la hoja impresa (preg / opciones / columnas) */}
+   <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-zinc-950/90 border-b border-zinc-900 text-[10px] z-20">
+    <span className="text-zinc-500 uppercase tracking-wide">Hoja</span>
+    <select value={scanCfg.numQuestions} onChange={(e) => updateCfg({ numQuestions: +e.target.value })} className="bg-zinc-800 rounded px-1.5 py-0.5">
+     {[10, 15, 20, 25, 30, 40, 50, 60].map((n) => <option key={n} value={n}>{n} preg</option>)}
+    </select>
+    <select value={scanCfg.numOptions} onChange={(e) => updateCfg({ numOptions: +e.target.value })} className="bg-zinc-800 rounded px-1.5 py-0.5">
+     {[3, 4, 5].map((n) => <option key={n} value={n}>{n} opc</option>)}
+    </select>
+    <select value={scanCfg.numColumns} onChange={(e) => updateCfg({ numColumns: +e.target.value })} className="bg-zinc-800 rounded px-1.5 py-0.5">
+     {[1, 2].map((n) => <option key={n} value={n}>{n} col</option>)}
+    </select>
+   </div>
 
    {/* Visor de Camara */}
    <div className="relative flex-1 bg-black">
