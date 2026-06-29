@@ -7,6 +7,7 @@ import { isNativeApp, captureNativePhoto } from "@/lib/native/capacitor";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H, rutColX, rutRowY, RUT_COLS, RUT_ROWS, RUT_R } from "@/lib/sheet_layout";
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
+import { APP_VERSION } from "@/lib/version";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
 
@@ -110,7 +111,7 @@ const VOTE_TIMEOUT_MS = 4000; // tiempo maximo de captura (mas margen para agarr
 const VOTE_MAX_ATTEMPTS = 45; // tope de frames inspeccionados
 const VOTE_FOCUS_MIN = 35;    // gate de foco: EXIGENTE — el RUT (burbujas chicas) necesita nitidez
 const VOTE_MARKS_REQUIRED = 20; // solo frames con la pista de temporizacion completa
-const BUILD_TAG = "b-0629d"; // versión visible para diagnosticar caché del WebView
+const BUILD_TAG = APP_VERSION; // versión visible (compartida con el menú)
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase";
+import { APP_VERSION } from "@/lib/version";
 
 /**
  * Menú de la app (pensado para Capacitor). Pantalla limpia tipo cards; hoy solo
@@ -35,7 +36,7 @@ export default function AppMenuPage() {
   }
 
   return (
-    <main className="min-h-dvh bg-[#f5f6f8] text-[#0b1220]">
+    <main className="flex min-h-dvh flex-col bg-[#f5f6f8] text-[#0b1220]">
       {/* Header */}
       <header className="safe-pt bg-[#111827] px-6 pb-6 pt-5 text-white">
         <div className="flex items-center justify-between">
@@ -77,6 +78,11 @@ export default function AppMenuPage() {
           </div>
         </div>
       </section>
+
+      {/* Footer con la versión (para saber siempre qué build corres) */}
+      <footer className="safe-pb mt-auto px-5 pb-6 pt-2 text-center">
+        <p className="text-xs font-semibold tracking-wide text-[#9aa3af]">TuLector · versión {APP_VERSION}</p>
+      </footer>
     </main>
   );
 }
