@@ -149,28 +149,33 @@ export function drawSheet(ctx: Ctx2D, marks: SheetMarks = {}, cfg: L.SheetConfig
   // ─── Grilla de RUT (8 dígitos + DV con K) ───
   drawRut(ctx, marks);
 
-  // ─── Pista de temporizacion + grilla de preguntas (parametrica) ───
+  // ─── Pista de temporizacion + grilla de preguntas (parametrica, multi-columna) ───
   const ql = L.questionLayout(cfg);
   const numFont = Math.max(11, Math.round(ql.rowH * 0.27));
   const lblFont = Math.max(9, Math.round(ql.bubbleR * 0.85));
-  for (let q = 0; q < ql.numQuestions; q++) {
-    const cy = ql.rowCY(q);
 
-    // marca de temporizacion (solida) alineada a la fila
-    ctx.fillStyle = BLACK;
+  // Pista de temporizacion: UNA marca por fila (rowsPerCol). Todas las columnas
+  // comparten esos Y, asi un solo riel ancla las filas de toda la hoja.
+  ctx.fillStyle = BLACK;
+  for (let row = 0; row < ql.rowsPerCol; row++) {
+    const cy = ql.rowCY(row);
     ctx.fillRect(L.TIMING_X - L.TIMING_W / 2, cy - L.TIMING_H / 2, L.TIMING_W, L.TIMING_H);
+  }
 
-    // numero de pregunta
+  for (let q = 0; q < ql.numQuestions; q++) {
+    const col = ql.colOf(q), cy = ql.rowCY(ql.rowOf(q));
+
+    // numero de pregunta (alineado a su columna)
     ctx.fillStyle = BLACK;
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.font = `${numFont}px sans-serif`;
-    ctx.fillText(`${q + 1}`, L.QNUM_X, cy + 6);
+    ctx.fillText(`${q + 1}`, ql.qnumX(col), cy + 6);
 
     // burbujas de opciones
     for (let o = 0; o < ql.numOptions; o++) {
       const marked = !!(marks.filled && marks.answers?.[q] === o);
-      const cx = ql.optX(o);
+      const cx = ql.optX(o, col);
       bubble(ctx, cx, cy, ql.bubbleR, marked);
       if (!marked) {
         // letra en gris claro dentro de la burbuja

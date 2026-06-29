@@ -19,6 +19,7 @@ import { bubbleProbability } from "./classifier";
 
 export interface OMRConfig {
   numQuestions: number; numOptions: number; optionLabels: string;
+  numColumns?: number; // 1 (default) | 2
   idRows: number; idCols: number;
   sheetWidth: number; sheetHeight: number;
   margin: number; cornerSize: number;
@@ -676,15 +677,15 @@ function readTimingRows(gray: Float32Array, w: number, h: number): number[] {
  * "formato valido" y "registro por temporizacion" siempre concuerdan (antes
  * validaba con >=80% pero solo registraba con ==100%, auditoria A2).
  */
-function rowsFromTiming(centers: number[], numQuestions: number, ql: L.QLayout): number[] | null {
-  const minPts = Math.max(6, Math.floor(numQuestions * 0.6));
+function rowsFromTiming(centers: number[], numRows: number, ql: L.QLayout): number[] | null {
+  const minPts = Math.max(6, Math.floor(numRows * 0.6));
   if (centers.length < minPts) return null;
 
   // Cada centro → indice de fila teorico mas cercano (dedup por indice).
   const byIndex = new Map<number, number>();
   for (const c of centers) {
     const i = Math.round((c - ql.rowCY(0)) / ql.rowH);
-    if (i < 0 || i >= numQuestions) continue;
+    if (i < 0 || i >= numRows) continue;
     const expected = ql.rowCY(i);
     const prev = byIndex.get(i);
     if (prev === undefined || Math.abs(c - expected) < Math.abs(prev - expected)) byIndex.set(i, c);
@@ -705,7 +706,7 @@ function rowsFromTiming(centers: number[], numQuestions: number, ql: L.QLayout):
   if (a < ql.rowH * 0.7 || a > ql.rowH * 1.3) return null;
 
   const rowY: number[] = [];
-  for (let q = 0; q < numQuestions; q++) rowY.push(Math.round(a * q + b));
+  for (let row = 0; row < numRows; row++) rowY.push(Math.round(a * row + b));
   return rowY;
 }
 
@@ -723,10 +724,10 @@ function validateFormat(gray: Float32Array, w: number, h: number, config: OMRCon
 
   // 2. La pista de temporizacion debe poder ajustarse a las numQuestions filas
   //    (mismo criterio que el registro en gradeBubbles).
-  const ql = L.questionLayout({ numQuestions: config.numQuestions, numOptions: config.numOptions });
+  const ql = L.questionLayout({ numQuestions: config.numQuestions, numOptions: config.numOptions, numColumns: config.numColumns });
   const rows = readTimingRows(gray, w, h);
-  if (!rowsFromTiming(rows, config.numQuestions, ql)) {
-    return { valid: false, reason: `Pista de temporizacion insuficiente (${rows.length}/${config.numQuestions})` };
+  if (!rowsFromTiming(rows, ql.rowsPerCol, ql)) {
+    return { valid: false, reason: `Pista de temporizacion insuficiente (${rows.length}/${ql.rowsPerCol})` };
   }
 
   return { valid: true };
@@ -742,17 +743,19 @@ function validateFormat(gray: Float32Array, w: number, h: number, config: OMRCon
  * oscuridad concentrada en las posiciones de burbuja esperadas. En una imagen
  * perfecta el optimo es (0,0), por lo que no degrada el caso ideal.
  */
-function darkAtBubbles(gray: Float32Array, w: number, h: number, rowY: number[], numOptions: number, dx: number): number {
+function darkAtBubbles(gray: Float32Array, w: number, h: number, rowY: number[], ql: L.QLayout, dx: number): number {
   let darkSum = 0;
   for (const cy of rowY) {
-    for (let o = 0; o < numOptions; o++) {
-      const cx = L.optX(o) + dx;
-      for (let yy = -6; yy <= 6; yy++) {
-        const py = cy + yy;
-        if (py < 0 || py >= h) continue;
-        for (let xx = -6; xx <= 6; xx++) {
-          const px = cx + xx;
-          if (px >= 0 && px < w && gray[py * w + px] < DARK_THRESH) darkSum++;
+    for (let col = 0; col < ql.numColumns; col++) {
+      for (let o = 0; o < ql.numOptions; o++) {
+        const cx = ql.optX(o, col) + dx;
+        for (let yy = -6; yy <= 6; yy++) {
+          const py = cy + yy;
+          if (py < 0 || py >= h) continue;
+          for (let xx = -6; xx <= 6; xx++) {
+            const px = cx + xx;
+            if (px >= 0 && px < w && gray[py * w + px] < DARK_THRESH) darkSum++;
+          }
         }
       }
     }
@@ -762,13 +765,12 @@ function darkAtBubbles(gray: Float32Array, w: number, h: number, rowY: number[],
 
 /** Fallback software cuando la pista de temporizacion no se lee: offset (dx,dy). */
 function findGridOffset(gray: Float32Array, w: number, h: number, config: OMRConfig): { dx: number; dy: number } {
-  const { numQuestions, numOptions } = config;
-  const ql = L.questionLayout({ numQuestions, numOptions });
+  const ql = L.questionLayout({ numQuestions: config.numQuestions, numOptions: config.numOptions, numColumns: config.numColumns });
   let bestDx = 0, bestDy = 0, bestDark = -1;
   for (let dy = -CALIB.gridSearchDy; dy <= CALIB.gridSearchDy; dy += CALIB.gridSearchStep) {
-    const rowY = Array.from({ length: numQuestions }, (_, q) => ql.rowCY(q) + dy);
+    const rowY = Array.from({ length: ql.rowsPerCol }, (_, r) => ql.rowCY(r) + dy);
     for (let dx = -CALIB.gridSearchDx; dx <= CALIB.gridSearchDx; dx += CALIB.gridSearchStep) {
-      const darkSum = darkAtBubbles(gray, w, h, rowY, numOptions, dx);
+      const darkSum = darkAtBubbles(gray, w, h, rowY, ql, dx);
       if (darkSum > bestDark) { bestDark = darkSum; bestDx = dx; bestDy = dy; }
     }
   }
@@ -776,10 +778,10 @@ function findGridOffset(gray: Float32Array, w: number, h: number, config: OMRCon
 }
 
 /** Con los Y de fila ya anclados por la temporizacion, solo refina el offset X. */
-function findColumnOffset(gray: Float32Array, w: number, h: number, rowY: number[], numOptions: number): number {
+function findColumnOffset(gray: Float32Array, w: number, h: number, rowY: number[], ql: L.QLayout): number {
   let bestDx = 0, bestDark = -1;
   for (let dx = -CALIB.gridSearchDx; dx <= CALIB.gridSearchDx; dx += CALIB.gridSearchStep) {
-    const darkSum = darkAtBubbles(gray, w, h, rowY, numOptions, dx);
+    const darkSum = darkAtBubbles(gray, w, h, rowY, ql, dx);
     if (darkSum > bestDark) { bestDark = darkSum; bestDx = dx; }
   }
   return bestDx;
@@ -808,22 +810,23 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
     return { results: [], valid: false, reason: formatCheck.reason };
   }
 
-  // Layout parametrico (default 20/5 reproduce la hoja actual).
-  const ql = L.questionLayout({ numQuestions, numOptions });
+  // Layout parametrico (default 20/5/1col reproduce la hoja actual).
+  const ql = L.questionLayout({ numQuestions, numOptions, numColumns: config.numColumns });
 
   // Registro de filas: preferimos los Y fisicos de la pista de temporizacion;
-  // si no se leen las marcas, caemos al offset software.
+  // si no se leen las marcas, caemos al offset software. La pista tiene una marca
+  // por FILA (rowsPerCol); cada columna comparte esos Y.
   const timingRows = readTimingRows(gray, width, height);
-  const fitted = rowsFromTiming(timingRows, numQuestions, ql); // tolera marcas faltantes
+  const fitted = rowsFromTiming(timingRows, ql.rowsPerCol, ql); // tolera marcas faltantes
   let rowY: number[];
   let gridDx: number;
   if (fitted) {
     rowY = fitted;
-    gridDx = findColumnOffset(gray, width, height, rowY, numOptions);
+    gridDx = findColumnOffset(gray, width, height, rowY, ql);
   } else {
     const off = findGridOffset(gray, width, height, config);
     gridDx = off.dx;
-    rowY = Array.from({ length: numQuestions }, (_, q) => ql.rowCY(q) + off.dy);
+    rowY = Array.from({ length: ql.rowsPerCol }, (_, r) => ql.rowCY(r) + off.dy);
   }
   const diag: GradeDiag = { usedTiming: !!fitted, timingRows: timingRows.length, gridDx };
 
@@ -832,13 +835,14 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
   let glareWarnings = 0;
 
   for (let q = 0; q < numQuestions; q++) {
-    const cy = rowY[q];
+    const cy = rowY[ql.rowOf(q)];
+    const col = ql.colOf(q);
     const scores: number[] = [];
     const glares: boolean[] = [];
     const feats: number[][] = [];
 
     for (let o = 0; o < numOptions; o++) {
-      const cx = L.optX(o) + gridDx;
+      const cx = ql.optX(o, col) + gridDx;
       const { score, glare, features } = classifyBubble(gray, width, cx, cy, ql.gradeR);
       scores.push(score);
       glares.push(glare);

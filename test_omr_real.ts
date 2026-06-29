@@ -161,6 +161,30 @@ async function main() {
   const miss30 = report30.results.filter((r, i) => r.answer !== exp30[i]);
   if (miss30.length > 0) fail(`parametrico 30q/3opt: ${miss30.length} respuestas erradas`);
   console.log(`Parametric guard passed: 30 preguntas / 3 opciones leidas OK (${report30.results.length}/30)`);
+
+  // ─── Guardia MULTI-COLUMNA (Fase C+): 40 preguntas en 2 columnas. Prueba el
+  // layout de 2 columnas de punta a punta (render → warp → lectura). La columna
+  // derecha vive bajo el RUT; el riel de temporizacion (rowsPerCol) ancla ambas. ───
+  const ans40 = Array.from({ length: 40 }, (_, i) => i % 4);
+  const cfg40 = { numQuestions: 40, numOptions: 4, numColumns: 2 };
+  const sheet40 = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheet40.getContext("2d") as unknown as Ctx2D, { answers: ans40, rut: "12345678-5", filled: true }, cfg40);
+  const img40 = await loadImage(sheet40.toDataURL("image/png"));
+  const cap40 = createCanvas(img40.width, img40.height);
+  cap40.getContext("2d").drawImage(img40, 0, 0);
+  const frame40 = cap40.getContext("2d").getImageData(0, 0, cap40.width, cap40.height) as unknown as globalThis.ImageData;
+  const corners40 = findCorners(frame40) ?? fail("multicolumna: esquinas no detectadas");
+  const warped40 = warpImageData(frame40, corners40);
+  const config40 = { ...DEFAULT_CONFIG, numQuestions: 40, numOptions: 4, optionLabels: "ABCD", numColumns: 2 };
+  const report40 = gradeBubbles(warped40, config40, corners40);
+  if (!report40.valid) fail(`multicolumna 40q/2col invalido: ${report40.reason}`);
+  const exp40 = ans40.map((a) => "ABCD"[a]);
+  const miss40 = report40.results.filter((r, i) => r.answer !== exp40[i]);
+  if (miss40.length > 0) {
+    const first = report40.results.findIndex((r, i) => r.answer !== exp40[i]);
+    fail(`multicolumna 40q/2col: ${miss40.length} erradas (ej q${first + 1}: leyo '${report40.results[first].answer}' esperaba '${exp40[first]}')`);
+  }
+  console.log(`Multi-column guard passed: 40 preguntas / 2 columnas leidas OK (${report40.results.length}/40)`);
 }
 
 main().catch((error) => {

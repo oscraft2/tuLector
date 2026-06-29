@@ -138,11 +138,14 @@ export function rowCY(q: number): number {
 }
 
 // ─── Layout PARAMÉTRICO (Fase C) ───────────────────────────────
-// Una sola columna por ahora; multi-columna es el siguiente incremento.
-// El default (20 preguntas / 5 opciones) reproduce EXACTAMENTE la hoja actual.
+// Soporta 1 o 2 columnas. numColumns=1 (default) reproduce EXACTAMENTE la hoja
+// actual (RUT arriba-derecha, preguntas arriba-izquierda, Q_TOP=340). En 2
+// columnas la columna derecha chocaria con el bloque RUT, asi que las preguntas
+// arrancan DEBAJO del RUT (ancho completo) → mas preguntas (hasta ~60).
 export interface SheetConfig {
-  numQuestions: number;   // 1..~40 en una columna
+  numQuestions: number;   // 1..~60
   numOptions: number;     // 3 | 4 | 5
+  numColumns?: number;    // 1 (default) | 2
 }
 
 export const DEFAULT_SHEET: SheetConfig = { numQuestions: NUM_QUESTIONS, numOptions: NUM_OPTIONS };
@@ -150,31 +153,53 @@ export const DEFAULT_SHEET: SheetConfig = { numQuestions: NUM_QUESTIONS, numOpti
 export interface QLayout {
   numQuestions: number;
   numOptions: number;
+  numColumns: number;
+  rowsPerCol: number;  // filas por columna (= nº de marcas de temporizacion)
   labels: string;
-  rowH: number;        // separacion entre filas (ajustada al nº de preguntas)
+  rowH: number;        // separacion entre filas (ajustada al nº de filas)
   bubbleR: number;     // radio de burbuja en la hoja
   gradeR: number;      // radio de muestreo del motor
   qTop: number;
-  rowCY(q: number): number;
-  optX(o: number): number;
+  colOf(q: number): number;   // columna de la pregunta q (column-major)
+  rowOf(q: number): number;   // fila (0..rowsPerCol-1) de la pregunta q
+  rowCY(row: number): number; // centro Y de la fila (0..rowsPerCol-1)
+  optX(o: number, col?: number): number; // centro X de la opcion o en la columna col
+  qnumX(col: number): number; // X del numero de pregunta de la columna col
 }
 
-const Q_AREA = 1200; // espacio vertical para preguntas (340 → 1540). 20*60 = 1200 (default exacto).
+const Q_BOTTOM = 1540;          // borde inferior del area de preguntas
+const Q_MULTICOL_TOP = 620;     // las preguntas multi-columna arrancan bajo el RUT
+
+// Geometria horizontal por nº de columnas (evita las anclas en x=580 y x=1130).
+// 1 col: identico a hoy. 2 cols: izq 195.., der 700.. con paso mas ajustado.
+const COL_GEOM: Record<number, { qnum: number[]; optX0: number[]; optStep: number }> = {
+  1: { qnum: [QNUM_X], optX0: [OPT_X0], optStep: OPT_STEP },
+  2: { qnum: [150, 648], optX0: [195, 700], optStep: 58 },
+};
 
 /** Layout de la grilla de preguntas calculado desde el config. */
 export function questionLayout(cfg: SheetConfig = DEFAULT_SHEET): QLayout {
+  const numColumns = Math.max(1, Math.min(2, cfg.numColumns ?? 1));
   const n = Math.max(1, cfg.numQuestions);
-  const rowH = Math.max(30, Math.min(ROW_H, Math.floor(Q_AREA / n)));   // n=20 → 60 (exacto)
-  const bubbleR = Math.max(10, Math.min(BUBBLE_R, Math.round(rowH / 2) - 3)); // rowH 60 → 15
-  const gradeR = Math.max(6, Math.min(10, bubbleR - 5));                 // bubbleR 15 → 10
-  const rowOff = Math.round(rowH * 0.23);                                // 60 → 14
+  const rowsPerCol = Math.ceil(n / numColumns);
+  const qTop = numColumns === 1 ? Q_TOP : Q_MULTICOL_TOP;
+  const qArea = Q_BOTTOM - qTop;                                            // 1 col → 1200
+  const rowH = Math.max(30, Math.min(ROW_H, Math.floor(qArea / rowsPerCol))); // 20 filas → 60
+  const bubbleR = Math.max(10, Math.min(BUBBLE_R, Math.round(rowH / 2) - 3));
+  const gradeR = Math.max(6, Math.min(10, bubbleR - 5));
+  const rowOff = Math.round(rowH * 0.23);
+  const g = COL_GEOM[numColumns];
   return {
     numQuestions: n,
     numOptions: cfg.numOptions,
+    numColumns, rowsPerCol,
     labels: OPTION_LABELS.slice(0, cfg.numOptions),
-    rowH, bubbleR, gradeR, qTop: Q_TOP,
-    rowCY: (q) => Q_TOP + q * rowH + rowOff,
-    optX: (o) => OPT_X0 + o * OPT_STEP,
+    rowH, bubbleR, gradeR, qTop,
+    colOf: (q) => Math.floor(q / rowsPerCol),
+    rowOf: (q) => q % rowsPerCol,
+    rowCY: (row) => qTop + row * rowH + rowOff,
+    optX: (o, col = 0) => g.optX0[col] + o * g.optStep,
+    qnumX: (col) => g.qnum[col],
   };
 }
 
