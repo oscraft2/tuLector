@@ -290,4 +290,21 @@ export async function createStudent(formData: FormData) {
   revalidatePath("/dashboard/students");
 }
 
+export async function disconnectSchool() {
+  const { supabase, user, school } = await getDashboardContext();
+
+  await supabase
+    .from("school_members")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("school_id", school.id);
+
+  const cookieStore = await cookies();
+  cookieStore.delete("tulector_active_school_id");
+
+  revalidatePath("/dashboard");
+  redirect("/dashboard");
+}
+
+
 
