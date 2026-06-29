@@ -137,9 +137,12 @@ export async function getDashboardContext() {
     .from("schools")
     .select("*")
     .eq("id", membership.school_id)
-    .single();
+    .maybeSingle();
 
-  if (schoolError) throw new Error(schoolError.message);
+  if (schoolError || !school) {
+    console.warn("[getDashboardContext] School not found for membership:", membership?.school_id, schoolError?.message);
+    redirect("/dashboard/onboarding");
+  }
 
   // Fetch all school memberships for this user (for the switcher)
   const { data: allMemberships } = await supabase
