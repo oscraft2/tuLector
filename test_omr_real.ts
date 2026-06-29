@@ -185,6 +185,35 @@ async function main() {
     fail(`multicolumna 40q/2col: ${miss40.length} erradas (ej q${first + 1}: leyo '${report40.results[first].answer}' esperaba '${exp40[first]}')`);
   }
   console.log(`Multi-column guard passed: 40 preguntas / 2 columnas leidas OK (${report40.results.length}/40)`);
+
+  // ─── Guardia de SOMBRA (umbral adaptativo): oscurece fuerte la mitad inferior
+  // de la hoja (papel de fondo cae por debajo de 70). Con umbral FIJO ese papel
+  // sombreado se contaria como tinta (falsos positivos); el adaptativo lo evita. ───
+  const ansSh = Array.from({ length: 20 }, (_, i) => i % 5);
+  const sheetSh = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetSh.getContext("2d") as unknown as Ctx2D, { answers: ansSh, rut: "12345678-5", filled: true });
+  const imgSh = await loadImage(sheetSh.toDataURL("image/png"));
+  const capSh = createCanvas(imgSh.width, imgSh.height);
+  capSh.getContext("2d").drawImage(imgSh, 0, 0);
+  const frameSh = capSh.getContext("2d").getImageData(0, 0, capSh.width, capSh.height) as unknown as globalThis.ImageData;
+  const cornersSh = findCorners(frameSh) ?? fail("sombra: esquinas no detectadas");
+  const warpedSh = warpImageData(frameSh, cornersSh);
+  // Sombra: oscurece SOLO la zona de burbujas (x 175-485) de la mitad inferior
+  // (papel 255 → ~65, por debajo de DARK_THRESH). Deja intacto el riel de
+  // temporizacion (x~120) y las anclas, para aislar el efecto en el muestreo.
+  const dSh = warpedSh.data;
+  for (let y = Math.floor(warpedSh.height / 2); y < warpedSh.height; y++) {
+    for (let x = 175; x < 485 && x < warpedSh.width; x++) {
+      const i = (y * warpedSh.width + x) * 4;
+      dSh[i] = Math.max(0, dSh[i] - 190); dSh[i + 1] = Math.max(0, dSh[i + 1] - 190); dSh[i + 2] = Math.max(0, dSh[i + 2] - 190);
+    }
+  }
+  const reportSh = gradeBubbles(warpedSh);
+  if (!reportSh.valid) fail(`sombra: invalido ${reportSh.reason}`);
+  const expSh = ansSh.map((a) => "ABCDE"[a]);
+  const missSh = reportSh.results.filter((r, i) => r.answer !== expSh[i]);
+  if (missSh.length > 2) fail(`sombra: ${missSh.length}/20 erradas bajo sombra (umbral adaptativo no aguanto)`);
+  console.log(`Shade guard passed: lectura bajo sombra fuerte OK (${20 - missSh.length}/20, mitad inferior oscurecida)`);
 }
 
 main().catch((error) => {

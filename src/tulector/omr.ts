@@ -558,14 +558,14 @@ function classifyBubble(gray: Float32Array, w: number, cx: number, cy: number, r
   const centerVals: number[] = [];
   const edgeVals: number[] = [];
 
+  const h = gray.length / w;
   for (let dy = -r; dy <= r; dy++) {
     for (let dx = -r; dx <= r; dx++) {
       const px = cx + dx, py = cy + dy;
-      if (px >= 0 && px < w && py >= 0 && py < gray.length / w) {
+      if (px >= 0 && px < w && py >= 0 && py < h) {
         const v = gray[py * w + px];
         total++;
         sum += v; sumSq += v * v;
-        if (v < DARK_THRESH) dark++;
         if (v > GLARE_THRESH) bright++;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < r * 0.45) centerVals.push(v);
@@ -576,9 +576,22 @@ function classifyBubble(gray: Float32Array, w: number, cx: number, cy: number, r
 
   if (total === 0) return { score: 0, glare: false, features: [0, 0, 0, 0] };
 
-  const darkRatio = dark / total;
   const centerAvg = centerVals.length > 0 ? centerVals.reduce((a, b) => a + b, 0) / centerVals.length : 255;
   const edgeAvg = edgeVals.length > 0 ? edgeVals.reduce((a, b) => a + b, 0) / edgeVals.length : 255;
+
+  // Umbral ADAPTATIVO de tinta: en luz normal (papel claro) = DARK_THRESH (70),
+  // identico a antes. En zonas oscuras (papel de fondo bajo por sombra), BAJA para
+  // no contar el papel sombreado como tinta (falsos positivos). Nunca sube de 70 →
+  // cero cambio en el caso bien iluminado / en el test sintetico.
+  const localThresh = Math.max(40, Math.min(DARK_THRESH, edgeAvg * 0.45));
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const px = cx + dx, py = cy + dy;
+      if (px >= 0 && px < w && py >= 0 && py < h && gray[py * w + px] < localThresh) dark++;
+    }
+  }
+
+  const darkRatio = dark / total;
   const contrast = edgeAvg > 0 ? (edgeAvg - centerAvg) / edgeAvg : 0;
   const mean = sum / total;
   const variance = sumSq / total - mean * mean;
