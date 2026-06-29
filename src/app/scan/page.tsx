@@ -105,12 +105,12 @@ function canvasToDataUrl(canvas: HTMLCanvasElement): string {
 const DEFAULT_ANSWER_KEY = ["C","B","B","B","C","E","E","D","C","B","A","B","C","D","E","E","D","C","B","A"];
 
 // ─── Captura por votacion multi-frame (estabiliza el resultado) ───
-const VOTE_TARGET = 2;        // frames validos a juntar antes de votar (menos = captura mas rapido)
-const VOTE_TIMEOUT_MS = 3500; // tiempo maximo de captura (mas margen en condiciones marginales)
-const VOTE_MAX_ATTEMPTS = 40; // tope de frames inspeccionados
-const VOTE_FOCUS_MIN = 25;    // gate de foco (Laplaciano), mas permisivo
+const VOTE_TARGET = 3;        // frames validos a votar (3 = RUT robusto, como cuando leia 4/4)
+const VOTE_TIMEOUT_MS = 4000; // tiempo maximo de captura (mas margen para agarrar frames NITIDOS)
+const VOTE_MAX_ATTEMPTS = 45; // tope de frames inspeccionados
+const VOTE_FOCUS_MIN = 35;    // gate de foco: EXIGENTE — el RUT (burbujas chicas) necesita nitidez
 const VOTE_MARKS_REQUIRED = 20; // solo frames con la pista de temporizacion completa
-const BUILD_TAG = "b-0629a"; // versión visible para diagnosticar caché del WebView
+const BUILD_TAG = "b-0629b"; // versión visible para diagnosticar caché del WebView
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
