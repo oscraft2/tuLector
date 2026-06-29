@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { findCorners, gradeBubbles, readRut, readSheetCode, warpSheet, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
+import { isNativeApp, captureNativePhoto } from "@/lib/native/capacitor";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H } from "@/lib/sheet_layout";
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
@@ -143,6 +144,9 @@ export default function ScanPage() {
  const [warpedThumb, setWarpedThumb] = useState<string | null>(null);
  const [capturing, setCapturing] = useState(false);
  const [answerKey, setAnswerKey] = useState<string[]>(DEFAULT_ANSWER_KEY);
+ const [native, setNative] = useState(false);
+
+ useEffect(() => { let a = true; Promise.resolve().then(() => { if (a) setNative(isNativeApp()); }); return () => { a = false; }; }, []);
 
  // Cargar la clave de respuestas desde una sesion autenticada de escaneo.
  useEffect(() => {
@@ -529,18 +533,16 @@ export default function ScanPage() {
   setCapturing(false);
  };
 
- // ─── SUBIR FOTO: procesa una imagen del telefono con el mismo motor ───
- const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
+ // ─── FOTO (upload o cámara nativa): mismo motor de alta resolución ───
+ // Procesa una imagen (objectURL o dataURL) con el pipeline que YA lee el RUT
+ // perfecto. La cámara nativa (APK) entrega aquí su foto de alta resolución.
+ const processImageSrc = async (src: string) => {
   setCapturing(true);
   setShowDebug(true);
   setError("");
-
   try {
-   const url = URL.createObjectURL(file);
    const img = new Image();
-   await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("img")); img.src = url; });
+   await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("img")); img.src = src; });
 
    const canvas = hiddenCanvas.current ?? document.createElement("canvas");
    canvas.width = img.naturalWidth;
@@ -548,7 +550,6 @@ export default function ScanPage() {
    const ctx = canvas.getContext("2d")!;
    ctx.drawImage(img, 0, 0);
    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
-   URL.revokeObjectURL(url);
 
    const diag = diagnoseFrame(frame);
    setLastDiag(diag);
@@ -578,9 +579,21 @@ export default function ScanPage() {
   } catch {
    setError("No se pudo leer la imagen");
    setCapturing(false);
-  } finally {
-   e.target.value = "";
   }
+ };
+
+ // Subir foto desde galería/archivos (web y app).
+ const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  try { await processImageSrc(url); } finally { URL.revokeObjectURL(url); e.target.value = ""; }
+ };
+
+ // Cámara NATIVA (APK): foto de alta resolución → mismo pipeline.
+ const onNativeCapture = async () => {
+  const dataUrl = await captureNativePhoto();
+  if (dataUrl) await processImageSrc(dataUrl);
  };
 
  // Fallback corner finder with relaxed thresholds
@@ -770,6 +783,17 @@ export default function ScanPage() {
      className="hidden"
     />
     <div className="absolute bottom-8 left-0 right-0 flex items-center justify-center gap-8 z-20">
+     {/* Cámara NATIVA (APK): foto de alta resolución (espejo del "Subir foto") */}
+     {native && (
+      <button
+       onClick={onNativeCapture}
+       disabled={capturing}
+       className="absolute left-8 flex flex-col items-center gap-1 text-white/80 hover:text-white disabled:opacity-40 transition"
+      >
+       <span className="w-12 h-12 rounded-2xl border border-white/40 bg-black/40 backdrop-blur flex items-center justify-center text-xl">📷</span>
+       <span className="text-[9px] font-bold uppercase tracking-wider">Tomar foto</span>
+      </button>
+     )}
      <button
       onClick={captureFrame}
       disabled={capturing || !stream}

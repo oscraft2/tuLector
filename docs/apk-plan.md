@@ -73,6 +73,34 @@ APK (Capacitor)
 - **Play Store:** cuenta (US$25), AAB firmado, Play App Signing (2º SHA-1), política de
   privacidad, "eliminar cuenta", Data Safety. AyudaDocente ya tiene plantilla de todo esto.
 
+## Comandos para compilar el APK (en tu máquina, con Android SDK)
+
+Lo web ya está hecho (login nativo, menú `/app`, detección nativa en `/scan`,
+puente de cámara, `capacitor.config.ts`). Falta instalar Capacitor y compilar:
+
+```bash
+# 1. Instalar Capacitor + plugins (los plugins se acceden por window.Capacitor.Plugins)
+npm i @capacitor/core @capacitor/cli @capacitor/android \
+      @capacitor/camera @capacitor/status-bar @capacitor/splash-screen @capacitor/app
+
+# 2. Añadir la plataforma Android (crea ./android)
+npx cap add android
+
+# 3. Sincronizar (cada vez que cambian plugins/config)
+npx cap sync android
+
+# 4. Abrir en Android Studio para correr/depurar en emulador o dispositivo
+npx cap open android
+```
+
+- La app carga `https://tulector.vercel.app` (server.url), así que **se actualiza
+  sola al deployar la web**; solo recompilas el APK si cambian plugins nativos.
+- **Permiso de cámara:** agregar a `android/app/src/main/AndroidManifest.xml`
+  `<uses-permission android:name="android.permission.CAMERA"/>` (el plugin Camera
+  también lo pide en runtime).
+- Ícono/splash: usar `@capacitor/assets` o reemplazar en `android/app/src/main/res`.
+- Firma/AAB: keystore propio (como AyudaDocente). Ver su memoria para el flujo Play.
+
 ## Estado de Flutter
 **DEPRECADO.** `mobile/` (Flutter + `omr_engine.cpp`) ya no se mantiene. El motor C++ quedó
 atrás (sin 12 anclas, sin las mejoras del RUT). Se eliminará/archivará. No invertir ahí.

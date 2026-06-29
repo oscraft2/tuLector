@@ -51,9 +51,12 @@ function AuthForm() {
     return () => { active = false; };
   }, [searchParams]);
 
+  // En la app nativa, tras autenticar va al menú /app; en web, al /dashboard.
+  const homeAfterAuth = () => (isNativeApp() ? "/app" : "/dashboard");
+
   useEffect(() => {
     client.auth.getSession().then(({ data: { session } }) => {
-      if (session) window.location.href = "/dashboard";
+      if (session) window.location.href = homeAfterAuth();
     });
   }, [client]);
 
@@ -76,7 +79,7 @@ function AuthForm() {
       } else {
         const { error } = await client.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        window.location.href = "/dashboard";
+        window.location.href = homeAfterAuth();
       }
     } catch (err) {
       const authErr = err as AuthError;
