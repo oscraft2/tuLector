@@ -4,7 +4,6 @@ import { getDashboardMessages, formatNumber } from "@/locales";
 import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { QuotaBar } from "@/components/dashboard/QuotaBar";
-import { LanguageSwitcher } from "@/components/dashboard/LanguageSwitcher";
 import { checkAndTriggerQuotaAlerts } from "@/lib/quota_alerts";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +12,7 @@ export default async function DashboardPage() {
   const { supabase, school, countryProfile, locale } = await getDashboardContext();
   const t = getDashboardMessages(locale);
   
-  const [{ count: quizzesCount }, { count: studentsCount }, { data: papers }, { data: quizzes }, simceResult] = await Promise.all([
+  const [{ count: quizzesCount }, { count: studentsCount }, { data: papers }, { data: quizzes }, simceResult, allSchoolPapersResult] = await Promise.all([
     supabase.from("quizzes").select("id", { count: "exact", head: true }).is("archived_at", null),
     supabase.from("students").select("id", { count: "exact", head: true }),
     supabase.from("papers").select("id, score, total, status, scanned_at, quiz_id").order("scanned_at", { ascending: false }).limit(5),
@@ -21,6 +20,11 @@ export default async function DashboardPage() {
     school.rbd
       ? supabase.from("simce_resultados").select("agno, grado, asignatura, puntaje_promedio, nivel_insuficiente_pct, nivel_elemental_pct, nivel_adecuado_pct, alumnos_evaluados").eq("rbd", school.rbd).order("agno", { ascending: false })
       : Promise.resolve({ data: [] }),
+    supabase
+      .from("papers")
+      .select("id, score, total, status, quizzes!inner(id, subject, grade, evaluation_type, school_id)")
+      .eq("quizzes.school_id", school.id)
+      .eq("status", "success"),
     checkAndTriggerQuotaAlerts(school.id),
   ]);
 
@@ -29,6 +33,76 @@ export default async function DashboardPage() {
   const validPapers = papers?.filter((p) => typeof p.score === "number" && typeof p.total === "number") ?? [];
   const avg = validPapers.length ? Math.round(validPapers.reduce((sum, p) => sum + ((p.score ?? 0) / Math.max(1, p.total ?? 1)) * 100, 0) / validPapers.length) : 0;
   const simceData = simceResult?.data ?? [];
+  const allSchoolPapers = allSchoolPapersResult?.data ?? [];
+
+  // Group and process OMR stats by course, type, and compare with SIMCE
+  const papersGroupedByGrade: Record<string, { sum: number; count: number }> = {};
+  const papersGroupedByEvalType: Record<string, { sum: number; count: number }> = {};
+  const papersGroupedByGradeSubject: Record<string, { sum: number; count: number }> = {};
+
+  (allSchoolPapers ?? []).forEach((paper: any) => {
+    const score = Number(paper.score ?? 0);
+    const total = Number(paper.total ?? 1);
+    const pct = total > 0 ? (score / total) * 100 : 0;
+    const quiz = paper.quizzes;
+    if (!quiz) return;
+
+    // Grade (Curso)
+    const grade = quiz.grade || "Sin curso";
+    if (!papersGroupedByGrade[grade]) papersGroupedByGrade[grade] = { sum: 0, count: 0 };
+    papersGroupedByGrade[grade].sum += pct;
+    papersGroupedByGrade[grade].count += 1;
+
+    // Eval Type (Tipo de Prueba)
+    const evalType = quiz.evaluation_type || "Otro";
+    const labelEval = evalType === "SIMCE" ? "Ensayo SIMCE" : evalType === "DIA" ? "Ensayo DIA" : "Pruebas Propias";
+    if (!papersGroupedByEvalType[labelEval]) papersGroupedByEvalType[labelEval] = { sum: 0, count: 0 };
+    papersGroupedByEvalType[labelEval].sum += pct;
+    papersGroupedByEvalType[labelEval].count += 1;
+
+    // Grade + Subject (for SIMCE comparison!)
+    const key = `${grade}|${quiz.subject || ""}`;
+    if (!papersGroupedByGradeSubject[key]) papersGroupedByGradeSubject[key] = { sum: 0, count: 0 };
+    papersGroupedByGradeSubject[key].sum += pct;
+    papersGroupedByGradeSubject[key].count += 1;
+  });
+
+  const gradeStats = Object.entries(papersGroupedByGrade).map(([name, stat]) => ({
+    name,
+    avg: Math.round(stat.sum / stat.count),
+    count: stat.count,
+  }));
+
+  const evalStats = Object.entries(papersGroupedByEvalType).map(([name, stat]) => ({
+    name,
+    avg: Math.round(stat.sum / stat.count),
+    count: stat.count,
+  }));
+
+  // Match OMR results (Grade + Subject) with SIMCE historical scores
+  const normalizeGrade = (g: string) => g.toLowerCase().replace(/º/g, "o").trim();
+  const normalizeSubject = (s: string) => s.toLowerCase().trim();
+
+  const simceComparison = Object.entries(papersGroupedByGradeSubject).map(([key, stat]) => {
+    const [grade, subject] = key.split("|");
+    const omrAvg = Math.round(stat.sum / stat.count);
+
+    // Find the latest SIMCE score for this grade and subject
+    const matchedSimce = simceData.find((row: any) => {
+      return normalizeGrade(row.grado) === normalizeGrade(grade) &&
+             (normalizeSubject(row.asignatura).includes(normalizeSubject(subject)) || 
+              normalizeSubject(subject).includes(normalizeSubject(row.asignatura)));
+    });
+
+    return {
+      grade,
+      subject,
+      omrAvg,
+      omrCount: stat.count,
+      simceScore: matchedSimce ? `${matchedSimce.puntaje_promedio} pts` : "N/A",
+      simceYear: matchedSimce ? matchedSimce.agno : null,
+    };
+  });
 
   return (
     <>
@@ -44,7 +118,77 @@ export default async function DashboardPage() {
             <p className="text-sm font-semibold text-[#111827]">{school.name}</p>
             <p className="mt-1 text-sm text-[#4b5563]">Plan {school.plan} · {countryProfile.profileName} {school.rbd ? `· RBD: ${school.rbd}` : ""}</p>
           </div>
-          <LanguageSwitcher locale={locale} />
+        </div>
+
+        {/* OMR Results and SIMCE Comparison Section */}
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          
+          {/* Card 1: Resultados por Curso */}
+          <div className="rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
+            <h2 className="text-base font-semibold text-[#111827]">Resultados OMR por Curso</h2>
+            <p className="mt-1 text-xs text-[#5b6472]">Promedio de respuestas correctas en ensayos sincronizados.</p>
+            <div className="mt-4 space-y-3">
+              {gradeStats.length > 0 ? (
+                gradeStats.map((stat, i) => (
+                  <div key={i} className="flex items-center justify-between border-b border-[#eef0f3] pb-2 last:border-0 last:pb-0">
+                    <span className="text-sm font-medium text-[#4b5563]">{stat.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-[#9aa3af]">({stat.count} lecturas)</span>
+                      <span className="text-sm font-bold text-[#07305f]">{stat.avg}%</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-[#9aa3af] italic">No hay lecturas registradas aún.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Card 2: Resultados por Tipo de Prueba */}
+          <div className="rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
+            <h2 className="text-base font-semibold text-[#111827]">Resultados por Tipo de Prueba</h2>
+            <p className="mt-1 text-xs text-[#5b6472]">Promedio por estándar de evaluación.</p>
+            <div className="mt-4 space-y-3">
+              {evalStats.length > 0 ? (
+                evalStats.map((stat, i) => (
+                  <div key={i} className="flex items-center justify-between border-b border-[#eef0f3] pb-2 last:border-0 last:pb-0">
+                    <span className="text-sm font-medium text-[#4b5563]">{stat.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-[#9aa3af]">({stat.count} lecturas)</span>
+                      <span className="text-sm font-bold text-[#07305f]">{stat.avg}%</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-[#9aa3af] italic">No hay lecturas registradas aún.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Card 3: Comparativo OMR vs SIMCE Oficial */}
+          <div className="rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm md:col-span-2 lg:col-span-1">
+            <h2 className="text-base font-semibold text-[#111827]">Comparativa OMR vs SIMCE Real</h2>
+            <p className="mt-1 text-xs text-[#5b6472]">Contraste de ensayos propios vs último resultado del establecimiento.</p>
+            <div className="mt-4 space-y-3">
+              {simceComparison.length > 0 ? (
+                simceComparison.map((comp, i) => (
+                  <div key={i} className="flex flex-col border-b border-[#eef0f3] pb-2 last:border-0 last:pb-0">
+                    <div className="flex justify-between items-start">
+                      <span className="text-sm font-bold text-[#4b5563]">{comp.grade}</span>
+                      <span className="text-xs text-[#9aa3af]">{comp.subject}</span>
+                    </div>
+                    <div className="flex justify-between items-center mt-1 text-xs">
+                      <span className="text-[#5b6472]">Promedio OMR: <strong className="text-[#07305f]">{comp.omrAvg}%</strong></span>
+                      <span className="text-[#5b6472]">SIMCE ({comp.simceYear ?? 'hist'}): <strong className="text-[#22a05a]">{comp.simceScore}</strong></span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-[#9aa3af] italic">Registra ensayos para iniciar la comparación.</p>
+              )}
+            </div>
+          </div>
+
         </div>
 
         <section className="rounded-md border border-[#d8dde3] bg-white p-5">
