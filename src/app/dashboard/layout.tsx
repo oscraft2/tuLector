@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { getDashboardMessages } from "@/locales";
 import { DashboardLayoutShell } from "@/components/dashboard/DashboardLayoutShell";
@@ -6,6 +7,13 @@ import { DashboardLayoutShell } from "@/components/dashboard/DashboardLayoutShel
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   // Read pathname from middleware header
   const headersList = await headers();
+
+  // App nativa (Capacitor): el dashboard web no aplica → al menú /app. Se detecta
+  // por el token del User-Agent (appendUserAgent) en el SERVIDOR → sin flash ni
+  // cargar el dashboard. Atrapa cualquier camino (login email, callback OAuth…).
+  const ua = headersList.get("user-agent") ?? "";
+  if (/TuLectorApp/i.test(ua)) redirect("/app");
+
   const pathname = headersList.get("x-pathname") ?? "";
 
   // Skip the shell for the onboarding page — it has its own full-page layout.

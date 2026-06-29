@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { AuthError } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
@@ -38,6 +38,7 @@ function AuthForm() {
   const [message, setMessage] = useState(initialMessage);
   const [mode, setMode] = useState<"login" | "register">(initialMode);
   const [native, setNative] = useState(false);
+  const router = useRouter();
   const client = useMemo(() => createClient(), []);
 
   // `?app=1` fuerza la variante nativa para previsualizarla en el navegador.
@@ -56,8 +57,9 @@ function AuthForm() {
 
   useEffect(() => {
     client.auth.getSession().then(({ data: { session } }) => {
-      if (session) window.location.href = homeAfterAuth();
+      if (session) router.replace(homeAfterAuth());
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client]);
 
   const handleAuth = async (event: React.FormEvent) => {
@@ -79,7 +81,7 @@ function AuthForm() {
       } else {
         const { error } = await client.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        window.location.href = homeAfterAuth();
+        router.replace(homeAfterAuth()); // SPA: evita el rebote por cookie asíncrona en el WebView
       }
     } catch (err) {
       const authErr = err as AuthError;
@@ -96,7 +98,7 @@ function AuthForm() {
       const { error } = await client.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: authCallbackUrl(),
+          redirectTo: authCallbackUrl(isNativeApp() ? "/app" : undefined),
           queryParams: { access_type: "offline", prompt: "consent" },
         },
       });
@@ -276,7 +278,9 @@ function AuthForm() {
   );
 }
 
-function authCallbackUrl() {
+function authCallbackUrl(next?: string) {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
-  return new URL("/auth/callback", siteUrl).toString();
+  const url = new URL("/auth/callback", siteUrl);
+  if (next) url.searchParams.set("next", next);
+  return url.toString();
 }
