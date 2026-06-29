@@ -20,7 +20,7 @@ export interface ScanLogPayload {
   diag?: Record<string, unknown>;
   corners?: [number, number][] | null;
   result?: { valid: boolean; code?: number; reason?: string };
-  answers?: { q: number; a: string; s: number[] }[];
+  answers?: { q: number; a: string; s: number[]; f?: number[][] }[];
   id?: string[];
   rut?: string;       // RUT leido (ej. "12345678-5")
   dvOk?: boolean;     // true si el digito verificador valida

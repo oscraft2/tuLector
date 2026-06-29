@@ -110,7 +110,7 @@ const VOTE_TIMEOUT_MS = 4000; // tiempo maximo de captura (mas margen para agarr
 const VOTE_MAX_ATTEMPTS = 45; // tope de frames inspeccionados
 const VOTE_FOCUS_MIN = 35;    // gate de foco: EXIGENTE — el RUT (burbujas chicas) necesita nitidez
 const VOTE_MARKS_REQUIRED = 20; // solo frames con la pista de temporizacion completa
-const BUILD_TAG = "b-0629c"; // versión visible para diagnosticar caché del WebView
+const BUILD_TAG = "b-0629d"; // versión visible para diagnosticar caché del WebView
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -156,7 +156,7 @@ export default function ScanPage() {
   setLabeled(true);
   await saveScanLog({
    v: SCAN_LOG_VERSION, type: "label", source: "camera", sheet: "v2", ts: new Date().toISOString(),
-   answers: results.map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
+   answers: results.map((r) => ({ q: r.question, a: r.answer, s: r.scores, f: r.features })),
    corrected: results.map((r) => ({ q: r.question, a: r.answer })),
    rut: studentId[0], rutTrue: studentId[0], verified: true,
   });
@@ -345,7 +345,7 @@ export default function ScanPage() {
   setError("");
 
   const ctx = canvas.getContext("2d")!;
-  const sessions: { answers: string[]; rut: string; dvOk: boolean; scores: number[][]; rutDiag: ReturnType<typeof readRut>["diag"] }[] = [];
+  const sessions: { answers: string[]; rut: string; dvOk: boolean; scores: number[][]; features: (number[][] | undefined)[]; rutDiag: ReturnType<typeof readRut>["diag"] }[] = [];
   const frameReads: string[] = [];   // lectura de cada frame valido (para diagnostico)
   let lastFrame: ImageData | null = null;
   let lastCorners: [number, number][] | null = null;
@@ -371,7 +371,7 @@ export default function ScanPage() {
    if (!report.valid || report.diag?.timingRows !== VOTE_MARKS_REQUIRED) { rejInvalid++; await sleep(40); continue; }
    const rutR = readRut(warped, config);
    const reads = report.results.map((r) => r.answer);
-   sessions.push({ answers: reads, rut: rutR.rut, dvOk: rutR.dvOk, scores: report.results.map((r) => r.scores), rutDiag: rutR.diag });
+   sessions.push({ answers: reads, rut: rutR.rut, dvOk: rutR.dvOk, scores: report.results.map((r) => r.scores), features: report.results.map((r) => r.features), rutDiag: rutR.diag });
    frameReads.push(reads.join(","));
    lastFrame = frame; lastCorners = corners; lastWarp = warped;
    lastTiming = report.diag?.timingRows ?? null;
@@ -397,8 +397,9 @@ export default function ScanPage() {
   const repRutSession = sessions.find((s) => s.rut === votedRut) ?? sessions[sessions.length - 1];
   const votedDvOk = repRutSession.dvOk;
   const repScores = sessions[sessions.length - 1].scores;
+  const repFeatures = sessions[sessions.length - 1].features;
   const bubbleResults: BubbleResult[] = votedAnswers.map((a, i) => ({
-   question: i + 1, answer: a, scores: repScores[i] ?? [], correct: null,
+   question: i + 1, answer: a, scores: repScores[i] ?? [], correct: null, features: repFeatures[i],
   }));
 
   // Thumbnails del último frame válido

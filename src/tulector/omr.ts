@@ -15,6 +15,7 @@
 
 import * as L from "./sheet_layout";
 import { decodeSheetCode, type SheetCodeData } from "./sheet_code";
+import { bubbleProbability } from "./classifier";
 
 export interface OMRConfig {
   numQuestions: number; numOptions: number; optionLabels: string;
@@ -25,6 +26,7 @@ export interface OMRConfig {
 
 export interface BubbleResult {
   question: number; answer: string; scores: number[]; correct: boolean | null;
+  features?: number[][]; // por opción: [darkRatio, contrast, variance, edgeDensity] — para entrenar (FASE 5)
 }
 
 export interface GradeDiag {
@@ -584,7 +586,11 @@ function classifyBubble(gray: Float32Array, w: number, cx: number, cy: number, r
   const brightRatio = bright / total;
   const glare = brightRatio > 0.85 && darkRatio < 0.02 && edgeDensity < 0.02;
 
-  return { score, glare, features: [darkRatio, contrast, variance, edgeDensity] };
+  const features = [darkRatio, contrast, variance, edgeDensity];
+  // Si hay clasificador entrenado (FASE 5), su probabilidad reemplaza al score
+  // heurístico; si no (default), se usa el score de pesos a mano.
+  const learned = bubbleProbability(features);
+  return { score: learned !== null ? learned : score, glare, features };
 }
 
 // Scanner Curve Check (return code 10): detecta papel doblado/curvado
@@ -829,12 +835,14 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
     const cy = rowY[q];
     const scores: number[] = [];
     const glares: boolean[] = [];
+    const feats: number[][] = [];
 
     for (let o = 0; o < numOptions; o++) {
       const cx = L.optX(o) + gridDx;
-      const { score, glare } = classifyBubble(gray, width, cx, cy, ql.gradeR);
+      const { score, glare, features } = classifyBubble(gray, width, cx, cy, ql.gradeR);
       scores.push(score);
       glares.push(glare);
+      feats.push(features.map((f) => Math.round(f * 1000) / 1000));
     }
 
     // Umbral adaptativo + deteccion de marcas multiples
@@ -865,6 +873,7 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
       question: q + 1, answer,
       scores: scores.map(s => Math.round(s * 1000) / 1000),
       correct: null,
+      features: feats,
     });
     sameCount[answer] = (sameCount[answer] || 0) + 1;
   }
