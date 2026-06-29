@@ -460,9 +460,11 @@ function sampleBilinear(sd: Uint8ClampedArray, srcW: number, srcH: number, sx: n
 }
 
 /**
- * Warp POR BLOQUES: cada celda de la grilla 3×4 se rectifica con sus 4 anclas
- * locales (interpolación bilineal). Corrige la deformación del centro/arriba que
- * el warp de 4 esquinas dejaba — la causa de que el RUT fallara en ángulo.
+ * Warp POR BLOQUES: cada celda de la grilla 3×4 se rectifica con una HOMOGRAFÍA
+ * propia (perspectiva exacta), no interpolación bilineal. La bilineal era
+ * aproximada en el INTERIOR de una celda con perspectiva → los puntos de muestreo
+ * del RUT (interior de una celda grande) no caían justo en las burbujas. La
+ * homografía por celda es exacta → registro correcto en toda la celda.
  */
 export function warpBilinear(sourceData: ImageData, anchors: [number, number][], config: OMRConfig = DEFAULT_CONFIG): ImageData {
   const { sheetWidth: W, sheetHeight: H } = config;
@@ -472,18 +474,28 @@ export function warpBilinear(sourceData: ImageData, anchors: [number, number][],
   const srcW = sourceData.width, srcH = sourceData.height;
   const sd = sourceData.data, od = outData.data;
 
+  // Precomputa la homografía canónica→fuente de cada celda (orden TL,TR,BR,BL).
+  const cellH: (number[] | null)[] = [];
+  for (let j = 0; j < ny - 1; j++) {
+    for (let i = 0; i < nx - 1; i++) {
+      const a00 = anchors[j * nx + i], a10 = anchors[j * nx + i + 1], a01 = anchors[(j + 1) * nx + i], a11 = anchors[(j + 1) * nx + i + 1];
+      const dst = [gx[i], gy[j], gx[i + 1], gy[j], gx[i + 1], gy[j + 1], gx[i], gy[j + 1]];
+      const src = [a00[0], a00[1], a10[0], a10[1], a11[0], a11[1], a01[0], a01[1]];
+      cellH[j * (nx - 1) + i] = solveHomography(dst, src);
+    }
+  }
+
   for (let dy = 0; dy < H; dy++) {
     let j = 0; while (j < ny - 2 && dy > gy[j + 1]) j++;
-    const v = (dy - gy[j]) / (gy[j + 1] - gy[j]);
-    const rowA = j * nx, rowB = (j + 1) * nx;
     for (let dx = 0; dx < W; dx++) {
       let i = 0; while (i < nx - 2 && dx > gx[i + 1]) i++;
-      const u = (dx - gx[i]) / (gx[i + 1] - gx[i]);
-      const a00 = anchors[rowA + i], a10 = anchors[rowA + i + 1], a01 = anchors[rowB + i], a11 = anchors[rowB + i + 1];
-      const c00 = (1 - u) * (1 - v), c10 = u * (1 - v), c01 = (1 - u) * v, c11 = u * v;
-      const sx = c00 * a00[0] + c10 * a10[0] + c01 * a01[0] + c11 * a11[0];
-      const sy = c00 * a00[1] + c10 * a10[1] + c01 * a01[1] + c11 * a11[1];
-      sampleBilinear(sd, srcW, srcH, sx, sy, od, (dy * W + dx) * 4);
+      const h = cellH[j * (nx - 1) + i];
+      const di = (dy * W + dx) * 4;
+      if (!h) { od[di] = 255; od[di + 1] = 255; od[di + 2] = 255; od[di + 3] = 255; continue; }
+      const denom = h[6] * dx + h[7] * dy + 1;
+      const sx = (h[0] * dx + h[1] * dy + h[2]) / denom;
+      const sy = (h[3] * dx + h[4] * dy + h[5]) / denom;
+      sampleBilinear(sd, srcW, srcH, sx, sy, od, di);
     }
   }
   return outData;
