@@ -110,7 +110,7 @@ const VOTE_TIMEOUT_MS = 4000; // tiempo maximo de captura (mas margen para agarr
 const VOTE_MAX_ATTEMPTS = 45; // tope de frames inspeccionados
 const VOTE_FOCUS_MIN = 35;    // gate de foco: EXIGENTE — el RUT (burbujas chicas) necesita nitidez
 const VOTE_MARKS_REQUIRED = 20; // solo frames con la pista de temporizacion completa
-const BUILD_TAG = "b-0629b"; // versión visible para diagnosticar caché del WebView
+const BUILD_TAG = "b-0629c"; // versión visible para diagnosticar caché del WebView
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -146,8 +146,21 @@ export default function ScanPage() {
  const [capturing, setCapturing] = useState(false);
  const [answerKey, setAnswerKey] = useState<string[]>(DEFAULT_ANSWER_KEY);
  const [native, setNative] = useState(false);
+ const [labeled, setLabeled] = useState(false);
 
  useEffect(() => { let a = true; Promise.resolve().then(() => { if (a) setNative(isNativeApp()); }); return () => { a = false; }; }, []);
+
+ // FASE 3 (dataset): el profe confirma que la lectura es correcta → guarda un
+ // ejemplo ETIQUETADO (ground truth) para entrenar el clasificador. NO toca la captura.
+ const confirmRead = async () => {
+  setLabeled(true);
+  await saveScanLog({
+   v: SCAN_LOG_VERSION, type: "label", source: "camera", sheet: "v2", ts: new Date().toISOString(),
+   answers: results.map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
+   corrected: results.map((r) => ({ q: r.question, a: r.answer })),
+   rut: studentId[0], rutTrue: studentId[0], verified: true,
+  });
+ };
 
  // Cargar la clave de respuestas desde una sesion autenticada de escaneo.
  useEffect(() => {
@@ -310,12 +323,8 @@ export default function ScanPage() {
    setDebugLog([...logs]);
 
    if (navigator.vibrate) navigator.vibrate(100);
-
-   setTimeout(() => {
-    setPhase((prev) => prev === "result" ? "cooldown" : prev);
-    setLastScan(Date.now());
-    setTimeout(() => { setPhase("detecting"); }, cooldownMs);
-   }, 2000);
+   // El resultado queda en pantalla hasta que el profe pulse "Siguiente"
+   // (revisa las alternativas con calma). Sin temporizador automático.
   } catch {
    setError("Error al procesar. Intenta de nuevo.");
    setPhase("detecting");
@@ -428,11 +437,8 @@ export default function ScanPage() {
   });
 
   if (navigator.vibrate) navigator.vibrate(100);
-  setTimeout(() => {
-   setPhase((prev) => (prev === "result" ? "cooldown" : prev));
-   setLastScan(Date.now());
-   setTimeout(() => setPhase("detecting"), cooldownMs);
-  }, 2000);
+  // El resultado queda en pantalla hasta que el profe pulse "Siguiente"
+  // (revisa las alternativas con calma). Sin temporizador automático.
  };
 
  // ─── MANUAL SHUTTER: capture frame, run diagnostics, try to scan ───
@@ -736,6 +742,7 @@ export default function ScanPage() {
   setLastDiag(null);
   setDebugLog([]);
   setWarpedThumb(null);
+  setLabeled(false);
  };
 
  return (
@@ -964,6 +971,13 @@ export default function ScanPage() {
         );
        })()}
 
+       <button
+        onClick={confirmRead}
+        disabled={labeled}
+        className={`w-full py-3 mb-2 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition ${labeled ? "bg-green-600/30 text-green-400 border border-green-500/40" : "bg-green-600 text-white"}`}
+       >
+        {labeled ? "✓ Lectura confirmada" : "✓ Confirmar lectura (correcta)"}
+       </button>
        <button onClick={nextScan} className="w-full py-4 bg-white text-black rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition">
         Siguiente
        </button>

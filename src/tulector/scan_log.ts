@@ -12,7 +12,7 @@ export const SCAN_LOG_VERSION = 2;
 
 export interface ScanLogPayload {
   v: number;
-  type: "scan" | "scan_fail" | "diagnostic";
+  type: "scan" | "scan_fail" | "diagnostic" | "label";
   source: "camera" | "upload";
   sheet: string;
   ts: string;
@@ -26,7 +26,9 @@ export interface ScanLogPayload {
   dvOk?: boolean;     // true si el digito verificador valida
   photo?: string | null;   // foto original reescalada (dataURL JPEG)
   warp?: string | null;    // warp reescalado (dataURL JPEG)
-  corrected?: { q: number; a: string }[]; // correcciones del profesor (futuro)
+  corrected?: { q: number; a: string }[]; // respuestas verdaderas (ground truth) por pregunta
+  verified?: boolean;  // true: el profe confirmó la lectura → ejemplo etiquetado (FASE 3 dataset)
+  rutTrue?: string;    // RUT verdadero confirmado
 }
 
 export interface ScanLogRow {
