@@ -792,7 +792,7 @@ export default function ScanPage() {
    <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-zinc-950/90 border-b border-zinc-900 text-[10px] z-20">
     <span className="text-zinc-500 uppercase tracking-wide">Hoja</span>
     <select value={scanCfg.numQuestions} onChange={(e) => updateCfg({ numQuestions: +e.target.value })} className="bg-zinc-800 rounded px-1.5 py-0.5">
-     {[10, 15, 20, 25, 30, 40, 50, 60].map((n) => <option key={n} value={n}>{n} preg</option>)}
+     {[10, 15, 20, 25, 30, 40, 50].map((n) => <option key={n} value={n}>{n} preg</option>)}
     </select>
     <select value={scanCfg.numOptions} onChange={(e) => updateCfg({ numOptions: +e.target.value })} className="bg-zinc-800 rounded px-1.5 py-0.5">
      {[3, 4, 5].map((n) => <option key={n} value={n}>{n} opc</option>)}

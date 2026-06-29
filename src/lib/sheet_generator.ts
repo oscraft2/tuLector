@@ -74,9 +74,28 @@ export function randomAnswers(numQuestions: number, numOptions: number): number[
   return Array.from({ length: numQuestions }, () => Math.floor(Math.random() * numOptions));
 }
 
-/** Columnas sugeridas: 2 si hay más de 25 preguntas, si no 1. */
+// Sobre SEGURO validado por test:omr (guard "Config sweep"): fuera de este rango
+// las filas quedan muy juntas o faltan marcas de timing → no lee 100%.
+export const MIN_QUESTIONS = 6;
+export const MAX_QUESTIONS = 50;
+
+/** Columnas VÁLIDAS para un nº de preguntas (1 col: ≤40; 2 col: ≥12). */
+export function allowedColumns(numQuestions: number): number[] {
+  const cols: number[] = [];
+  if (numQuestions <= 40) cols.push(1);
+  if (numQuestions >= 12) cols.push(2);
+  return cols.length ? cols : [1];
+}
+
+/** Ajusta el nº de columnas pedido al sobre seguro para ese nº de preguntas. */
+export function safeColumns(numQuestions: number, requested: number): number {
+  const allowed = allowedColumns(numQuestions);
+  return allowed.includes(requested) ? requested : allowed[allowed.length - 1];
+}
+
+/** Columnas sugeridas por defecto, ya dentro del sobre seguro. */
 export function suggestColumns(numQuestions: number): number {
-  return numQuestions > 25 ? 2 : 1;
+  return safeColumns(numQuestions, numQuestions > 25 ? 2 : 1);
 }
 
 export interface GroundTruthEntry {

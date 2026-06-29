@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SHEET_W, SHEET_H, type SheetConfig } from "@/lib/sheet_layout";
 import {
-  renderSheet, randomValidRut, randomAnswers, suggestColumns,
-  type Branding, type GroundTruthEntry,
+  renderSheet, randomValidRut, randomAnswers, safeColumns, allowedColumns,
+  MIN_QUESTIONS, MAX_QUESTIONS, type Branding, type GroundTruthEntry,
 } from "@/lib/sheet_generator";
 
 const DEFAULT_TEST_RUT = "12345678-5";
@@ -166,8 +166,8 @@ export default function SheetPage() {
             <h3 className="font-bold text-white">Configuración</h3>
             <label className="block">
               <span className="text-zinc-400">N° de preguntas: <strong className="text-white">{numQuestions}</strong></span>
-              <input type="range" min={1} max={60} value={numQuestions}
-                onChange={(e) => { const n = +e.target.value; setNumQuestions(n); setNumColumns(suggestColumns(n)); }}
+              <input type="range" min={MIN_QUESTIONS} max={MAX_QUESTIONS} value={numQuestions}
+                onChange={(e) => { const n = +e.target.value; setNumQuestions(n); setNumColumns(safeColumns(n, numColumns)); }}
                 className="w-full" />
             </label>
             <div className="flex gap-3">
@@ -180,14 +180,11 @@ export default function SheetPage() {
               <label className="flex-1">
                 <span className="text-zinc-400">Columnas</span>
                 <select value={numColumns} onChange={(e) => setNumColumns(+e.target.value)} className={inputCls}>
-                  <option value={1}>1 columna</option>
-                  <option value={2}>2 columnas</option>
+                  {allowedColumns(numQuestions).map((n) => <option key={n} value={n}>{n} columna{n > 1 ? "s" : ""}</option>)}
                 </select>
               </label>
             </div>
-            {numColumns === 2 && (
-              <p className="text-xs text-amber-400/80">⚠ El escaneo de 2 columnas se cablea en el lector aparte; para imprimir y probar el layout ya sirve.</p>
-            )}
+            <p className="text-xs text-zinc-500">Rango validado: <strong className="text-zinc-300">{MIN_QUESTIONS}–{MAX_QUESTIONS}</strong> preguntas · 1 col ≤40 · 2 col ≥12. Toda config aquí lee 100% (guard <code>test:omr</code>).</p>
           </section>
 
           {/* Branding */}

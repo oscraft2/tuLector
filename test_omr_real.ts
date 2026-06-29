@@ -214,6 +214,47 @@ async function main() {
   const missSh = reportSh.results.filter((r, i) => r.answer !== expSh[i]);
   if (missSh.length > 2) fail(`sombra: ${missSh.length}/20 erradas bajo sombra (umbral adaptativo no aguanto)`);
   console.log(`Shade guard passed: lectura bajo sombra fuerte OK (${20 - missSh.length}/20, mitad inferior oscurecida)`);
+
+  // ─── Guardia de BARRIDO: lee TODA combinación que el generador puede crear
+  // (nº preguntas × opciones × columnas). Es el "blindaje" — si una config no
+  // lee 100%, aquí se ve y se sabe el sobre seguro del generador. ───
+  // Sobre SEGURO (validado por este barrido): 1 col 6-40 preguntas; 2 col 12-50.
+  // Fuera de eso las filas quedan muy juntas o faltan marcas de timing → el
+  // generador se restringe a este rango (ver sheet_generator.safeColumns/MAX).
+  const sweepConfigs: { nq: number; no: number; nc: number }[] = [];
+  for (const no of [3, 4, 5]) {
+    for (const nq of [6, 10, 15, 20, 25, 30, 40]) sweepConfigs.push({ nq, no, nc: 1 });
+    for (const nq of [12, 20, 30, 40, 50]) sweepConfigs.push({ nq, no, nc: 2 });
+  }
+  let sweepOk = 0;
+  const sweepFail: string[] = [];
+  for (const { nq, no, nc } of sweepConfigs) {
+    const cfg = { numQuestions: nq, numOptions: no, numColumns: nc };
+    const ans = Array.from({ length: nq }, (_, i) => (i * 7 + 3) % no); // pseudo-aleatorio determinista
+    const sheet = createCanvas(SHEET_W, SHEET_H);
+    drawSheet(sheet.getContext("2d") as unknown as Ctx2D, { answers: ans, rut: "12345678-5", filled: true }, cfg);
+    const img = await loadImage(sheet.toDataURL("image/png"));
+    const cap = createCanvas(img.width, img.height);
+    cap.getContext("2d").drawImage(img, 0, 0);
+    const frame = cap.getContext("2d").getImageData(0, 0, cap.width, cap.height) as unknown as globalThis.ImageData;
+    const corners = findCorners(frame);
+    const tag = `${nq}q/${no}o/${nc}c`;
+    if (!corners) { sweepFail.push(`${tag}: sin esquinas`); continue; }
+    const warped = warpImageData(frame, corners);
+    const config = { ...DEFAULT_CONFIG, numQuestions: nq, numOptions: no, optionLabels: "ABCDE".slice(0, no), numColumns: nc };
+    const report = gradeBubbles(warped, config, corners);
+    if (!report.valid) { sweepFail.push(`${tag}: invalido (${report.reason})`); continue; }
+    const exp = ans.map((a) => "ABCDE"[a]);
+    const miss = report.results.filter((r, i) => r.answer !== exp[i]).length;
+    if (miss > 0) { sweepFail.push(`${tag}: ${miss}/${nq} erradas`); continue; }
+    sweepOk++;
+  }
+  const sweepTotal = sweepConfigs.length;
+  if (sweepFail.length > 0) {
+    console.log(`⚠ Config sweep: ${sweepOk}/${sweepTotal} OK. Fallaron:\n  ${sweepFail.join("\n  ")}`);
+    fail(`Barrido de configs: ${sweepFail.length}/${sweepTotal} no leyeron 100% (ver arriba)`);
+  }
+  console.log(`Config sweep guard passed: ${sweepOk}/${sweepTotal} configuraciones (preg×opc×col) leídas 100%`);
 }
 
 main().catch((error) => {
