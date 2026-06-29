@@ -15,12 +15,21 @@ function cap(): CapacitorGlobal | undefined {
   return (window as unknown as { Capacitor?: CapacitorGlobal }).Capacitor;
 }
 
-/** true si corremos dentro del contenedor nativo (APK), false en web. */
+/**
+ * true si corremos dentro del contenedor nativo (APK), false en web.
+ * Detecta por `window.Capacitor` Y por el token del User-Agent (lo agrega
+ * capacitor.config `appendUserAgent`). El token es FIABLE e INMEDIATO incluso
+ * cuando se carga una server.url remota (donde window.Capacitor puede no estar
+ * inyectado a tiempo) → evita el "flash" web y el redirect equivocado.
+ */
 export function isNativeApp(): boolean {
   const c = cap();
-  if (!c) return false;
-  if (typeof c.isNativePlatform === "function") return c.isNativePlatform();
-  return !!c.isNative;
+  if (c) {
+    if (typeof c.isNativePlatform === "function" && c.isNativePlatform()) return true;
+    if (c.isNative) return true;
+  }
+  if (typeof navigator !== "undefined" && /TuLectorApp/i.test(navigator.userAgent)) return true;
+  return false;
 }
 
 /** Plataforma actual: "android" | "ios" | "web". */

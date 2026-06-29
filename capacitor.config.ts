@@ -7,9 +7,12 @@ const config = {
   appId: "cl.tulector.app",
   appName: "TuLector",
   webDir: "public", // requerido por el CLI; no se usa porque cargamos server.url
+  // Token en el User-Agent → la web detecta que corre en el APK de forma fiable
+  // (window.Capacitor puede no inyectarse a tiempo con server.url remota).
+  appendUserAgent: "TuLectorApp",
   server: {
-    // El APK carga la web real desplegada (un solo código).
-    url: "https://tulector.vercel.app",
+    // El APK abre DIRECTO en /auth (login), sin la landing de marketing.
+    url: "https://tulector.vercel.app/auth",
     androidScheme: "https",
   },
   plugins: {
