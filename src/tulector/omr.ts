@@ -1034,7 +1034,9 @@ function darkAtRut(gray: Float32Array, w: number, h: number, dx: number, dy: num
         if (py < 0 || py >= h) continue;
         for (let xx = -r; xx <= r; xx++) {
           const px = cx + xx;
-          if (px >= 0 && px < w && gray[py * w + px] < DARK_THRESH) darkSum++;
+          // Oscuridad CONTINUA (255-gris) en vez de contar <umbral fijo: así el
+          // óptimo se centra en la tinta aunque el warp esté lavado (tinta gris).
+          if (px >= 0 && px < w) darkSum += 255 - gray[py * w + px];
         }
       }
     }
@@ -1072,7 +1074,8 @@ function darkAtRutCol(gray: Float32Array, w: number, h: number, c: number, dx: n
       if (py < 0 || py >= h) continue;
       for (let xx = -r; xx <= r; xx++) {
         const px = cx + xx;
-        if (px >= 0 && px < w && gray[py * w + px] < DARK_THRESH) darkSum++;
+        // Oscuridad continua (ver darkAtRut): robusto a warp lavado.
+        if (px >= 0 && px < w) darkSum += 255 - gray[py * w + px];
       }
     }
   }
@@ -1134,16 +1137,24 @@ export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFI
     const rowCount = isDV ? L.RUT_ROWS + 1 : L.RUT_ROWS; // la columna DV tiene K
     const { dx: colDx, dy: colDy } = refineRutCol(gray, width, height, c, baseDx, baseDy, rowYs);
     baseDx = colDx; baseDy = colDy; // la siguiente columna arranca desde aqui
-    const scores: number[] = [];
+    // Gris promedio del centro de cada fila (burbuja).
+    const avgs: number[] = [];
     for (let d = 0; d < rowCount; d++) {
       const cx = L.rutColX(c) + colDx, cy = rutRowYat(d, rowYs) + colDy;
-      let dark = 0, tot = 0;
+      let sum = 0, tot = 0;
       for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
         const px = cx + dx, py = cy + dy;
-        if (px >= 0 && px < width && py >= 0 && py < height) { tot++; if (gray[py * width + px] < DARK_THRESH) dark++; }
+        if (px >= 0 && px < width && py >= 0 && py < height) { tot++; sum += gray[py * width + px]; }
       }
-      scores.push(tot > 0 ? dark / tot : 0);
+      avgs.push(tot > 0 ? sum / tot : 255);
     }
+    // Umbral RELATIVO al papel local: la marca es la burbuja mas oscura que el
+    // papel de la columna (que en un warp lavado puede ser gris ~180, no blanco).
+    // Asi lee marcas a mano de bajo contraste igual que las preguntas; el umbral
+    // fijo <70 fallaba porque NADA bajaba de 70 en un warp gris. En imagen limpia
+    // (marca ~0, papel ~255) da ~1.0 igual que antes → sin regresion.
+    const paper = Math.max(...avgs);
+    const scores = avgs.map((a) => Math.max(0, Math.min(1, (paper - a) / (paper * 0.30))));
     const maxS = Math.max(...scores);
     const maxIdx = scores.indexOf(maxS);
     const sorted = [...scores].sort((a, b) => b - a);

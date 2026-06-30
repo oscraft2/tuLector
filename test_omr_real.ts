@@ -215,6 +215,27 @@ async function main() {
   if (missSh.length > 2) fail(`sombra: ${missSh.length}/20 erradas bajo sombra (umbral adaptativo no aguanto)`);
   console.log(`Shade guard passed: lectura bajo sombra fuerte OK (${20 - missSh.length}/20, mitad inferior oscurecida)`);
 
+  // ─── Guardia de RUT de BAJO CONTRASTE (caso real del usuario): warp "lavado"
+  // donde la marca a mano queda gris ~150 sobre papel gris ~185 (medido en su
+  // foto real). Con umbral fijo <70 NADA baja del umbral → 0.00 → fallaba. El
+  // umbral relativo al papel lo lee. Reproduce el bug exacto y lo blinda. ───
+  const sheetLC = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetLC.getContext("2d") as unknown as Ctx2D, { rut: "12345678-5", filled: true, answers: Array.from({ length: 20 }, (_, i) => i % 5) });
+  const imgLC = await loadImage(sheetLC.toDataURL("image/png"));
+  const capLC = createCanvas(imgLC.width, imgLC.height);
+  capLC.getContext("2d").drawImage(imgLC, 0, 0);
+  const frameLC = capLC.getContext("2d").getImageData(0, 0, capLC.width, capLC.height) as unknown as globalThis.ImageData;
+  const cornersLC = findCorners(frameLC) ?? fail("bajo-contraste: sin esquinas");
+  const warpedLC = warpImageData(frameLC, cornersLC);
+  // Comprime el contraste a [150,185]: negro(0)→150, blanco(255)→185 (warp lavado).
+  const dLC = warpedLC.data;
+  for (let i = 0; i < dLC.length; i += 4) {
+    for (let k = 0; k < 3; k++) dLC[i + k] = Math.round(150 + dLC[i + k] * (35 / 255));
+  }
+  const rutLC = readRut(warpedLC);
+  if (rutLC.rut !== "12345678-5") fail(`bajo-contraste: RUT leyó "${rutLC.rut}" (esperaba 12345678-5) — el umbral relativo no aguantó`);
+  console.log(`Low-contrast RUT guard passed: RUT 12345678-5 leído en warp lavado (marca~150/papel~185, umbral relativo)`);
+
   // ─── Guardia de BARRIDO: lee TODA combinación que el generador puede crear
   // (nº preguntas × opciones × columnas). Es el "blindaje" — si una config no
   // lee 100%, aquí se ve y se sabe el sobre seguro del generador. ───
