@@ -234,7 +234,8 @@ async function main() {
   }
   const rutLC = readRut(warpedLC);
   if (rutLC.rut !== "12345678-5") fail(`bajo-contraste: RUT leyó "${rutLC.rut}" (esperaba 12345678-5) — el umbral relativo no aguantó`);
-  console.log(`Low-contrast RUT guard passed: RUT 12345678-5 leído en warp lavado (marca~150/papel~185, umbral relativo)`);
+  if ((rutLC.diag?.timing ?? 0) < 7) fail(`bajo-contraste: la pista del RUT no se enganchó (timing=${rutLC.diag?.timing}) — readRutTimingY relativo no aguantó`);
+  console.log(`Low-contrast RUT guard passed: RUT 12345678-5 + pista anclada (timing=${rutLC.diag?.timing}) en warp lavado`);
 
   // ─── Guardia de BARRIDO: lee TODA combinación que el generador puede crear
   // (nº preguntas × opciones × columnas). Es el "blindaje" — si una config no

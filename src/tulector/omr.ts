@@ -977,18 +977,31 @@ function rutRowYat(d: number, rowYs: number[] | null): number {
 function readRutTimingY(gray: Float32Array, w: number, h: number): number[] | null {
   const x0 = Math.max(0, Math.round(L.RUT_TIMING_X - L.RUT_TIMING_W / 2 - 3));
   const x1 = Math.min(w - 1, Math.round(L.RUT_TIMING_X + L.RUT_TIMING_W / 2 + 3));
-  const minDark = Math.max(5, Math.round(L.RUT_TIMING_W * 0.4));
   // Banda Y acotada al bloque RUT (ignora la franja del codigo y las preguntas).
   const yLo = Math.max(0, L.rutRowY(0) - L.RUT_ROW_STEP);
   const yHi = Math.min(h - 1, L.rutRowY(L.RUT_TIMING_ROWS - 1) + L.RUT_ROW_STEP);
+  // Gris promedio por fila en la banda.
+  const rowAvg: number[] = [];
+  for (let y = yLo; y <= yHi; y++) {
+    let sum = 0, n = 0;
+    for (let x = x0; x <= x1; x++) { sum += gray[y * w + x]; n++; }
+    rowAvg.push(n > 0 ? sum / n : 255);
+  }
+  // Umbral RELATIVO al papel local (punto medio marca↔papel), adaptado al
+  // contraste real. Asi la pista se engancha aunque el warp este lavado (marca
+  // impresa gris ~110 sobre papel ~185), donde el umbral fijo <70 daba rut_timing=0.
+  const paper = Math.max(...rowAvg);
+  const darkest = Math.min(...rowAvg);
+  if (paper - darkest < 25) return null; // banda plana → sin marcas
+  const thresh = (paper + darkest) / 2;
   const centers: number[] = [];
   let runStart = -1, runSum = 0, runW = 0;
-  for (let y = yLo; y <= yHi; y++) {
-    let dark = 0;
-    for (let x = x0; x <= x1; x++) if (gray[y * w + x] < DARK_THRESH) dark++;
-    if (dark >= minDark) {
+  for (let i = 0; i < rowAvg.length; i++) {
+    const y = yLo + i;
+    if (rowAvg[i] < thresh) {
+      const wgt = paper - rowAvg[i]; // peso por oscuridad
       if (runStart < 0) { runStart = y; runSum = 0; runW = 0; }
-      runSum += y * dark; runW += dark;
+      runSum += y * wgt; runW += wgt;
     } else if (runStart >= 0) {
       if (y - runStart >= 3) centers.push(Math.round(runSum / Math.max(runW, 1)));
       runStart = -1;
