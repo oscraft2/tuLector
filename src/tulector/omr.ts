@@ -808,8 +808,13 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
   const gray = new Float32Array(width * height);
   for (let i = 0; i < gray.length; i++) gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
 
-  // Validacion pre: el warp debe tener pixeles oscuros
-  let td = 0; for (let i = 0; i < gray.length; i++) { if (gray[i] < DARK_THRESH) td++; }
+  // Validacion pre: el warp debe tener CONTENIDO (pixeles notablemente mas oscuros
+  // que su propia media). Umbral RELATIVO (media-25, tope en DARK_THRESH): en un
+  // warp lavado nada baja de 70 absoluto pero el contenido sigue siendo mas oscuro
+  // que la media → no lo rechaza; un warp plano/fallido (casi uniforme) sí.
+  let sumG = 0; for (let i = 0; i < gray.length; i++) sumG += gray[i];
+  const emptyThr = Math.max(DARK_THRESH, sumG / gray.length - 25);
+  let td = 0; for (let i = 0; i < gray.length; i++) { if (gray[i] < emptyThr) td++; }
   if (td / gray.length < 0.003) return { results: [], valid: false, reason: "Warp vacio" };
 
   // Scanner Curve Check: detecta papel doblado/curvado

@@ -265,6 +265,27 @@ async function main() {
   if (missFq > 1) fail(`preg-bajo-contraste: ${missFq}/20 preguntas erradas con marca leve — score relativo no aguantó`);
   console.log(`Low-contrast questions guard passed: ${20 - missFq}/20 preguntas leídas con marca leve (gris ~130/papel ~185)`);
 
+  // ─── Guardia de PIPELINE COMPLETO LAVADO: warp entero comprimido a [90,185]
+  // (todo gris, incluidas anclas/timing). Antes el check "Warp vacío" (<70 fijo)
+  // lo rechazaba; ahora el umbral relativo lo acepta y lee preguntas + RUT. ───
+  const sheetFull = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetFull.getContext("2d") as unknown as Ctx2D, { answers: Array.from({ length: 20 }, (_, i) => i % 5), rut: "12345678-5", filled: true });
+  const imgFull = await loadImage(sheetFull.toDataURL("image/png"));
+  const capFull = createCanvas(imgFull.width, imgFull.height);
+  capFull.getContext("2d").drawImage(imgFull, 0, 0);
+  const frameFull = capFull.getContext("2d").getImageData(0, 0, capFull.width, capFull.height) as unknown as globalThis.ImageData;
+  const cornersFull = findCorners(frameFull) ?? fail("pipeline-lavado: sin esquinas");
+  const warpedFull = warpImageData(frameFull, cornersFull);
+  const dFull = warpedFull.data;
+  for (let i = 0; i < dFull.length; i += 4) for (let k = 0; k < 3; k++) dFull[i + k] = Math.round(90 + dFull[i + k] * (185 - 90) / 255);
+  const gFull = gradeBubbles(warpedFull);
+  const rFull = readRut(warpedFull);
+  if (!gFull.valid) fail(`pipeline-lavado: warp inválido (${gFull.reason}) — el check relativo no aguantó`);
+  const expFull = Array.from({ length: 20 }, (_, i) => "ABCDE"[i % 5]);
+  const missFull = gFull.results.filter((r, i) => r.answer !== expFull[i]).length;
+  if (missFull > 1 || rFull.rut !== "12345678-5") fail(`pipeline-lavado: preg ${missFull} erradas, rut="${rFull.rut}"`);
+  console.log(`Washed-pipeline guard passed: warp [90,185] → ${20 - missFull}/20 preg + RUT ${rFull.rut} (Warp-vacío relativo)`);
+
   // ─── Guardia de BARRIDO: lee TODA combinación que el generador puede crear
   // (nº preguntas × opciones × columnas). Es el "blindaje" — si una config no
   // lee 100%, aquí se ve y se sabe el sobre seguro del generador. ───
