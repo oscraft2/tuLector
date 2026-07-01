@@ -6,7 +6,7 @@
  */
 import { createCanvas, ImageData as CanvasImageData, loadImage } from "canvas";
 import { TEST_IMAGE_BASE64, EXPECTED_ANSWERS, EXPECTED_RUT, EXPECTED_CODE } from "./src/app/test/test_image";
-import { findCorners, gradeBubbles, readRut, readSheetCode, warpImageData, warpSheet, DEFAULT_CONFIG } from "./src/lib/omr";
+import { findCorners, gradeBubbles, readRut, readSheetCode, warpImageData, warpSheet, cropNameBox, DEFAULT_CONFIG } from "./src/lib/omr";
 import { TIMING_X, rowCY, SHEET_W, SHEET_H } from "./src/lib/sheet_layout";
 import { drawSheet, type Ctx2D } from "./src/lib/sheet_render";
 
@@ -302,6 +302,12 @@ async function main() {
   if (falseAlarms > 0) fail(`confianza: ${falseAlarms} falsas alarmas "revisar" sobre marcas limpias`);
   if (rCf.flag !== "ok") fail(`confianza: RUT limpio marcado "${rCf.flag}" (${rCf.flagReason})`);
   console.log(`Confidence guard passed: banderas coherentes (marcas limpias→ok, RUT→ok, 0 falsas alarmas)`);
+
+  // ─── Guardia de RECORTE DE NOMBRE (escalabilidad / cascada de identidad):
+  // el recorte de la caja de nombre debe tener dimensiones válidas. ───
+  const nameCrop = cropNameBox(warpedCf);
+  if (!nameCrop || nameCrop.width < 400 || nameCrop.height < 30) fail(`crop-nombre: recorte inválido (${nameCrop?.width}x${nameCrop?.height})`);
+  console.log(`Name-crop guard passed: caja de nombre recortada (${nameCrop.width}x${nameCrop.height})`);
 
   // ─── Guardia de BARRIDO: lee TODA combinación que el generador puede crear
   // (nº preguntas × opciones × columnas). Es el "blindaje" — si una config no

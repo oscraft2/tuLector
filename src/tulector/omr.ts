@@ -1314,5 +1314,34 @@ export function readSheetCode(imageData: ImageData): SheetCodeData | null {
   return decodeSheetCode(bits);
 }
 
+/**
+ * Recorta la caja del NOMBRE del warp (escalabilidad / cascada de identidad):
+ * cuando el RUT no se lee, guardar este recorte permite identificar al alumno por
+ * su nombre escrito, y a futuro extraerlo con IA. Coordenadas canónicas (el warp
+ * ya está rectificado). Devuelve una ImageData del recorte, o null si no cabe.
+ * No toca la lectura — es una utilidad aditiva.
+ */
+export function cropNameBox(imageData: ImageData): ImageData | null {
+  const { width, height, data } = imageData;
+  const inset = 2; // saltar el borde impreso de la caja
+  const x0 = Math.max(0, Math.round(L.NAME_X + inset));
+  const y0 = Math.max(0, Math.round(L.NAME_Y + inset));
+  const w = Math.min(width - x0, Math.round(L.NAME_W - inset * 2));
+  const h = Math.min(height - y0, Math.round(L.NAME_H - inset * 2));
+  if (w <= 0 || h <= 0) return null;
+  const out = new ImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const si = ((y0 + y) * width + (x0 + x)) * 4;
+      const di = (y * w + x) * 4;
+      out.data[di] = data[si];
+      out.data[di + 1] = data[si + 1];
+      out.data[di + 2] = data[si + 2];
+      out.data[di + 3] = 255;
+    }
+  }
+  return out;
+}
+
 export { DEFAULT_CONFIG };
 
