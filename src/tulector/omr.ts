@@ -25,9 +25,14 @@ export interface OMRConfig {
   margin: number; cornerSize: number;
 }
 
+/** Confianza de una lectura: ok | revisar (dudosa) | blanco (sin marca). */
+export type MarkFlag = "ok" | "revisar" | "blanco";
+
 export interface BubbleResult {
   question: number; answer: string; scores: number[]; correct: boolean | null;
   features?: number[][]; // por opción: [darkRatio, contrast, variance, edgeDensity] — para entrenar (FASE 5)
+  flag?: MarkFlag;       // confianza (#4): "revisar" = el profe debería mirarla
+  flagReason?: string;   // por qué (margen bajo, marca débil, múltiple, glare)
 }
 
 export interface GradeDiag {
@@ -800,6 +805,21 @@ function findColumnOffset(gray: Float32Array, w: number, h: number, rowY: number
   return bestDx;
 }
 
+/** Umbrales de confianza (#4), tuneables sin tocar la lógica de lectura. */
+const CONF = { weakTop: 0.35, lowMargin: 0.15 };
+
+/** Confianza de una lectura: no cambia la respuesta, solo la marca para revisión. */
+function markConfidence(answer: string, scores: number[]): { flag: MarkFlag; reason?: string } {
+  if (answer === "-") return { flag: "blanco" };
+  if (answer === "?") return { flag: "revisar", reason: "reflejo sobre la marca" };
+  if (answer.length > 1) return { flag: "revisar", reason: "marca multiple" };
+  const s = scores.slice().sort((a, b) => b - a);
+  const top = s[0] ?? 0, margin = top - (s[1] ?? 0);
+  if (top < CONF.weakTop) return { flag: "revisar", reason: "marca debil" };
+  if (margin < CONF.lowMargin) return { flag: "revisar", reason: "margen bajo" };
+  return { flag: "ok" };
+}
+
 export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_CONFIG, corners?: [number, number][]): GradeReport {
   const { width, height, data } = imageData;
   const { numQuestions, numOptions } = config;
@@ -907,11 +927,13 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
       answer = marked.map(i => labels[i]).join("");
     }
 
+    const conf = markConfidence(answer, scores);
     results.push({
       question: q + 1, answer,
       scores: scores.map(s => Math.round(s * 1000) / 1000),
       correct: null,
       features: feats,
+      flag: conf.flag, flagReason: conf.reason,
     });
     sameCount[answer] = (sameCount[answer] || 0) + 1;
   }
@@ -980,6 +1002,8 @@ export interface RutResult {
   dvOk: boolean;        // true si el DV LEIDO coincide con el calculado (verificado)
   complete: boolean;    // true si todas las columnas del cuerpo se leyeron
   dvComputed?: boolean; // true si el DV se relleno por calculo (no se leyo de la hoja)
+  flag?: MarkFlag;      // confianza (#4): "revisar" si el RUT conviene verificarlo
+  flagReason?: string;
   diag?: RutDiag;       // registro local + scores por columna (para analisis remoto)
 }
 
@@ -1229,7 +1253,13 @@ export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFI
 
   const complete = bodyComplete && body.length > 0 && (dvPicked !== null || dvComputed);
   const rut = body.length > 0 ? `${body.join("")}-${dvStr}` : "";
-  return { rut, dvOk, complete, dvComputed, diag: { dx: regDx, dy: regDy, dvComputed, cols, timing: rowYs ? rowYs.length : 0 } };
+  // Confianza del RUT (#4): no cambia el valor leído, solo señala si conviene revisarlo.
+  let rutFlag: MarkFlag = "ok"; let rutReason: string | undefined;
+  if (!rut) { rutFlag = "revisar"; rutReason = "RUT no leido"; }
+  else if (!complete) { rutFlag = "revisar"; rutReason = "RUT incompleto"; }
+  else if (dvComputed) { rutFlag = "revisar"; rutReason = "DV calculado (no leido de la hoja)"; }
+  else if (!dvOk) { rutFlag = "revisar"; rutReason = "DV no coincide"; }
+  return { rut, dvOk, complete, dvComputed, flag: rutFlag, flagReason: rutReason, diag: { dx: regDx, dy: regDy, dvComputed, cols, timing: rowYs ? rowYs.length : 0 } };
 }
 
 // ─── 6. Código de hoja (franja OMR-nativa; ver docs/codigo-hoja-spec.md) ──────

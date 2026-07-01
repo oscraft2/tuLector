@@ -286,6 +286,23 @@ async function main() {
   if (missFull > 1 || rFull.rut !== "12345678-5") fail(`pipeline-lavado: preg ${missFull} erradas, rut="${rFull.rut}"`);
   console.log(`Washed-pipeline guard passed: warp [90,185] → ${20 - missFull}/20 preg + RUT ${rFull.rut} (Warp-vacío relativo)`);
 
+  // ─── Guardia de CONFIANZA (#4): las banderas deben ser coherentes y NO dar
+  // falsas alarmas en marcas limpias (marca sólida → "ok", RUT válido → "ok"). ───
+  const sheetCf = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetCf.getContext("2d") as unknown as Ctx2D, { answers: Array.from({ length: 20 }, (_, i) => i % 5), rut: "12345678-5", filled: true });
+  const imgCf = await loadImage(sheetCf.toDataURL("image/png"));
+  const capCf = createCanvas(imgCf.width, imgCf.height);
+  capCf.getContext("2d").drawImage(imgCf, 0, 0);
+  const frameCf = capCf.getContext("2d").getImageData(0, 0, capCf.width, capCf.height) as unknown as globalThis.ImageData;
+  const warpedCf = warpImageData(frameCf, findCorners(frameCf) ?? fail("confianza: sin esquinas"));
+  const gCf = gradeBubbles(warpedCf);
+  const rCf = readRut(warpedCf);
+  const falseAlarms = gCf.results.filter((r) => r.answer !== "-" && r.flag === "revisar").length;
+  if (gCf.results.some((r) => !r.flag)) fail("confianza: falta la bandera en alguna pregunta (wiring)");
+  if (falseAlarms > 0) fail(`confianza: ${falseAlarms} falsas alarmas "revisar" sobre marcas limpias`);
+  if (rCf.flag !== "ok") fail(`confianza: RUT limpio marcado "${rCf.flag}" (${rCf.flagReason})`);
+  console.log(`Confidence guard passed: banderas coherentes (marcas limpias→ok, RUT→ok, 0 falsas alarmas)`);
+
   // ─── Guardia de BARRIDO: lee TODA combinación que el generador puede crear
   // (nº preguntas × opciones × columnas). Es el "blindaje" — si una config no
   // lee 100%, aquí se ve y se sabe el sobre seguro del generador. ───
