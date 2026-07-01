@@ -237,6 +237,34 @@ async function main() {
   if ((rutLC.diag?.timing ?? 0) < 7) fail(`bajo-contraste: la pista del RUT no se enganchó (timing=${rutLC.diag?.timing}) — readRutTimingY relativo no aguantó`);
   console.log(`Low-contrast RUT guard passed: RUT 12345678-5 + pista anclada (timing=${rutLC.diag?.timing}) en warp lavado`);
 
+  // ─── Guardia de PREGUNTAS de bajo contraste (caso real del usuario): lava SOLO
+  // la zona de opciones (marca gris ~130 / papel ~185), dejando anclas/timing
+  // oscuros para que el warp valide. El score relativo por pregunta debe leerlas
+  // (antes el absoluto <70 daba ~12/40). ───
+  const ansFq = Array.from({ length: 20 }, (_, i) => i % 5);
+  const sheetFq = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetFq.getContext("2d") as unknown as Ctx2D, { answers: ansFq, rut: "12345678-5", filled: true });
+  const imgFq = await loadImage(sheetFq.toDataURL("image/png"));
+  const capFq = createCanvas(imgFq.width, imgFq.height);
+  capFq.getContext("2d").drawImage(imgFq, 0, 0);
+  const frameFq = capFq.getContext("2d").getImageData(0, 0, capFq.width, capFq.height) as unknown as globalThis.ImageData;
+  const cornersFq = findCorners(frameFq) ?? fail("preg-bajo-contraste: sin esquinas");
+  const warpedFq = warpImageData(frameFq, cornersFq);
+  // Lava solo la banda de opciones (x 175-485), preservando anclas/timing oscuros.
+  const dFq = warpedFq.data;
+  for (let y = 300; y < warpedFq.height; y++) {
+    for (let x = 175; x < 485 && x < warpedFq.width; x++) {
+      const i = (y * warpedFq.width + x) * 4;
+      for (let k = 0; k < 3; k++) dFq[i + k] = Math.round(130 + dFq[i + k] * (185 - 130) / 255);
+    }
+  }
+  const gFq = gradeBubbles(warpedFq);
+  if (!gFq.valid) fail(`preg-bajo-contraste: warp inválido (${gFq.reason})`);
+  const expFq = ansFq.map((a) => "ABCDE"[a]);
+  const missFq = gFq.results.filter((r, i) => r.answer !== expFq[i]).length;
+  if (missFq > 1) fail(`preg-bajo-contraste: ${missFq}/20 preguntas erradas con marca leve — score relativo no aguantó`);
+  console.log(`Low-contrast questions guard passed: ${20 - missFq}/20 preguntas leídas con marca leve (gris ~130/papel ~185)`);
+
   // ─── Guardia de BARRIDO: lee TODA combinación que el generador puede crear
   // (nº preguntas × opciones × columnas). Es el "blindaje" — si una config no
   // lee 100%, aquí se ve y se sabe el sobre seguro del generador. ───

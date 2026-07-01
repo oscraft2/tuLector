@@ -850,17 +850,33 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
   for (let q = 0; q < numQuestions; q++) {
     const cy = rowY[ql.rowOf(q)];
     const col = ql.colOf(q);
-    const scores: number[] = [];
+    const clScores: number[] = [];
     const glares: boolean[] = [];
     const feats: number[][] = [];
+    const avgs: number[] = [];
 
     for (let o = 0; o < numOptions; o++) {
       const cx = ql.optX(o, col) + gridDx;
       const { score, glare, features } = classifyBubble(gray, width, cx, cy, ql.gradeR);
-      scores.push(score);
+      clScores.push(score);
       glares.push(glare);
       feats.push(features.map((f) => Math.round(f * 1000) / 1000));
+      // Gris promedio de la burbuja (para el score relativo por pregunta).
+      let sum = 0, tot = 0;
+      for (let dy = -ql.gradeR; dy <= ql.gradeR; dy++) for (let dx = -ql.gradeR; dx <= ql.gradeR; dx++) {
+        const px = cx + dx, py = cy + dy;
+        if (px >= 0 && px < width && py >= 0 && py < height) { tot++; sum += gray[py * width + px]; }
+      }
+      avgs.push(tot > 0 ? sum / tot : 255);
     }
+
+    // Score RELATIVO por pregunta (mismo principio que el RUT): la marca es la
+    // opcion mas oscura que la mas clara de la pregunta. La letra impresa (A/B/C/D)
+    // esta en TODAS las opciones por igual → se cancela. Rescata marcas a mano
+    // leves (gris ~120 sobre "blanco con letra" ~162) que el score absoluto de
+    // classifyBubble (tope <70) no pescaba. max() → nunca baja el caso limpio.
+    const paperQ = Math.max(...avgs);
+    const scores = clScores.map((s, i) => Math.max(s, Math.max(0, Math.min(1, (paperQ - avgs[i]) / (paperQ * 0.30)))));
 
     // Umbral adaptativo + deteccion de marcas multiples
     const maxS = Math.max(...scores);
