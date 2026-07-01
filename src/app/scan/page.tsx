@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { findCorners, gradeBubbles, readRut, readSheetCode, warpSheet, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
+import { findCorners, gradeBubbles, readRut, readSheetCode, warpSheet, cropNameBox, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
 import { isNativeApp, captureNativePhoto } from "@/lib/native/capacitor";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H, rutColX, rutRowY, RUT_COLS, RUT_ROWS, RUT_R, questionLayout } from "@/lib/sheet_layout";
@@ -287,6 +287,8 @@ export default function ScanPage() {
    const codeR = readSheetCode(warped);
    const idRows = rutR.rut ? [rutR.rut] : [];
    const scores = (report.results ?? []).map(r => ({ q: r.question, a: r.answer, s: r.scores }));
+   const nameCrop = cropNameBox(warped);
+   const nameImg = nameCrop ? imageDataToThumb(nameCrop, 480, 0.7) : null;
 
    const save = (type: "scan" | "scan_fail", code: number | undefined, valid: boolean) =>
     saveScanLog({
@@ -294,7 +296,7 @@ export default function ScanPage() {
      frame: { w: canvas.width, h: canvas.height },
      diag: { ...report.diag, rut: rutR.diag, code: codeR } as unknown as Record<string, unknown>,
      corners, result: { valid, code, reason: report.reason },
-     answers: scores, id: idRows, rut: rutR.rut, dvOk: rutR.dvOk, photo: photoThumb, warp: warpThumb,
+     answers: scores, id: idRows, rut: rutR.rut, dvOk: rutR.dvOk, photo: photoThumb, warp: warpThumb, nameImg,
     });
 
    if (report.diag) addLog(`Registro: ${report.diag.usedTiming ? `temporizacion (${report.diag.timingRows} marcas)` : "offset software"}, dx=${report.diag.gridDx}`);
@@ -450,6 +452,9 @@ export default function ScanPage() {
   setPhase("result");
 
   const codeR = readSheetCode(lastWarp);
+  // Recorte del nombre (identidad sin RUT): se guarda para identificar al alumno.
+  const nameCropV = cropNameBox(lastWarp);
+  const nameImgV = nameCropV ? imageDataToThumb(nameCropV, 480, 0.7) : null;
 
   await saveScanLog({
    v: SCAN_LOG_VERSION, type: "scan", source: "camera", sheet: "v2", ts: new Date().toISOString(),
@@ -462,7 +467,7 @@ export default function ScanPage() {
    corners: lastCorners,
    result: { valid: true, code: SCAN_CODES.GRADED },
    answers: bubbleResults.map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
-   id: votedRut ? [votedRut] : [], rut: votedRut, dvOk: votedDvOk, photo: photoThumb, warp: warpThumb,
+   id: votedRut ? [votedRut] : [], rut: votedRut, dvOk: votedDvOk, photo: photoThumb, warp: warpThumb, nameImg: nameImgV,
   });
 
   if (navigator.vibrate) navigator.vibrate(100);

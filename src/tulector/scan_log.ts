@@ -26,6 +26,7 @@ export interface ScanLogPayload {
   dvOk?: boolean;     // true si el digito verificador valida
   photo?: string | null;   // foto original reescalada (dataURL JPEG)
   warp?: string | null;    // warp reescalado (dataURL JPEG)
+  nameImg?: string | null; // recorte de la caja de nombre (identidad sin RUT)
   corrected?: { q: number; a: string }[]; // respuestas verdaderas (ground truth) por pregunta
   verified?: boolean;  // true: el profe confirmó la lectura → ejemplo etiquetado (FASE 3 dataset)
   rutTrue?: string;    // RUT verdadero confirmado
