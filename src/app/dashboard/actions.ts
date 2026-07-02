@@ -246,11 +246,12 @@ export async function createCourse(formData: FormData) {
 
   if (!name || !grade) throw new Error("Nombre y curso son obligatorios.");
 
-  await supabase.from("courses").insert({
+  const { error } = await supabase.from("courses").insert({
     school_id: school.id,
     name,
     grade,
   });
+  if (error) throw new Error(error.message);
 
   revalidatePath("/dashboard/students");
   revalidatePath("/dashboard/quizzes");
@@ -261,7 +262,8 @@ export async function deleteCourse(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  await supabase.from("courses").delete().eq("id", id);
+  const { error } = await supabase.from("courses").delete().eq("id", id);
+  if (error) throw new Error(error.message);
 
   revalidatePath("/dashboard/students");
   revalidatePath("/dashboard/quizzes");
@@ -278,7 +280,7 @@ export async function createStudent(formData: FormData) {
 
   const normalized = normalizeRut(rut);
 
-  await supabase.from("students").upsert({
+  const { error } = await supabase.from("students").upsert({
     school_id: school.id,
     user_id: user.id,
     student_id: normalized,
@@ -288,6 +290,7 @@ export async function createStudent(formData: FormData) {
     course,
     updated_at: new Date().toISOString(),
   }, { onConflict: "school_id,student_id" });
+  if (error) throw new Error(error.message);
 
   revalidatePath("/dashboard/students");
 }
