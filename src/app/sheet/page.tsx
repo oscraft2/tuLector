@@ -7,6 +7,7 @@ import {
   renderSheet, randomValidRut, randomAnswers, safeColumns, allowedColumns,
   MIN_QUESTIONS, MAX_QUESTIONS, type Branding, type GroundTruthEntry,
 } from "@/lib/sheet_generator";
+import { validateRut, normalizeRut } from "@/lib/rut";
 
 const DEFAULT_TEST_RUT = "12345678-5";
 const LABELS = "ABCDE";
@@ -55,6 +56,27 @@ export default function SheetPage() {
   // Beta
   const [batchN, setBatchN] = useState(40);
   const [busy, setBusy] = useState(false);
+  // Origen de RUTs del beta: "random" (aleatorios) o "list" (roster de un curso).
+  const [rutMode, setRutMode] = useState<"random" | "list">("random");
+  const [rutList, setRutList] = useState("");
+
+  // Parsea la lista pegada (acepta "rut" o "rut,nombre,curso" por línea, salta
+  // encabezado). Devuelve RUTs válidos normalizados, sin duplicados.
+  const parseRutList = (raw: string): string[] => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const line of raw.split(/\r?\n/)) {
+      const first = line.split(",")[0]?.trim() ?? "";
+      if (!first || /rut/i.test(first)) continue; // vacío o encabezado
+      if (!validateRut(first)) continue;
+      const r = normalizeRut(first);
+      if (seen.has(r)) continue;
+      seen.add(r);
+      out.push(r);
+    }
+    return out;
+  };
+  const parsedRuts = rutMode === "list" ? parseRutList(rutList) : [];
 
   const cfg: SheetConfig = { numQuestions, numOptions, numColumns };
   const branding: Branding = { title, school, logo };
@@ -105,29 +127,44 @@ export default function SheetPage() {
     a.click();
   };
 
-  /** Beta: N hojas autollenadas (RUT+respuestas aleatorias) + verdad-terreno. */
+  /** Beta: N hojas autollenadas (RUT+respuestas aleatorias) + verdad-terreno.
+   *  Modo "random": RUTs aleatorios válidos. Modo "list": usa el roster pegado
+   *  (RUTs reales de un curso) → cada hoja calza con un alumno existente. */
   const generateBatch = async () => {
+    // En modo lista, los RUTs vienen del roster; en aleatorio, se generan.
+    const ruts = rutMode === "list" ? parsedRuts : null;
+    if (rutMode === "list" && (!ruts || ruts.length === 0)) {
+      alert("Pega al menos un RUT válido del curso (una fila por alumno).");
+      return;
+    }
+    const count = ruts ? ruts.length : batchN;
     setBusy(true);
     await new Promise((r) => setTimeout(r, 30)); // deja pintar el "Generando…"
     const urls: string[] = [];
     const truth: GroundTruthEntry[] = [];
     const usedRuts = new Set<string>();
-    for (let i = 1; i <= batchN; i++) {
-      let r = randomValidRut();
-      while (usedRuts.has(r)) r = randomValidRut();
-      usedRuts.add(r);
+    for (let i = 1; i <= count; i++) {
+      let r: string;
+      if (ruts) {
+        r = ruts[i - 1];
+      } else {
+        r = randomValidRut();
+        while (usedRuts.has(r)) r = randomValidRut();
+        usedRuts.add(r);
+      }
       const ans = randomAnswers(numQuestions, numOptions);
       urls.push(renderToDataUrl({ rut: r, answers: ans, filled: true }));
       truth.push({ index: i, rut: r, answers: ans.map((a) => LABELS[a]) });
     }
     const meta = {
       generadoEn: new Date().toISOString(),
+      origen: rutMode === "list" ? "roster-curso" : "aleatorio",
       config: { numQuestions, numOptions, numColumns },
-      total: batchN,
+      total: count,
       hojas: truth,
     };
-    downloadBlob(JSON.stringify(meta, null, 2), `verdad_terreno_${batchN}_hojas.json`, "application/json");
-    await exportPdf(urls, `hojas_prueba_${batchN}.pdf`);
+    downloadBlob(JSON.stringify(meta, null, 2), `verdad_terreno_${count}_hojas.json`, "application/json");
+    await exportPdf(urls, `hojas_prueba_${count}.pdf`);
     setBusy(false);
   };
 
@@ -215,16 +252,39 @@ export default function SheetPage() {
           <section className="bg-indigo-950/40 border border-indigo-800/60 rounded-xl p-4 space-y-3">
             <h3 className="font-bold text-white">🧪 Beta — pruebas masivas (ideal vs real)</h3>
             <p className="text-zinc-400 text-xs">
-              Genera <strong className="text-white">{batchN} hojas</strong> autollenadas con RUT y respuestas aleatorias + un archivo de
+              Genera hojas autollenadas (RUT + respuestas) + un archivo de
               <strong className="text-white"> verdad-terreno</strong> (JSON). Imprime, escanea y contrasta. Ver <code>docs/plan-pruebas-lector.md</code>.
             </p>
-            <label className="block">
-              <span className="text-zinc-400">Cantidad de hojas: <strong className="text-white">{batchN}</strong></span>
-              <input type="range" min={1} max={40} value={batchN} onChange={(e) => setBatchN(+e.target.value)} className="w-full" />
-            </label>
-            <button onClick={generateBatch} disabled={busy}
+
+            {/* Origen de los RUTs */}
+            <div className="flex gap-2 text-xs">
+              <button type="button" onClick={() => setRutMode("random")}
+                className={`flex-1 py-1.5 rounded-lg font-semibold ${rutMode === "random" ? "bg-indigo-600 text-white" : "bg-zinc-800 text-zinc-300"}`}>
+                RUTs aleatorios
+              </button>
+              <button type="button" onClick={() => setRutMode("list")}
+                className={`flex-1 py-1.5 rounded-lg font-semibold ${rutMode === "list" ? "bg-indigo-600 text-white" : "bg-zinc-800 text-zinc-300"}`}>
+                RUTs de un curso
+              </button>
+            </div>
+
+            {rutMode === "random" ? (
+              <label className="block">
+                <span className="text-zinc-400">Cantidad de hojas: <strong className="text-white">{batchN}</strong></span>
+                <input type="range" min={1} max={40} value={batchN} onChange={(e) => setBatchN(+e.target.value)} className="w-full" />
+              </label>
+            ) : (
+              <label className="block">
+                <span className="text-zinc-400">Pega los RUTs del curso (uno por línea; acepta el CSV <code>rut,nombre,curso</code>)</span>
+                <textarea value={rutList} onChange={(e) => setRutList(e.target.value)} rows={5}
+                  className={`${inputCls} font-mono text-xs mt-1`} placeholder={"23582062-5\n24505369-K\n…"} />
+                <span className="text-indigo-300 text-xs">{parsedRuts.length} RUTs válidos detectados → {parsedRuts.length} hojas</span>
+              </label>
+            )}
+
+            <button onClick={generateBatch} disabled={busy || (rutMode === "list" && parsedRuts.length === 0)}
               className="w-full py-2.5 bg-indigo-600 rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-50">
-              {busy ? "Generando PDF…" : `Generar ${batchN} hojas (PDF) + verdad-terreno`}
+              {busy ? "Generando PDF…" : `Generar ${rutMode === "list" ? parsedRuts.length : batchN} hojas (PDF) + verdad-terreno`}
             </button>
           </section>
         </div>
