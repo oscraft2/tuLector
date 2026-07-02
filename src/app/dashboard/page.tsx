@@ -24,7 +24,7 @@ export default async function DashboardPage() {
       .from("papers")
       .select("id, score, total, status, quizzes!inner(id, subject, grade, evaluation_type, school_id)")
       .eq("quizzes.school_id", school.id)
-      .eq("status", "success"),
+      .in("status", ["corrected", "active"]),
     checkAndTriggerQuotaAlerts(school.id),
   ]);
 
@@ -55,7 +55,7 @@ export default async function DashboardPage() {
 
     // Eval Type (Tipo de Prueba)
     const evalType = quiz.evaluation_type || "Otro";
-    const labelEval = evalType === "SIMCE" ? "Ensayo SIMCE" : evalType === "DIA" ? "Ensayo DIA" : "Pruebas Propias";
+    const labelEval = evalType === "simce" ? "Ensayo SIMCE" : evalType === "paes" ? "Ensayo PAES" : "Pruebas Propias";
     if (!papersGroupedByEvalType[labelEval]) papersGroupedByEvalType[labelEval] = { sum: 0, count: 0 };
     papersGroupedByEvalType[labelEval].sum += pct;
     papersGroupedByEvalType[labelEval].count += 1;

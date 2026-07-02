@@ -21,7 +21,12 @@ export default async function PapersPage() {
           <td className="px-5 py-4"><StatusPill>{paper.status ?? "active"}</StatusPill></td>
           <td className="px-5 py-4 text-[#5b6472]">{paper.storage_path || paper.image_url ? "Privada" : "-"}</td>
           <td className="px-5 py-4 text-[#5b6472]">{new Date(paper.scanned_at).toLocaleString("es-CL")}</td>
-          <td className="px-5 py-4"><Link href={`/dashboard/results/${paper.quiz_id}`} className="font-semibold underline">Resultado</Link></td>
+          <td className="px-5 py-4 space-x-3">
+            <Link href={`/dashboard/results/${paper.quiz_id}`} className="font-semibold underline">Resultado</Link>
+            {paper.status === "manual_review" && (
+              <Link href={`/dashboard/papers/${paper.id}`} className="font-semibold text-amber-700 underline">Identificar alumno</Link>
+            )}
+          </td>
         </tr>
       )} />
     </>

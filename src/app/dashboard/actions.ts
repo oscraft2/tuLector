@@ -16,6 +16,8 @@ import {
 } from "@/lib/quiz_constraints";
 import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
 import { sendTemplatedEmail } from "@/lib/email";
+import { calculateGrade } from "@/lib/latam";
+import type { DashboardSchool } from "@/lib/supabase_server";
 
 export async function updateLocale(formData: FormData) {
   const { supabase, user } = await getDashboardContext();
@@ -288,6 +290,107 @@ export async function createStudent(formData: FormData) {
   }, { onConflict: "school_id,student_id" });
 
   revalidatePath("/dashboard/students");
+}
+
+// Comparte la logica entre "asignar alumno existente" y "crear alumno y asignar":
+// actualiza el paper en revision manual y su grade_record. status "corrected" al
+// identificar por RUT/nombre sigue el mismo patron que usa /api/scan/result
+// (colisiona en el nombre con corrected_answers/corrected_by, pensadas para
+// correccion manual de respuestas; deuda tecnica conocida, no se resuelve aqui).
+async function assignPaperToStudent(
+  supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"],
+  school: DashboardSchool,
+  paperId: string,
+  studentCode: string,
+  studentName: string
+) {
+  const { data: paper, error } = await supabase
+    .from("papers")
+    .update({
+      student_id: studentCode,
+      student_name: studentName,
+      status: "corrected",
+    })
+    .eq("id", paperId)
+    .eq("school_id", school.id)
+    .select("id,quiz_id,score,total")
+    .single();
+  if (error || !paper) throw new Error("No se pudo actualizar el paper.");
+
+  const gradeResult = calculateGrade(paper.score ?? 0, paper.total ?? 0, school.country_code ?? "CL", {
+    gradeScale: {
+      min: school.grading_scale_min ?? 1.0,
+      max: school.grading_scale_max ?? 7.0,
+    },
+    passingGrade: school.passing_grade ?? 4.0,
+    exigencia: school.exigencia ?? 0.60,
+  });
+
+  await supabase.from("grade_records").upsert({
+    school_id: school.id,
+    student_code: studentCode,
+    quiz_id: paper.quiz_id,
+    paper_id: paper.id,
+    raw_score: paper.score,
+    total_questions: paper.total,
+    calculated_grade: gradeResult.grade,
+    passing: gradeResult.passing,
+    graded_at: new Date().toISOString(),
+  }, { onConflict: "school_id,student_code,quiz_id" });
+
+  return paper.quiz_id as string;
+}
+
+export async function assignPaperStudent(formData: FormData) {
+  const { supabase, school } = await getDashboardContext();
+  const paperId = String(formData.get("paper_id") ?? "").trim();
+  const studentCode = String(formData.get("student_id") ?? "").trim();
+  if (!paperId || !studentCode) throw new Error("Faltan datos para asignar el alumno.");
+
+  const { data: student } = await supabase
+    .from("students")
+    .select("student_id,name")
+    .eq("school_id", school.id)
+    .or(`student_id.eq.${studentCode},rut.eq.${studentCode}`)
+    .maybeSingle();
+  if (!student) throw new Error("Alumno no encontrado.");
+
+  const quizId = await assignPaperToStudent(supabase, school, paperId, studentCode, student.name);
+
+  revalidatePath("/dashboard/papers");
+  revalidatePath(`/dashboard/papers/${paperId}`);
+  revalidatePath(`/dashboard/results/${quizId}`);
+}
+
+export async function createStudentAndAssignPaper(formData: FormData) {
+  const { supabase, user, school } = await getDashboardContext();
+  const paperId = String(formData.get("paper_id") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const rut = String(formData.get("rut") ?? "").trim();
+  const course = String(formData.get("course") ?? "").trim();
+
+  if (!paperId || !name || !rut || !course) throw new Error("Nombre, RUT y curso son obligatorios.");
+  if (!validateRut(rut)) throw new Error("El RUT chileno ingresado no es válido.");
+
+  const normalized = normalizeRut(rut);
+
+  await supabase.from("students").upsert({
+    school_id: school.id,
+    user_id: user.id,
+    student_id: normalized,
+    rut: normalized,
+    name,
+    grade: course,
+    course,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "school_id,student_id" });
+
+  const quizId = await assignPaperToStudent(supabase, school, paperId, normalized, name);
+
+  revalidatePath("/dashboard/students");
+  revalidatePath("/dashboard/papers");
+  revalidatePath(`/dashboard/papers/${paperId}`);
+  revalidatePath(`/dashboard/results/${quizId}`);
 }
 
 export async function disconnectSchool() {

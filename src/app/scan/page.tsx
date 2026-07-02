@@ -11,6 +11,7 @@ import { APP_VERSION } from "@/lib/version";
 import { safeColumns, allowedColumns } from "@/lib/sheet_generator";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
+type ScanSyncState = "idle" | "saving" | "saved" | "review" | "error";
 
 // ─── Laplacian focus detector ─────
 function isFrameSharp(imageData: ImageData): number {
@@ -148,7 +149,7 @@ export default function ScanPage() {
  const [answerKey, setAnswerKey] = useState<string[]>(DEFAULT_ANSWER_KEY);
  const [native, setNative] = useState(false);
  // Config de lectura sincronizada con el generador (/sheet la guarda en localStorage).
- const [scanCfg, setScanCfg] = useState({ numQuestions: 20, numOptions: 5, numColumns: 1 });
+ const [scanCfg, setScanCfg] = useState({ numQuestions: 20, numOptions: 5, numColumns: 1, optionLabels: "ABCDE" });
  useEffect(() => {
   let alive = true;
   Promise.resolve().then(() => {
@@ -157,13 +158,16 @@ export default function ScanPage() {
     const raw = localStorage.getItem("tulector_scan_config");
     if (raw) {
      const c = JSON.parse(raw);
-     setScanCfg({ numQuestions: c.numQuestions || 20, numOptions: c.numOptions || 5, numColumns: c.numColumns || 1 });
+     setScanCfg({ numQuestions: c.numQuestions || 20, numOptions: c.numOptions || 5, numColumns: c.numColumns || 1, optionLabels: c.optionLabels || "ABCDE" });
     }
    } catch { /* sin config guardada → default */ }
   });
   return () => { alive = false; };
  }, []);
  const [labeled, setLabeled] = useState(false);
+ const [activeQuizId, setActiveQuizId] = useState<string | null>(null);
+ const [syncState, setSyncState] = useState<ScanSyncState>("idle");
+ const [syncMessage, setSyncMessage] = useState("");
 
  useEffect(() => { let a = true; Promise.resolve().then(() => { if (a) setNative(isNativeApp()); }); return () => { a = false; }; }, []);
 
@@ -179,9 +183,13 @@ export default function ScanPage() {
   });
  };
 
- // Cargar la clave de respuestas desde una sesion autenticada de escaneo.
+ // Cargar la clave y formato desde una sesion autenticada de escaneo.
  useEffect(() => {
   const parseKey = (raw: string) => raw.toUpperCase().split("").filter((c) => "ABCDE".includes(c));
+  const parseLabels = (raw?: string) => {
+   const labels = String(raw || "ABCDE").toUpperCase().replace(/[^A-Z]/g, "");
+   return labels || "ABCDE";
+  };
   (async () => {
    try {
     const res = await fetch("/api/scan/active-quiz", { credentials: "include", cache: "no-store" });
@@ -189,11 +197,19 @@ export default function ScanPage() {
      setError("Selecciona un ensayo desde el dashboard antes de escanear.");
      return;
     }
-    const data = await res.json() as { answer_key?: string; title?: string };
+    const data = await res.json() as { id?: string; answer_key?: string; title?: string; num_questions?: number; options_per_question?: number; option_labels?: string };
+    if (data.id) setActiveQuizId(String(data.id));
     if (data.answer_key) {
      const arr = parseKey(String(data.answer_key));
      if (arr.length > 0) setAnswerKey(arr);
     }
+    const nextQuestions = Number(data.num_questions || 20);
+    const nextOptions = Number(data.options_per_question || 5);
+    const nextColumns = safeColumns(nextQuestions, nextQuestions > 30 ? 2 : 1);
+    const nextLabels = parseLabels(data.option_labels).slice(0, nextOptions);
+    const nextCfg = { numQuestions: nextQuestions, numOptions: nextOptions, numColumns: nextColumns, optionLabels: nextLabels };
+    setScanCfg(nextCfg);
+    try { localStorage.setItem("tulector_scan_config", JSON.stringify(nextCfg)); } catch { /* sin storage */ }
    } catch {
     setError("No se pudo cargar el ensayo activo. Se mantiene clave offline de prueba.");
    }
@@ -211,14 +227,56 @@ export default function ScanPage() {
  // Config del lector = la del generador (nº preguntas/opciones/columnas). Esto
  // sincroniza el motor con la hoja impresa (antes estaba fijo en 20/5/1 columna).
  // useMemo: identidad estable → no re-dispara el loop de cámara (que depende de config).
- const config = useMemo(() => ({ ...DEFAULT_CONFIG, numQuestions: scanCfg.numQuestions, numOptions: scanCfg.numOptions, optionLabels: "ABCDE".slice(0, scanCfg.numOptions), numColumns: scanCfg.numColumns }), [scanCfg]);
+ const config = useMemo(() => ({ ...DEFAULT_CONFIG, numQuestions: scanCfg.numQuestions, numOptions: scanCfg.numOptions, optionLabels: scanCfg.optionLabels.slice(0, scanCfg.numOptions), numColumns: scanCfg.numColumns }), [scanCfg]);
  // Marcas de temporización requeridas = filas por columna (no el nº de preguntas).
  const marksRequired = useMemo(() => questionLayout(config).rowsPerCol, [config]);
  // Cambiar la config del lector desde el teléfono (debe coincidir con la hoja).
  const updateCfg = (patch: Partial<typeof scanCfg>) => {
   const next = { ...scanCfg, ...patch };
+  next.optionLabels = Array.from(new Set(`${next.optionLabels || ""}ABCDE`.split(""))).join("").slice(0, next.numOptions);
   setScanCfg(next);
   try { localStorage.setItem("tulector_scan_config", JSON.stringify(next)); } catch { /* sin storage */ }
+ };
+
+ const syncResult = async ({ rut, answers, photo, warp, source, dvOk, code, nameImg }: { rut: string; answers: BubbleResult[]; photo?: string | null; warp?: string | null; source: "camera" | "upload"; dvOk?: boolean; code?: unknown; nameImg?: string | null }) => {
+  if (!activeQuizId) {
+   setSyncState("error");
+   setSyncMessage("Selecciona un ensayo desde el dashboard para sincronizar.");
+   return;
+  }
+  setSyncState("saving");
+  setSyncMessage("Sincronizando con dashboard...");
+  try {
+   const response = await fetch("/api/scan/result", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+     quizId: activeQuizId,
+     rut,
+     answers: answers.map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
+     photo,
+     warp,
+     source,
+     dvOk,
+     code,
+     nameImg,
+    }),
+   });
+   const payload = await response.json().catch(() => ({}));
+   if (!response.ok) throw new Error(payload?.error || "No se pudo guardar");
+   const scoreLabel = `${payload.score ?? "-"}/${payload.total ?? config.numQuestions}`;
+   if (payload.status === "manual_review") {
+    setSyncState("review");
+    setSyncMessage(`Guardado para revision (${scoreLabel}). ${payload.studentCode ? "Alumno sin identificar." : "RUT no detectado."}`);
+   } else {
+    setSyncState("saved");
+    setSyncMessage(`Sincronizado en dashboard (${scoreLabel}).`);
+   }
+  } catch (err) {
+   setSyncState("error");
+   setSyncMessage(err instanceof Error ? err.message : "No se pudo sincronizar con dashboard.");
+  }
  };
 
  // Iniciar camara
@@ -349,8 +407,9 @@ export default function ScanPage() {
    setPhase("result");
 
    const saved = await save("scan", SCAN_CODES.GRADED, true);
-   addLog(saved ? "Guardado en Supabase OK" : "No se pudo guardar (ver consola)");
+   addLog(saved ? "Diagnostico guardado OK" : "No se pudo guardar diagnostico (ver consola)");
    setDebugLog([...logs]);
+   void syncResult({ rut: rutR.rut, answers: bubbleResults, photo: photoThumb, warp: warpThumb, source, dvOk: rutR.dvOk, code: codeR, nameImg });
 
    if (navigator.vibrate) navigator.vibrate(100);
    // El resultado queda en pantalla hasta que el profe pulse "Siguiente"
@@ -469,6 +528,7 @@ export default function ScanPage() {
    answers: bubbleResults.map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
    id: votedRut ? [votedRut] : [], rut: votedRut, dvOk: votedDvOk, photo: photoThumb, warp: warpThumb, nameImg: nameImgV,
   });
+  void syncResult({ rut: votedRut, answers: bubbleResults, photo: photoThumb, warp: warpThumb, source: "camera", dvOk: votedDvOk, code: codeR, nameImg: nameImgV });
 
   if (navigator.vibrate) navigator.vibrate(100);
   // El resultado queda en pantalla hasta que el profe pulse "Siguiente"
@@ -777,6 +837,8 @@ export default function ScanPage() {
   setDebugLog([]);
   setWarpedThumb(null);
   setLabeled(false);
+  setSyncState("idle");
+  setSyncMessage("");
  };
 
  return (
@@ -974,7 +1036,7 @@ export default function ScanPage() {
          <>
           <div className="flex justify-between items-start mb-4">
            <div>
-            <h2 className="text-2xl font-black text-white">{correct}<span className="text-zinc-500 text-lg font-bold">/20</span></h2>
+            <h2 className="text-2xl font-black text-white">{correct}<span className="text-zinc-500 text-lg font-bold">/{config.numQuestions}</span></h2>
             <p className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Escaneo #{scanCount} · {answered} resp · {config.numQuestions}p/{config.numOptions}o/{config.numColumns}c · {BUILD_TAG}</p>
            </div>
            <div className="flex flex-col items-end gap-1">
@@ -987,6 +1049,11 @@ export default function ScanPage() {
            </div>
           </div>
 
+          {syncState !== "idle" && (
+           <div className={`mb-4 rounded-2xl border px-3 py-2 text-[10px] font-bold ${syncState === "saved" ? "border-green-500/30 bg-green-500/10 text-green-300" : syncState === "review" ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : syncState === "saving" ? "border-sky-500/30 bg-sky-500/10 text-sky-200" : "border-red-500/30 bg-red-500/10 text-red-200"}`}>
+            {syncMessage}
+           </div>
+          )}
           {showDebug && debugLog.length > 0 && (
            <div className="mb-4 bg-black/40 rounded-xl p-3 max-h-32 overflow-y-auto border border-zinc-800">
             <pre className="text-[8px] text-zinc-500 font-mono leading-tight whitespace-pre-wrap break-all">
