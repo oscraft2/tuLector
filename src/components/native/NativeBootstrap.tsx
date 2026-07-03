@@ -2,6 +2,9 @@
 
 import { useEffect } from "react";
 import { applyNativeChrome } from "@/lib/native/capacitor";
+import { setupOnlineListener } from "@/lib/offline_sync";
+import { syncOfflineQueue } from "@/lib/offline_sync";
+import { getQueueSize } from "@/lib/offline_queue";
 import { UpdateBanner } from "./UpdateBanner";
 
 /**
@@ -13,5 +16,27 @@ export function NativeBootstrap() {
   useEffect(() => {
     applyNativeChrome();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    // Sincronizar cola offline al arrancar y al recuperar conexión.
+    const sync = () => {
+      getQueueSize().then((size) => {
+        if (size > 0) syncOfflineQueue().catch(() => {});
+      });
+    };
+    sync();
+
+    const unsubscribe = setupOnlineListener(() => {
+      sync();
+    });
+
+    return unsubscribe;
+  }, []);
+
   return <UpdateBanner />;
 }

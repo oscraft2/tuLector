@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { findCorners, gradeBubbles, readRut, readSheetCode, warpSheet, cropNameBox, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
 import { isNativeApp, captureNativePhoto } from "@/lib/native/capacitor";
+import { enqueueScan, getQueueSize } from "@/lib/offline_queue";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H, rutColX, rutRowY, RUT_COLS, RUT_ROWS, RUT_R, questionLayout } from "@/lib/sheet_layout";
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
@@ -11,7 +12,7 @@ import { APP_VERSION } from "@/lib/version";
 import { safeColumns, allowedColumns } from "@/lib/sheet_generator";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
-type ScanSyncState = "idle" | "saving" | "saved" | "review" | "error";
+type ScanSyncState = "idle" | "saving" | "saved" | "review" | "error" | "queued";
 
 // ─── Laplacian focus detector ─────
 function isFrameSharp(imageData: ImageData): number {
@@ -253,54 +254,67 @@ export default function ScanPage() {
   try { localStorage.setItem("tulector_scan_config", JSON.stringify(next)); } catch { /* sin storage */ }
  };
 
- const syncResult = async ({ rut, answers, photo, warp, source, dvOk, code, nameImg }: { rut: string; answers: BubbleResult[]; photo?: string | null; warp?: string | null; source: "camera" | "upload"; dvOk?: boolean; code?: unknown; nameImg?: string | null }) => {
-  if (!activeQuizId) {
-   setSyncState("error");
-   setSyncMessage("Selecciona un ensayo desde el dashboard para sincronizar.");
-   return;
-  }
-  setSyncState("saving");
-  setSyncMessage("Sincronizando con dashboard...");
-  try {
-   const response = await fetch("/api/scan/result", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-     quizId: activeQuizId,
-     rut,
-     answers: answers.map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
-     photo,
-     warp,
-     source,
-     dvOk,
-     code,
-     nameImg,
-    }),
-   });
-   const payload = await response.json().catch(() => ({}));
-   if (!response.ok) throw new Error(payload?.error || "No se pudo guardar");
-   const scoreLabel = `${payload.score ?? "-"}/${payload.total ?? config.numQuestions}`;
-   // Aviso de cuota (tope suave): se informa junto al resultado, sin bloquear.
-   const quotaNote = payload.quota?.warning ? ` ⚠ ${payload.quota.warning}` : "";
-   const sheetMismatch = payload.sheetMismatch;
-   if (sheetMismatch && typeof sheetMismatch.read === "number" && typeof sheetMismatch.expected === "number") {
-    setSyncState("review");
-    setSyncMessage(`Hoja de otro ensayo (codigo ${sheetMismatch.read}, esperado ${sheetMismatch.expected}) -> guardado para revision (${scoreLabel}).${quotaNote}`);
+  const syncResult = async ({ rut, answers, photo, warp, source, dvOk, code, nameImg }: { rut: string; answers: BubbleResult[]; photo?: string | null; warp?: string | null; source: "camera" | "upload"; dvOk?: boolean; code?: unknown; nameImg?: string | null }) => {
+   if (!activeQuizId) {
+    setSyncState("error");
+    setSyncMessage("Selecciona un ensayo desde el dashboard para sincronizar.");
     return;
    }
-   if (payload.status === "manual_review") {
-    setSyncState("review");
-    setSyncMessage(`Guardado para revision (${scoreLabel}). ${payload.studentCode ? "Alumno sin identificar." : "RUT no detectado."}${quotaNote}`);
-   } else {
-    setSyncState("saved");
-    setSyncMessage(`Sincronizado en dashboard (${scoreLabel}).${quotaNote}`);
+   setSyncState("saving");
+   setSyncMessage("Sincronizando con dashboard...");
+   try {
+    const response = await fetch("/api/scan/result", {
+     method: "POST",
+     credentials: "include",
+     headers: { "Content-Type": "application/json" },
+     body: JSON.stringify({
+      quizId: activeQuizId,
+      rut,
+      answers: answers.map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
+      photo,
+      warp,
+      source,
+      dvOk,
+      code,
+      nameImg,
+     }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.error || "No se pudo guardar");
+    const scoreLabel = `${payload.score ?? "-"}/${payload.total ?? config.numQuestions}`;
+    const quotaNote = payload.quota?.warning ? ` ⚠ ${payload.quota.warning}` : "";
+    const sheetMismatch = payload.sheetMismatch;
+    if (sheetMismatch && typeof sheetMismatch.read === "number" && typeof sheetMismatch.expected === "number") {
+     setSyncState("review");
+     setSyncMessage(`Hoja de otro ensayo (codigo ${sheetMismatch.read}, esperado ${sheetMismatch.expected}) -> guardado para revision (${scoreLabel}).${quotaNote}`);
+     return;
+    }
+    if (payload.status === "manual_review") {
+     setSyncState("review");
+     setSyncMessage(`Guardado para revision (${scoreLabel}). ${payload.studentCode ? "Alumno sin identificar." : "RUT no detectado."}${quotaNote}`);
+    } else {
+     setSyncState("saved");
+     setSyncMessage(`Sincronizado en dashboard (${scoreLabel}).${quotaNote}`);
+    }
+   } catch (err) {
+    // Si el error es de red (no conectado), encolar para sincronizar después
+    if (!navigator.onLine || (err instanceof TypeError && (err.message.includes("fetch") || err.message.includes("network")))) {
+     await enqueueScan({
+      quizId: activeQuizId,
+      rut,
+      answers: answers.map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
+      source,
+      dvOk,
+      code,
+     });
+     setSyncState("queued");
+     setSyncMessage("Sin conexion. Guardado localmente. Se sincronizara al recuperar red.");
+    } else {
+     setSyncState("error");
+     setSyncMessage(err instanceof Error ? err.message : "No se pudo sincronizar con dashboard.");
+    }
    }
-  } catch (err) {
-   setSyncState("error");
-   setSyncMessage(err instanceof Error ? err.message : "No se pudo sincronizar con dashboard.");
-  }
- };
+  };
 
  // Iniciar camara
  useEffect(() => {
@@ -1081,7 +1095,7 @@ export default function ScanPage() {
           )}
 
           {syncState !== "idle" && (
-           <div className={`mb-4 rounded-2xl border px-3 py-2 text-[10px] font-bold ${syncState === "saved" ? "border-green-500/30 bg-green-500/10 text-green-300" : syncState === "review" ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : syncState === "saving" ? "border-sky-500/30 bg-sky-500/10 text-sky-200" : "border-red-500/30 bg-red-500/10 text-red-200"}`}>
+           <div className={`mb-4 rounded-2xl border px-3 py-2 text-[10px] font-bold ${syncState === "saved" ? "border-green-500/30 bg-green-500/10 text-green-300" : syncState === "review" ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : syncState === "queued" ? "border-orange-500/30 bg-orange-500/10 text-orange-200" : syncState === "saving" ? "border-sky-500/30 bg-sky-500/10 text-sky-200" : "border-red-500/30 bg-red-500/10 text-red-200"}`}>
             {syncMessage}
            </div>
           )}

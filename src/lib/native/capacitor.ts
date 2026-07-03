@@ -38,7 +38,7 @@ export function nativePlatform(): string {
   return c?.getPlatform?.() ?? "web";
 }
 
-function plugin<T = Record<string, (...args: unknown[]) => Promise<unknown>>>(name: string): T | undefined {
+export function plugin<T = Record<string, (...args: unknown[]) => Promise<unknown>>>(name: string): T | undefined {
   return cap()?.Plugins?.[name] as T | undefined;
 }
 
