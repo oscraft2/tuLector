@@ -6,6 +6,7 @@ import { DataTable } from "@/components/dashboard/DataTable";
 import { createQuiz, archiveQuiz, duplicateQuiz, startScanForQuiz } from "@/app/dashboard/actions";
 import { QUIZ_MAX_QUESTIONS } from "@/lib/quiz_constraints";
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { SubmitButton } from "@/components/dashboard/SubmitButton";
 
 export const dynamic = "force-dynamic";
 
@@ -102,13 +103,13 @@ export default async function QuizzesPage() {
               Formatos compatibles con el lector móvil: hasta {QUIZ_MAX_QUESTIONS} preguntas y 3, 4 o 5 opciones.
             </p>
             
-            <button
-              type="submit"
+            <SubmitButton
+              pendingLabel="Creando ensayo…"
               disabled={courseList.length === 0}
               className="w-full rounded-md bg-[#07305f] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#062447] disabled:opacity-50"
             >
               {courseList.length === 0 ? "Requiere crear curso primero" : "Crear ensayo"}
-            </button>
+            </SubmitButton>
           </div>
         </form>
 

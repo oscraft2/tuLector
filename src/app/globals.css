@@ -10,6 +10,34 @@ body {
   font-family: var(--font-sans);
 }
 
+/* ─── Interactividad (Tailwind v4 quita el cursor pointer por defecto) ───
+   Repone la "manito" y da feedback de hover/press en toda la app. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+label[for],
+summary,
+select:not(:disabled) {
+  cursor: pointer;
+}
+button:disabled,
+[aria-disabled="true"],
+[aria-busy="true"] {
+  cursor: not-allowed;
+}
+/* Transición suave en elementos interactivos + micro "press". */
+button, a, select, [role="button"] {
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease,
+    opacity .15s ease, box-shadow .15s ease, transform .1s ease;
+}
+button:active:not(:disabled),
+[role="button"]:not([aria-disabled="true"]):active {
+  transform: translateY(0.5px) scale(0.985);
+}
+@media (prefers-reduced-motion: reduce) {
+  button, a, select, [role="button"] { transition: none; }
+  button:active, [role="button"]:active { transform: none; }
+}
+
 /* ─── App nativa (Capacitor): matar el "olor a web" ───
    La clase `cap-native` la pone NativeBootstrap en <html> cuando corre en el APK.
    Sin selección de texto ni resaltado de toque ni rebote de overscroll. */
