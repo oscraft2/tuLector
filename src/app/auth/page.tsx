@@ -9,6 +9,7 @@ import { adjacencyGraphs, dictionary } from "@zxcvbn-ts/language-common";
 import { createClient } from "@/lib/supabase";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
 import { isNativeApp } from "@/lib/native/capacitor";
+import { BiometricGate } from "@/components/native/BiometricGate";
 
 const passwordEstimator = new ZxcvbnFactory({
   dictionary,
@@ -52,6 +53,7 @@ function AuthForm() {
   const [message, setMessage] = useState(initialMessage);
   const [mode, setMode] = useState<"login" | "register">(initialMode);
   const [native, setNative] = useState(false);
+  const [bioDone, setBioDone] = useState(false);
   const router = useRouter();
   const client = useMemo(() => createClient(), []);
 
@@ -154,7 +156,13 @@ function AuthForm() {
 
   if (native) {
     return (
-      <main className="relative flex min-h-dvh flex-col overflow-hidden bg-[#111827] text-white">
+      <>
+        <BiometricGate
+          onFallback={() => setBioDone(true)}
+          onSuccess={(path) => router.replace(path)}
+          homePath={homeAfterAuth()}
+        />
+        <main className="relative flex min-h-dvh flex-col overflow-hidden bg-[#111827] text-white">
         <div className="pointer-events-none absolute -top-24 -right-16 h-72 w-72 rounded-full bg-[#07305f]/50 blur-3xl" />
         <div className="pointer-events-none absolute left-[-6rem] top-1/3 h-72 w-72 rounded-full bg-indigo-500/15 blur-3xl" />
 
@@ -203,6 +211,7 @@ function AuthForm() {
           </p>
         </div>
       </main>
+      </>
     );
   }
 

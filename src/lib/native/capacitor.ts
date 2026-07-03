@@ -105,6 +105,46 @@ export async function toggleTorch(stream: MediaStream | null, current: boolean):
 }
 
 /**
+ * Verifica si el dispositivo soporta autenticación biométrica (huella, FaceID).
+ * Retorna el tipo de biometría disponible o null si no hay.
+ */
+export async function biometricAvailable(): Promise<"fingerprint" | "face" | "iris" | null> {
+  const Bio = plugin<{
+    checkBiometry: () => Promise<{ isAvailable: boolean; biometryType: number; biometryTypes: number[]; strongBiometryTypes: number[]; reason: string; code: string }>;
+  }>("BiometricAuth");
+  if (!Bio) return null;
+  try {
+    const result = await Bio.checkBiometry();
+    if (!result.isAvailable) return null;
+    const map: Record<number, "fingerprint" | "face" | "iris"> = {
+      1: "fingerprint",
+      2: "face",
+      3: "iris",
+    };
+    return map[result.biometryType] ?? "fingerprint";
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Solicita verificación biométrica. Retorna true si el usuario se autentica,
+ * false si cancela o falla.
+ */
+export async function biometricVerify(reason: string): Promise<boolean> {
+  const Bio = plugin<{
+    verifyIdentity: (o: { reason: string }) => Promise<{ verified: boolean }>;
+  }>("BiometricAuth");
+  if (!Bio) return false;
+  try {
+    const result = await Bio.verifyIdentity({ reason });
+    return result.verified === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Ajusta el "chrome" nativo al arrancar: marca <html> con `cap-native` (CSS que
  * mata el olor a web) y configura la status bar si el plugin existe.
  */
