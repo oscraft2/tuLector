@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTransition, useState, useEffect, useRef, type ReactNode, type RefObject } from "react";
-import { SchoolSelectSwitcher } from "@/components/dashboard/SchoolSelectSwitcher";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
+import { GlobalSearch } from "@/components/dashboard/GlobalSearch";
 import { createClient } from "@/lib/supabase";
 
 type NavItem = { href: string; label: string };
@@ -18,6 +18,7 @@ type Props = {
   children: ReactNode;
   userSchools?: UserSchool[];
   activeSchoolId?: string;
+  notifCount?: number;
 };
 
 export function DashboardLayoutShell({
@@ -28,6 +29,7 @@ export function DashboardLayoutShell({
   children,
   userSchools,
   activeSchoolId,
+  notifCount = 0,
 }: Props) {
   const pathname = usePathname();
   const router = useRouter();
@@ -110,37 +112,21 @@ export function DashboardLayoutShell({
               <div className="flex items-center justify-between gap-3 lg:hidden">
                 <TuLectorLogo href="/dashboard" size="sm" />
                 <div className="flex items-center gap-2">
-                  <button className="relative rounded-full p-2 text-[#111827] hover:bg-[#f4f6f8]" aria-label="Notificaciones">
-                    <span aria-hidden="true" className="text-lg">!</span>
-                    <span className="absolute right-0 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-[#073b7a] text-[10px] font-semibold text-white">3</span>
-                  </button>
+                  <NotifBell count={notifCount} size="sm" />
                   <ProfileMenu userInitials={userInitials} userName={userName} showProfileMenu={showProfileMenu} setShowProfileMenu={setShowProfileMenu} menuRef={mobileMenuRef} handleLogout={handleLogout} />
                 </div>
               </div>
 
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
-                  {userSchools && userSchools.length > 0 && activeSchoolId ? (
-                    <SchoolSelectSwitcher userSchools={userSchools} activeSchoolId={activeSchoolId} />
-                  ) : (
-                    <button className="flex w-full items-center justify-between rounded-md border border-[#cfd6df] bg-white px-4 py-3 text-sm font-medium text-[#111827] md:max-w-[345px]" aria-label="Seleccionar institucion">
-                      <span className="flex min-w-0 items-center gap-3"><span aria-hidden="true">⌂</span><span className="truncate">{organizationName}</span></span>
-                      <span aria-hidden="true">⌄</span>
-                    </button>
-                  )}
-                  <label className="relative hidden w-full md:block md:max-w-[365px]">
-                    <span className="sr-only">Buscar</span>
-                    <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#6b7280]" aria-hidden="true">⌕</span>
-                    <input className="w-full rounded-md border border-[#cfd6df] bg-white py-3 pl-10 pr-16 text-sm outline-none focus:border-[#07305f]" placeholder="Buscar en TuLector..." />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded border border-[#d8dde3] px-2 py-0.5 text-xs text-[#6b7280]">Ctrl K</span>
-                  </label>
+                  <SchoolIdentity userSchools={userSchools} activeSchoolId={activeSchoolId} organizationName={organizationName} />
+                  <div className="hidden w-full md:block md:max-w-[365px]">
+                    <GlobalSearch />
+                  </div>
                 </div>
 
                 <div className="hidden items-center justify-end gap-5 lg:flex">
-                  <button className="relative rounded-full p-2 text-[#111827] hover:bg-[#f4f6f8]" aria-label="Notificaciones">
-                    <span aria-hidden="true" className="text-xl">!</span>
-                    <span className="absolute right-0 top-0 flex h-5 w-5 items-center justify-center rounded-full bg-[#073b7a] text-[11px] font-semibold text-white">3</span>
-                  </button>
+                  <NotifBell count={notifCount} size="lg" />
                   <ProfileMenu userInitials={userInitials} userName={userName} showProfileMenu={showProfileMenu} setShowProfileMenu={setShowProfileMenu} menuRef={desktopMenuRef} handleLogout={handleLogout} />
                 </div>
               </div>
@@ -240,6 +226,42 @@ function ProfileMenu({
         </div>
       )}
     </div>
+  );
+}
+
+function SchoolIdentity({ userSchools, activeSchoolId, organizationName }: { userSchools?: UserSchool[]; activeSchoolId?: string; organizationName: string }) {
+  const active = userSchools?.find((s) => s.id === activeSchoolId);
+  const name = active?.name ?? organizationName;
+  const roleLabel = active
+    ? active.role === "admin" ? "Administrador" : active.role === "teacher" ? "Profesor" : "Observador"
+    : "Institución";
+  const initial = name.trim().charAt(0).toUpperCase() || "T";
+  return (
+    <div className="flex w-full items-center gap-3 rounded-md border border-[#e1e5ea] bg-white px-3 py-2 md:max-w-[345px]" aria-label={`Institución activa: ${name}`}>
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#07305f] text-sm font-bold text-white" aria-hidden="true">{initial}</span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold leading-tight text-[#111827]">{name}</span>
+        <span className="block text-[11px] leading-tight text-[#6b7280]">{roleLabel}</span>
+      </span>
+    </div>
+  );
+}
+
+function NotifBell({ count, size }: { count: number; size: "sm" | "lg" }) {
+  const lg = size === "lg";
+  return (
+    <Link
+      href="/dashboard/papers"
+      className="relative rounded-full p-2 text-[#111827] hover:bg-[#f4f6f8]"
+      aria-label={count > 0 ? `${count} hojas por revisar` : "Notificaciones"}
+    >
+      <span aria-hidden="true" className={lg ? "text-xl" : "text-lg"}>◔</span>
+      {count > 0 && (
+        <span className={`absolute right-0 top-0 flex items-center justify-center rounded-full bg-[#c2410c] font-semibold text-white ${lg ? "h-5 w-5 text-[11px]" : "h-4 w-4 text-[10px]"}`}>
+          {count > 9 ? "9+" : count}
+        </span>
+      )}
+    </Link>
   );
 }
 

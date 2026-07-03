@@ -25,10 +25,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // For all other dashboard pages, load context for the persistent shell.
   // Note: getDashboardContext() may call redirect() which throws and propagates
   // automatically — we don't catch it here.
-  const { school, user, locale, userSchools } = await getDashboardContext();
+  const { school, user, locale, userSchools, supabase } = await getDashboardContext();
   const t = getDashboardMessages(locale);
   const email = user.email ?? "TL";
   const userInitials = email.slice(0, 2).toUpperCase();
+
+  // Notificaciones reales: hojas escaneadas que quedaron para revisión manual.
+  const { count: pendingReview } = await supabase
+    .from("papers")
+    .select("id", { count: "exact", head: true })
+    .eq("school_id", school.id)
+    .eq("status", "manual_review");
 
   const nav = [
     { href: "/dashboard", label: "Resumen" },
@@ -48,6 +55,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       userName={email.split("@")[0]}
       userSchools={userSchools}
       activeSchoolId={school.id}
+      notifCount={pendingReview ?? 0}
     >
       {children}
     </DashboardLayoutShell>
