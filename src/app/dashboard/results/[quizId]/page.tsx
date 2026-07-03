@@ -2,22 +2,32 @@ import { notFound } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 import { DataTable } from "@/components/dashboard/DataTable";
-import { logExport } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = { params: Promise<{ quizId: string }> };
 
+type PaperResult = {
+  id: string;
+  student_name: string | null;
+  student_id: string | null;
+  score: number | null;
+  total: number | null;
+  scanned_at: string;
+  equivalent_score: number | null;
+  grade: string | number | null;
+};
+
 export default async function ResultsPage({ params }: PageProps) {
   const { quizId } = await params;
-  const { supabase, locale, isAdmin } = await getDashboardContext();
+  const { supabase, isAdmin } = await getDashboardContext();
   const [{ data: quiz }, { data: papers }] = await Promise.all([
     supabase.from("quizzes").select("id,title,num_questions,answer_key,evaluation_type,evaluation_variant").eq("id", quizId).single(),
     supabase.from("papers").select("id,student_name,student_id,score,total,answers,scanned_at,equivalent_score,grade").eq("quiz_id", quizId).order("score", { ascending: false }),
   ]);
   if (!quiz) notFound();
-  const rows = papers ?? [];
+  const rows = (papers ?? []) as PaperResult[];
   const avg = rows.length ? Math.round(rows.reduce((sum, p) => sum + ((p.score ?? 0) / Math.max(1, p.total ?? quiz.num_questions)) * 100, 0) / rows.length) : 0;
   const max = rows.reduce((best, p) => Math.max(best, p.score ?? 0), 0);
   const min = rows.length ? rows.reduce((low, p) => Math.min(low, p.score ?? 0), rows[0].score ?? 0) : 0;
@@ -25,14 +35,14 @@ export default async function ResultsPage({ params }: PageProps) {
   const isPAES = quiz.evaluation_type === "paes";
   const isSIMCE = quiz.evaluation_type === "simce";
 
-  const getScoreDisplay = (paper: any) => {
+  const getScoreDisplay = (paper: PaperResult) => {
     if (isPAES) {
       return `${paper.equivalent_score ?? Math.round(100 + ((paper.score ?? 0) / (paper.total || quiz.num_questions)) * 900)} pts PAES`;
     }
     if (isSIMCE) {
       return `${paper.equivalent_score ?? Math.round(100 + ((paper.score ?? 0) / (paper.total || quiz.num_questions)) * 300)} pts SIMCE`;
     }
-    const defaultGrade = paper.grade || (paper.total ? calculateGradeFallback(paper.score, paper.total) : "-");
+    const defaultGrade = paper.grade || (paper.total ? calculateGradeFallback(paper.score ?? 0, paper.total) : "-");
     return `Nota ${defaultGrade}`;
   };
 
@@ -65,8 +75,18 @@ export default async function ResultsPage({ params }: PageProps) {
           <KPI label="Minimo Correctas" value={`${min}/${quiz.num_questions}`} />
         </KPIGrid>
         <div className="rounded-md border border-[#e1e5ea] bg-white p-5">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><h2 className="text-xl font-semibold">Exportaciones</h2><form action={logExport} className="w-full sm:w-auto"><input type="hidden" name="export_type" value="results_pdf" /><input type="hidden" name="entity_type" value="quiz" /><button disabled={!isAdmin} className="w-full rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold disabled:opacity-50 sm:w-auto">Registrar exportacion PDF/Excel</button></form></div>
-          <p className="text-sm text-[#5b6472]">La generacion real de PDF/Excel debe quedar tras este log de exportacion y solo para admin del colegio.</p>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-xl font-semibold">Exportaciones</h2>
+            <a
+              href={isAdmin ? `/api/export/results/${quiz.id}` : undefined}
+              download
+              aria-disabled={!isAdmin}
+              className={`w-full rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold sm:w-auto ${isAdmin ? "hover:bg-[#f4f6f8]" : "pointer-events-none opacity-50"}`}
+            >
+              Exportar CSV
+            </a>
+          </div>
+          <p className="text-sm text-[#5b6472]">Descarga resultados reales del ensayo en CSV. Solo administradores del colegio pueden exportar.</p>
         </div>
         <DataTable
           columns={["Alumno", "Respuestas", "Resultado Equivalente", "Porcentaje", "Fecha"]}

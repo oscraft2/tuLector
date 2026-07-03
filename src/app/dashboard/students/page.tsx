@@ -7,9 +7,8 @@ import { StudentForm } from "@/components/dashboard/StudentForm";
 import { DeleteButton } from "@/components/dashboard/DeleteButton";
 import { CourseRoster } from "@/components/dashboard/CourseRoster";
 import { DataTable } from "@/components/dashboard/DataTable";
-import { importStudents, logExport, createCourse, deleteCourse, deleteStudent, createStudent, updateStudentCourse } from "@/app/dashboard/actions";
+import { importStudents, createCourse, deleteCourse, deleteStudent, createStudent, updateStudentCourse } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
-import { SubmitButton } from "@/components/dashboard/SubmitButton";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +50,7 @@ export default async function StudentsPage({ searchParams }: PageProps) {
   const courseStudents = selectedCourse ? allStudents.filter((student) => student.course === selectedCourse.name) : [];
   const visibleStudents = selectedCourse ? courseStudents : allStudents;
   const availableStudents = selectedCourse ? allStudents.filter((student) => student.course !== selectedCourse.name) : [];
+  const exportHref = selectedCourse ? `/api/export/students?course=${encodeURIComponent(selectedCourse.name)}` : "/api/export/students";
 
   return (
     <>
@@ -119,11 +119,14 @@ export default async function StudentsPage({ searchParams }: PageProps) {
               <h2 className="text-lg font-semibold text-[#111827]">{selectedCourse ? `Alumnos de ${selectedCourse.name}` : "Todos los alumnos"}</h2>
               {selectedCourse ? <Link href="/dashboard/students" className="mt-1 inline-block text-sm font-semibold text-[#07305f] underline">Ver todos</Link> : null}
             </div>
-            <form action={logExport} className="w-full sm:w-auto">
-              <input type="hidden" name="export_type" value="students_csv" />
-              <input type="hidden" name="entity_type" value="students" />
-              <SubmitButton disabled={!isAdmin} pendingLabel="Registrando…" className="w-full rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold disabled:opacity-50 sm:w-auto">Exportar CSV</SubmitButton>
-            </form>
+            <a
+              href={isAdmin ? exportHref : undefined}
+              download
+              aria-disabled={!isAdmin}
+              className={`w-full rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold sm:w-auto ${isAdmin ? "hover:bg-[#f4f6f8]" : "pointer-events-none opacity-50"}`}
+            >
+              Exportar CSV
+            </a>
           </div>
 
           <DataTable
