@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { parse } from "csv-parse/sync";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { validateRut, normalizeRut } from "@/lib/rut";
 import {
@@ -27,6 +28,23 @@ export async function updateLocale(formData: FormData) {
   revalidatePath("/dashboard");
 }
 
+/** Siguiente sheet_code correlativo del colegio (1,2,3…). Cabe en los 20 bits del
+ * codigo de hoja del motor; el indice unico (school_id, sheet_code) evita choques. */
+async function nextSheetCode(
+  supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"],
+  schoolId: string,
+): Promise<number> {
+  const { data } = await supabase
+    .from("quizzes")
+    .select("sheet_code")
+    .eq("school_id", schoolId)
+    .not("sheet_code", "is", null)
+    .order("sheet_code", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return ((data?.sheet_code as number | null) ?? 0) + 1;
+}
+
 export async function createQuiz(formData: FormData) {
   const { supabase, user, school } = await getDashboardContext();
   const title = String(formData.get("title") ?? "").trim();
@@ -45,20 +63,41 @@ export async function createQuiz(formData: FormData) {
   const evalVariant = String(formData.get("evaluation_variant") ?? "") || null;
   if (!title) throw new Error("Ingresa un titulo para el ensayo.");
   if (answerKey.length !== numQuestions) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
-  await supabase.from("quizzes").insert({
-    school_id: school.id,
-    user_id: user.id,
-    created_by: user.id,
-    title,
-    num_questions: numQuestions,
-    options_per_question: numOptions,
-    option_labels: optionLabelsFor(numOptions).split("").join(","),
-    answer_key: answerKey,
-    subject: String(formData.get("subject") ?? "") || null,
-    grade: String(formData.get("grade") ?? "") || null,
-    evaluation_type: evalType,
-    evaluation_variant: evalVariant,
-  });
+  // Nº de columnas: derivado (misma heuristica que ya usaba el lector). El sobre
+  // valido es 1 col <=40 y 2 col >=12; con <=40 preguntas siempre cae bien.
+  const numColumns = numQuestions > 30 ? 2 : 1;
+
+  // sheet_code: correlativo por colegio (cabe en los 20 bits del codigo de hoja del
+  // motor). Ata la hoja impresa a su ensayo para verificar "hoja correcta" al escanear.
+  const SHEET_CODE_MAX = 0xfffff; // 1.048.575
+  const baseCode = await nextSheetCode(supabase, school.id);
+
+  const insertQuiz = (sheetCode: number) =>
+    supabase.from("quizzes").insert({
+      school_id: school.id,
+      user_id: user.id,
+      created_by: user.id,
+      title,
+      num_questions: numQuestions,
+      options_per_question: numOptions,
+      num_columns: numColumns,
+      sheet_code: Math.min(sheetCode, SHEET_CODE_MAX),
+      option_labels: optionLabelsFor(numOptions).split("").join(","),
+      answer_key: answerKey,
+      subject: String(formData.get("subject") ?? "") || null,
+      grade: String(formData.get("grade") ?? "") || null,
+      evaluation_type: evalType,
+      evaluation_variant: evalVariant,
+    });
+
+  // Reintento acotado ante colision del indice unico (school_id, sheet_code).
+  let attempt = 0;
+  while (true) {
+    const { error } = await insertQuiz(baseCode + attempt);
+    if (!error) break;
+    if (error.code === "23505" && attempt < 3) { attempt++; continue; } // unique_violation
+    throw new Error(error.message);
+  }
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/quizzes");
 }
@@ -150,6 +189,68 @@ async function saveStudentWithoutConstraint(
   if (error) throw new Error(error.message);
 }
 
+type StudentCsvRow = {
+  rut: string;
+  name: string;
+  course: string | null;
+  grade: string | null;
+};
+
+function normalizeCsvHeader(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function findHeaderIndex(headers: string[], aliases: readonly string[]) {
+  const normalizedAliases = new Set(aliases.map(normalizeCsvHeader));
+  return headers.findIndex((header) => normalizedAliases.has(normalizeCsvHeader(header)));
+}
+
+function parseStudentCsv(csv: string): StudentCsvRow[] {
+  const parsed = parse(csv, {
+    bom: true,
+    relax_column_count: true,
+    skip_empty_lines: true,
+    trim: true,
+  }) as string[][];
+
+  if (parsed.length === 0) return [];
+
+  const firstRow = parsed[0] ?? [];
+  const rutIndex = findHeaderIndex(firstRow, ["rut", "run", "student_id", "id alumno", "identificador"]);
+  const nameIndex = findHeaderIndex(firstRow, ["nombre", "name", "alumno", "estudiante", "nombre completo"]);
+  const courseIndex = findHeaderIndex(firstRow, ["curso", "course", "grupo", "seccion", "sección"]);
+  const gradeIndex = findHeaderIndex(firstRow, ["nivel", "grade", "grado"]);
+  const hasHeader = rutIndex >= 0 && nameIndex >= 0 && courseIndex >= 0;
+  const dataRows = hasHeader ? parsed.slice(1) : parsed;
+
+  return dataRows.map((row) => {
+    if (hasHeader) {
+      return {
+        rut: row[rutIndex]?.trim() ?? "",
+        name: row[nameIndex]?.trim() ?? "",
+        course: row[courseIndex]?.trim() || null,
+        grade: gradeIndex >= 0 ? row[gradeIndex]?.trim() || null : null,
+      };
+    }
+
+    const legacyCourseIndex = row.length <= 4 ? 2 : row.length - 1;
+    const legacyGrade = row.length === 4 ? row[3]?.trim() || null : null;
+
+    return {
+      rut: row[0]?.trim() ?? "",
+      name: row[1]?.trim() ?? "",
+      course: row.length >= 3 ? row[legacyCourseIndex]?.trim() || null : null,
+      grade: legacyGrade,
+    };
+  });
+}
+
 /** Asegura que el curso exista en la tabla `courses` (find-or-insert, robusto
  * ante constraint ausente). Esto mantiene SINCRONIZADO el catalogo de cursos con
  * los alumnos: un curso escrito al crear/importar alumnos queda disponible para
@@ -186,20 +287,18 @@ export async function importStudents(_prevState: DashboardActionState, formData:
 
   try {
     const csv = String(formData.get("csv") ?? "");
-    const rows = csv.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    // Acepta "rut,nombre,curso" y opcionalmente un 4º campo "nivel".
-    const courseGrades = new Map<string, string>(); // curso -> nivel
-    const payload = rows.slice(rows[0]?.toLowerCase().includes("rut") ? 1 : 0).map((line) => {
-      const [rutRaw, nameRaw, courseRaw, gradeRaw] = line.split(",").map((cell) => cell?.trim() ?? "");
-      if (!rutRaw || !nameRaw || !validateRut(rutRaw)) return null;
-      const course = courseRaw || null;
-      if (course && gradeRaw && !courseGrades.has(course)) courseGrades.set(course, gradeRaw);
+    const courseGrades = new Map<string, string>();
+    const payload = parseStudentCsv(csv).map((row) => {
+      if (!row.rut || !row.name || !validateRut(row.rut)) return null;
+      const course = row.course;
+      if (course && row.grade && !courseGrades.has(course)) courseGrades.set(course, row.grade);
+
       return {
         school_id: school.id,
         user_id: user.id,
-        student_id: normalizeRut(rutRaw),
-        rut: normalizeRut(rutRaw),
-        name: nameRaw,
+        student_id: normalizeRut(row.rut),
+        rut: normalizeRut(row.rut),
+        name: row.name,
         course,
         updated_at: new Date().toISOString(),
       };
@@ -424,6 +523,43 @@ export async function deleteStudent(_prevState: DashboardActionState, formData: 
   }
 }
 
+export async function updateStudentCourse(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  const { supabase, school, isAdmin } = await getDashboardContext();
+
+  try {
+    if (!isAdmin) throw new Error("Solo admin puede editar cursos.");
+
+    const studentId = String(formData.get("student_id") ?? "").trim();
+    const course = String(formData.get("course") ?? "").trim();
+    if (!studentId) throw new Error("Selecciona un alumno.");
+
+    const { data: student, error: findError } = await supabase
+      .from("students")
+      .select("name")
+      .eq("id", studentId)
+      .eq("school_id", school.id)
+      .maybeSingle();
+    if (findError) throw new Error(findError.message);
+    if (!student) throw new Error("Alumno no encontrado.");
+
+    if (course) await findOrCreateCourse(supabase, school.id, course);
+
+    const { error } = await supabase
+      .from("students")
+      .update({ course: course || null, updated_at: new Date().toISOString() })
+      .eq("id", studentId)
+      .eq("school_id", school.id);
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/quizzes");
+    return course
+      ? actionSuccess("Alumno agregado al curso", `${student.name} quedo en ${course}.`, "✓")
+      : actionSuccess("Alumno quitado del curso", `${student.name} quedo sin curso asignado.`, "✓");
+  } catch (error) {
+    return actionError(error, "No se pudo actualizar el curso");
+  }
+}
 export async function createStudent(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
   const { supabase, user, school } = await getDashboardContext();
 
