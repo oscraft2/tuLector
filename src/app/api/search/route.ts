@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { canonicalRut } from "@/lib/rut";
+import { isMissingColumnError } from "@/lib/supabase_errors";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ type StudentSearchRow = {
   rut: string | null;
   student_id: string | null;
   course: string | null;
+  course_id?: string | null;
 };
 
 // Búsqueda global del header: alumnos (nombre / RUT / ID) y ensayos (título),
@@ -28,10 +30,10 @@ export async function GET(request: Request) {
     const studentFilters = [`name.ilike.${like}`, `rut.ilike.${like}`, `student_id.ilike.${like}`];
     if (rutNorm) studentFilters.push(`rut_normalized.eq.${rutNorm}`);
 
-    const [studentsRes, quizzesRes, coursesRes] = await Promise.all([
+    const [studentsResWithCourseId, quizzesRes, coursesRes] = await Promise.all([
       supabase
         .from("students")
-        .select("id, name, rut, student_id, course")
+        .select("id, name, rut, student_id, course, course_id")
         .eq("school_id", school.id)
         .or(studentFilters.join(","))
         .order("name")
@@ -47,6 +49,16 @@ export async function GET(request: Request) {
       supabase.from("courses").select("id, name").eq("school_id", school.id),
     ]);
 
+    const studentsRes = studentsResWithCourseId.error && isMissingColumnError(studentsResWithCourseId.error, "course_id")
+      ? await supabase
+          .from("students")
+          .select("id, name, rut, student_id, course")
+          .eq("school_id", school.id)
+          .or(studentFilters.join(","))
+          .order("name")
+          .limit(6)
+      : studentsResWithCourseId;
+
     const courseMap = new Map<string, string>();
     for (const c of coursesRes.data ?? []) {
       if (c?.name) courseMap.set(String(c.name), String(c.id));
@@ -58,7 +70,7 @@ export async function GET(request: Request) {
       rut: s.rut ?? null,
       student_id: s.student_id ?? null,
       course: s.course ?? null,
-      courseId: s.course ? courseMap.get(String(s.course)) ?? null : null,
+      courseId: s.course_id ?? (s.course ? courseMap.get(String(s.course)) ?? null : null),
     }));
 
     return NextResponse.json({ students, quizzes: quizzesRes.data ?? [] });

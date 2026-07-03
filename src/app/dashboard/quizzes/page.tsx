@@ -6,6 +6,7 @@ import { archiveQuiz, duplicateQuiz, startScanForQuiz } from "@/app/dashboard/ac
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { QuizCreateForm } from "@/components/dashboard/QuizCreateForm";
 import { ActionButton } from "@/components/dashboard/ActionButton";
+import { isMissingColumnError } from "@/lib/supabase_errors";
 
 export const dynamic = "force-dynamic";
 
@@ -14,16 +15,37 @@ const ARCH_CLS = "rounded-md border border-red-200 px-3 py-1.5 text-xs font-semi
 const DUP_CLS_M = "rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold hover:bg-gray-50";
 const ARCH_CLS_M = "rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50";
 
+type QuizRow = {
+  id: string;
+  title: string;
+  subject: string | null;
+  grade: string | null;
+  course_id?: string | null;
+  num_questions: number | null;
+  options_per_question: number | null;
+  created_at: string;
+};
+
+type CourseRow = { id: string; name: string; grade: string | null };
+
 export default async function QuizzesPage() {
   const { supabase, locale } = await getDashboardContext();
   const t = getDashboardMessages(locale);
 
-  const [{ data: quizzes }, { data: courses }] = await Promise.all([
-    supabase.from("quizzes").select("id,title,subject,grade,num_questions,options_per_question,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false }),
+  const [quizzesResult, { data: courses }] = await Promise.all([
+    supabase.from("quizzes").select("id,title,subject,grade,course_id,num_questions,options_per_question,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false }),
     supabase.from("courses").select("id,name,grade").order("name"),
   ]);
 
-  const courseList = courses ?? [];
+  let quizzesData: unknown = quizzesResult.data;
+  if (quizzesResult.error && isMissingColumnError(quizzesResult.error, "course_id")) {
+    const fallbackResult = await supabase.from("quizzes").select("id,title,subject,grade,num_questions,options_per_question,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false });
+    quizzesData = fallbackResult.data;
+  }
+
+  const courseList = (courses ?? []) as CourseRow[];
+  const quizzes = (quizzesData ?? []) as unknown as QuizRow[];
+  const courseNameById = new Map(courseList.map((course) => [course.id, course.name]));
 
   return (
     <>
@@ -37,7 +59,7 @@ export default async function QuizzesPage() {
         {/* Right Column: Quiz Datatable */}
         <DataTable
           columns={["Ensayo", "Asignatura", "Curso", "Formato", "Creado", "Acciones"]}
-          rows={quizzes ?? []}
+          rows={quizzes}
           empty="Todavía no hay ensayos creados en el establecimiento."
           renderRow={(quiz) => (
             <tr key={quiz.id} className="border-b border-[#eef0f3] last:border-0">
@@ -49,7 +71,7 @@ export default async function QuizzesPage() {
               <td className="px-5 py-4 text-[#5b6472]">{quiz.subject ?? "-"}</td>
               <td className="px-5 py-4">
                 <span className="rounded bg-[#f4f6f8] px-2 py-0.5 text-xs font-semibold text-[#1e293b]">
-                  {quiz.grade ?? "-"}
+                  {courseLabel(quiz, courseNameById)}
                 </span>
               </td>
               <td className="px-5 py-4 text-[#5b6472]">{quiz.num_questions}x{quiz.options_per_question ?? 5}</td>
@@ -91,7 +113,7 @@ export default async function QuizzesPage() {
               <Link href={`/dashboard/quizzes/${quiz.id}`} className="block text-base font-semibold text-[#07305f] hover:underline">{quiz.title}</Link>
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[#5b6472]">
                 <p><span className="font-semibold text-[#111827]">Asignatura:</span> {quiz.subject ?? "-"}</p>
-                <p><span className="font-semibold text-[#111827]">Curso:</span> {quiz.grade ?? "-"}</p>
+                <p><span className="font-semibold text-[#111827]">Curso:</span> {courseLabel(quiz, courseNameById)}</p>
                 <p><span className="font-semibold text-[#111827]">Formato:</span> {quiz.num_questions}x{quiz.options_per_question ?? 5}</p>
                 <p><span className="font-semibold text-[#111827]">Creado:</span> {formatDate(quiz.created_at, locale)}</p>
               </div>
@@ -107,4 +129,8 @@ export default async function QuizzesPage() {
       </div>
     </>
   );
+}
+
+function courseLabel(quiz: QuizRow, courseNameById: Map<string, string>) {
+  return quiz.course_id ? courseNameById.get(quiz.course_id) ?? quiz.grade ?? "-" : quiz.grade ?? "-";
 }

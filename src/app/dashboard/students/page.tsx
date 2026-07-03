@@ -9,6 +9,7 @@ import { CourseRoster } from "@/components/dashboard/CourseRoster";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { importStudents, createCourse, deleteCourse, deleteStudent, createStudent, updateStudentCourse } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { isMissingColumnError } from "@/lib/supabase_errors";
 
 export const dynamic = "force-dynamic";
 
@@ -33,23 +34,41 @@ type PageProps = {
   searchParams?: Promise<{ course?: string | string[] }>;
 };
 
+type StudentRow = {
+  id: string;
+  student_id: string | null;
+  rut: string | null;
+  name: string;
+  course: string | null;
+  course_id?: string | null;
+  created_at: string;
+};
+
+type CourseRow = { id: string; name: string; grade: string | null };
+
 export default async function StudentsPage({ searchParams }: PageProps) {
   const { supabase, locale, isAdmin } = await getDashboardContext();
   const t = getDashboardMessages(locale);
   const params = await searchParams;
   const selectedCourseId = Array.isArray(params?.course) ? params?.course[0] : params?.course;
 
-  const [{ data: students }, { data: courses }] = await Promise.all([
-    supabase.from("students").select("id,student_id,rut,name,course,created_at").order("name"),
+  const [studentsResult, { data: courses }] = await Promise.all([
+    supabase.from("students").select("id,student_id,rut,name,course,course_id,created_at").order("name"),
     supabase.from("courses").select("id,name,grade").order("name"),
   ]);
 
-  const courseList = courses ?? [];
-  const allStudents = students ?? [];
+  let studentsData: unknown = studentsResult.data;
+  if (studentsResult.error && isMissingColumnError(studentsResult.error, "course_id")) {
+    const fallbackResult = await supabase.from("students").select("id,student_id,rut,name,course,created_at").order("name");
+    studentsData = fallbackResult.data;
+  }
+
+  const courseList = (courses ?? []) as CourseRow[];
+  const allStudents = (studentsData ?? []) as unknown as StudentRow[];
   const selectedCourse = courseList.find((course) => course.id === selectedCourseId) ?? null;
-  const courseStudents = selectedCourse ? allStudents.filter((student) => student.course === selectedCourse.name) : [];
+  const courseStudents = selectedCourse ? allStudents.filter((student) => isStudentInCourse(student, selectedCourse)) : [];
   const visibleStudents = selectedCourse ? courseStudents : allStudents;
-  const availableStudents = selectedCourse ? allStudents.filter((student) => student.course !== selectedCourse.name) : [];
+  const availableStudents = selectedCourse ? allStudents.filter((student) => !isStudentInCourse(student, selectedCourse)) : [];
   const exportHref = selectedCourse ? `/api/export/students?course=${encodeURIComponent(selectedCourse.name)}` : "/api/export/students";
 
   return (
@@ -182,4 +201,8 @@ export default async function StudentsPage({ searchParams }: PageProps) {
       </div>
     </>
   );
+}
+
+function isStudentInCourse(student: StudentRow, course: CourseRow) {
+  return student.course_id ? student.course_id === course.id : student.course === course.name;
 }

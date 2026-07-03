@@ -19,6 +19,7 @@ import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
 import { sendTemplatedEmail } from "@/lib/email";
 import { calculateGrade } from "@/lib/latam";
 import type { DashboardSchool } from "@/lib/supabase_server";
+import { isMissingColumnError } from "@/lib/supabase_errors";
 
 export async function updateLocale(formData: FormData) {
   const { supabase, user } = await getDashboardContext();
@@ -69,6 +70,8 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     const numColumns = numQuestions > 30 ? 2 : 1;
     const SHEET_CODE_MAX = 0xfffff; // 1.048.575
     const baseCode = await nextSheetCode(supabase, school.id);
+    const grade = String(formData.get("grade") ?? "") || null;
+    const courseId = grade ? await findOrCreateCourse(supabase, school.id, grade) : null;
     const payload = {
       school_id: school.id,
       user_id: user.id,
@@ -80,12 +83,17 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
       option_labels: optionLabelsFor(numOptions).split("").join(","),
       answer_key: answerKey,
       subject: String(formData.get("subject") ?? "") || null,
-      grade: String(formData.get("grade") ?? "") || null,
+      grade,
+      course_id: courseId,
       evaluation_type: evalType,
       evaluation_variant: evalVariant,
     };
     for (let attempt = 0; ; attempt++) {
-      const { error } = await supabase.from("quizzes").insert({ ...payload, sheet_code: Math.min(baseCode + attempt, SHEET_CODE_MAX) });
+      const insertPayload = { ...payload, sheet_code: Math.min(baseCode + attempt, SHEET_CODE_MAX) };
+      let { error } = await supabase.from("quizzes").insert(insertPayload);
+      if (error && isMissingColumnError(error, "course_id")) {
+        error = (await supabase.from("quizzes").insert(withoutCourseId(insertPayload))).error;
+      }
       if (!error) break;
       if (error.code === "23505" && attempt < 3) continue; // unique_violation -> reintenta
       throw new Error(error.message);
@@ -119,7 +127,8 @@ export async function duplicateQuiz(_prevState: DashboardActionState, formData: 
     const { data } = await supabase.from("quizzes").select("*").eq("id", id).single();
     if (!data) throw new Error("Ensayo no encontrado.");
     const sheetCode = await nextSheetCode(supabase, school.id);
-    const { error } = await supabase.from("quizzes").insert({
+    const courseId = data.course_id ?? (data.grade ? await findOrCreateCourse(supabase, school.id, String(data.grade)) : null);
+    const payload = {
       school_id: school.id,
       user_id: user.id,
       created_by: user.id,
@@ -132,10 +141,15 @@ export async function duplicateQuiz(_prevState: DashboardActionState, formData: 
       answer_key: data.answer_key,
       subject: data.subject,
       grade: data.grade,
+      course_id: courseId,
       evaluation_type: data.evaluation_type ?? "custom",
       evaluation_variant: data.evaluation_variant ?? null,
       duplicated_from: data.id,
-    });
+    };
+    let { error } = await supabase.from("quizzes").insert(payload);
+    if (error && isMissingColumnError(error, "course_id")) {
+      error = (await supabase.from("quizzes").insert(withoutCourseId(payload))).error;
+    }
     if (error) throw new Error(error.message);
     revalidatePath("/dashboard/quizzes");
     return actionSuccess("Ensayo duplicado", `Se creo "${data.title} copia".`, "⧉");
@@ -160,6 +174,12 @@ function actionError(error: unknown, title = "No se pudo completar"): DashboardA
   return { status: "error", title, message: error instanceof Error ? error.message : "Intenta nuevamente.", emoji: "!", key: Date.now() };
 }
 
+function withoutCourseId<T extends { course_id?: unknown }>(payload: T) {
+  const { course_id: _courseId, ...rest } = payload;
+  void _courseId;
+  return rest;
+}
+
 type StudentPayload = {
   school_id: string;
   user_id: string;
@@ -168,6 +188,7 @@ type StudentPayload = {
   rut_normalized: string | null;
   name: string;
   course: string | null;
+  course_id: string | null;
   updated_at: string;
 };
 
@@ -198,22 +219,36 @@ async function saveStudentWithoutConstraint(
   const existing = existingByRut ?? existingByStudentId;
 
   if (existing?.id) {
-    const { error } = await supabase
+    const updatePayload = {
+      user_id: payload.user_id,
+      rut: payload.rut,
+      rut_normalized: payload.rut_normalized,
+      name: payload.name,
+      course: payload.course,
+      course_id: payload.course_id,
+      updated_at: payload.updated_at,
+    };
+    let updateResult = await supabase
       .from("students")
-      .update({
-        user_id: payload.user_id,
-        rut: payload.rut,
-        rut_normalized: payload.rut_normalized,
-        name: payload.name,
-        course: payload.course,
-        updated_at: payload.updated_at,
-      })
+      .update(updatePayload)
       .eq("id", existing.id);
-    if (error) throw new Error(error.message);
+
+    if (updateResult.error && isMissingColumnError(updateResult.error, "course_id")) {
+      updateResult = await supabase
+        .from("students")
+        .update(withoutCourseId(updatePayload))
+        .eq("id", existing.id);
+    }
+
+    if (updateResult.error) throw new Error(updateResult.error.message);
     return;
   }
 
-  const { error } = await supabase.from("students").insert(payload);
+  let insertResult = await supabase.from("students").insert(payload);
+  if (insertResult.error && isMissingColumnError(insertResult.error, "course_id")) {
+    insertResult = await supabase.from("students").insert(withoutCourseId(payload));
+  }
+  const { error } = insertResult;
   if (error) throw new Error(error.message);
 }
 
@@ -316,32 +351,38 @@ export async function importStudents(_prevState: DashboardActionState, formData:
   try {
     const csv = String(formData.get("csv") ?? "");
     const courseGrades = new Map<string, string>();
-    const payload = parseStudentCsv(csv).map((row) => {
+    const validRows = parseStudentCsv(csv).map((row) => {
       if (!row.rut || !row.name || !validateRut(row.rut)) return null;
       const course = row.course;
       if (course && row.grade && !courseGrades.has(course)) courseGrades.set(course, row.grade);
       const normalized = normalizeRut(row.rut);
 
       return {
-        school_id: school.id,
-        user_id: user.id,
         student_id: normalized,
         rut: normalized,
         rut_normalized: canonicalRut(row.rut),
         name: row.name,
         course,
-        updated_at: new Date().toISOString(),
       };
     }).filter((row): row is NonNullable<typeof row> => row !== null);
 
-    if (payload.length === 0) throw new Error("No hay alumnos validos para importar. Revisa RUT, nombre y curso.");
+    if (validRows.length === 0) throw new Error("No hay alumnos validos para importar. Revisa RUT, nombre y curso.");
 
     // Sincroniza el catalogo de cursos: cada curso del CSV queda registrado en
     // `courses` para poder asociarlo a un ensayo (antes solo quedaba como texto).
-    const cursos = [...new Set(payload.map((p) => p.course).filter((c): c is string => !!c))];
+    const cursos = [...new Set(validRows.map((p) => p.course).filter((c): c is string => !!c))];
+    const courseIds = new Map<string, string | null>();
     for (const curso of cursos) {
-      await findOrCreateCourse(supabase, school.id, curso, courseGrades.get(curso));
+      courseIds.set(curso, await findOrCreateCourse(supabase, school.id, curso, courseGrades.get(curso)));
     }
+
+    const payload = validRows.map((student) => ({
+      school_id: school.id,
+      user_id: user.id,
+      ...student,
+      course_id: student.course ? courseIds.get(student.course) ?? null : null,
+      updated_at: new Date().toISOString(),
+    }));
 
     for (const student of payload) {
       await saveStudentWithoutConstraint(supabase, student);
@@ -572,14 +613,24 @@ export async function updateStudentCourse(_prevState: DashboardActionState, form
     if (findError) throw new Error(findError.message);
     if (!student) throw new Error("Alumno no encontrado.");
 
-    if (course) await findOrCreateCourse(supabase, school.id, course);
+    const courseId = course ? await findOrCreateCourse(supabase, school.id, course) : null;
 
-    const { error } = await supabase
+    const updatePayload = { course: course || null, course_id: courseId, updated_at: new Date().toISOString() };
+    let updateResult = await supabase
       .from("students")
-      .update({ course: course || null, updated_at: new Date().toISOString() })
+      .update(updatePayload)
       .eq("id", studentId)
       .eq("school_id", school.id);
-    if (error) throw new Error(error.message);
+
+    if (updateResult.error && isMissingColumnError(updateResult.error, "course_id")) {
+      updateResult = await supabase
+        .from("students")
+        .update(withoutCourseId(updatePayload))
+        .eq("id", studentId)
+        .eq("school_id", school.id);
+    }
+
+    if (updateResult.error) throw new Error(updateResult.error.message);
 
     revalidatePath("/dashboard/students");
     revalidatePath("/dashboard/quizzes");
@@ -605,7 +656,7 @@ export async function createStudent(_prevState: DashboardActionState, formData: 
     const rutNormalized = canonicalRut(rut);
 
     // Asegura que el curso exista en el catalogo (por si vino de texto libre).
-    await findOrCreateCourse(supabase, school.id, course);
+    const courseId = await findOrCreateCourse(supabase, school.id, course);
 
     await saveStudentWithoutConstraint(supabase, {
       school_id: school.id,
@@ -615,6 +666,7 @@ export async function createStudent(_prevState: DashboardActionState, formData: 
       rut_normalized: rutNormalized,
       name,
       course,
+      course_id: courseId,
       updated_at: new Date().toISOString(),
     });
 
@@ -733,6 +785,7 @@ export async function createStudentAndAssignPaper(formData: FormData) {
 
   const normalized = normalizeRut(rut);
   const rutNormalized = canonicalRut(rut);
+  const courseId = await findOrCreateCourse(supabase, school.id, course);
 
   await saveStudentWithoutConstraint(supabase, {
     school_id: school.id,
@@ -742,6 +795,7 @@ export async function createStudentAndAssignPaper(formData: FormData) {
     rut_normalized: rutNormalized,
     name,
     course,
+    course_id: courseId,
     updated_at: new Date().toISOString(),
   });
 
