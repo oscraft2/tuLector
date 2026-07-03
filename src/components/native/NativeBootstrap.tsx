@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { applyNativeChrome } from "@/lib/native/capacitor";
+import { UpdateBanner } from "./UpdateBanner";
 
 /**
  * Inicialización nativa (Capacitor). Montado una vez en el layout raíz. En web
@@ -12,5 +13,5 @@ export function NativeBootstrap() {
   useEffect(() => {
     applyNativeChrome();
   }, []);
-  return null;
+  return <UpdateBanner />;
 }
