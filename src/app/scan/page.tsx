@@ -166,6 +166,8 @@ export default function ScanPage() {
  }, []);
  const [labeled, setLabeled] = useState(false);
  const [activeQuizId, setActiveQuizId] = useState<string | null>(null);
+ const [activeSheetCode, setActiveSheetCode] = useState<number | null>(null);
+ const [sheetWarn, setSheetWarn] = useState<string | null>(null);
  const [syncState, setSyncState] = useState<ScanSyncState>("idle");
  const [syncMessage, setSyncMessage] = useState("");
 
@@ -183,6 +185,17 @@ export default function ScanPage() {
   });
  };
 
+ // Aviso SUAVE: compara el codigo leido de la hoja con el sheet_code del ensayo
+ // activo. Solo advierte (no bloquea) y solo si ambos existen (hoja vieja sin
+ // codigo o ensayo sin codigo -> no molesta).
+ const checkSheetCode = (codeR: { sheetId: number } | null): string | null => {
+  if (activeSheetCode == null || !codeR) return null;
+  if (codeR.sheetId !== activeSheetCode) {
+   return `Esta hoja parece de OTRO ensayo (codigo ${codeR.sheetId}, esperado ${activeSheetCode}). Verifica que sea la hoja correcta.`;
+  }
+  return null;
+ };
+
  // Cargar la clave y formato desde una sesion autenticada de escaneo.
  useEffect(() => {
   const parseKey = (raw: string) => raw.toUpperCase().split("").filter((c) => "ABCDE".includes(c));
@@ -197,15 +210,17 @@ export default function ScanPage() {
      setError("Selecciona un ensayo desde el dashboard antes de escanear.");
      return;
     }
-    const data = await res.json() as { id?: string; answer_key?: string; title?: string; num_questions?: number; options_per_question?: number; option_labels?: string };
+    const data = await res.json() as { id?: string; answer_key?: string; title?: string; num_questions?: number; options_per_question?: number; option_labels?: string; num_columns?: number; sheet_code?: number | null };
     if (data.id) setActiveQuizId(String(data.id));
+    setActiveSheetCode(typeof data.sheet_code === "number" ? data.sheet_code : null);
     if (data.answer_key) {
      const arr = parseKey(String(data.answer_key));
      if (arr.length > 0) setAnswerKey(arr);
     }
     const nextQuestions = Number(data.num_questions || 20);
     const nextOptions = Number(data.options_per_question || 5);
-    const nextColumns = safeColumns(nextQuestions, nextQuestions > 30 ? 2 : 1);
+    // Nº de columnas del ENSAYO (Fase 2); si no viene, cae a la heuristica de antes.
+    const nextColumns = safeColumns(nextQuestions, Number(data.num_columns) || (nextQuestions > 30 ? 2 : 1));
     const nextLabels = parseLabels(data.option_labels).slice(0, nextOptions);
     const nextCfg = { numQuestions: nextQuestions, numOptions: nextOptions, numColumns: nextColumns, optionLabels: nextLabels };
     setScanCfg(nextCfg);
@@ -343,6 +358,7 @@ export default function ScanPage() {
    const report = gradeBubbles(warped, config, corners);
    const rutR = readRut(warped, config);
    const codeR = readSheetCode(warped);
+   setSheetWarn(checkSheetCode(codeR));
    const idRows = rutR.rut ? [rutR.rut] : [];
    const scores = (report.results ?? []).map(r => ({ q: r.question, a: r.answer, s: r.scores }));
    const nameCrop = cropNameBox(warped);
@@ -511,6 +527,7 @@ export default function ScanPage() {
   setPhase("result");
 
   const codeR = readSheetCode(lastWarp);
+  setSheetWarn(checkSheetCode(codeR));
   // Recorte del nombre (identidad sin RUT): se guarda para identificar al alumno.
   const nameCropV = cropNameBox(lastWarp);
   const nameImgV = nameCropV ? imageDataToThumb(nameCropV, 480, 0.7) : null;
@@ -1048,6 +1065,12 @@ export default function ScanPage() {
             </button>
            </div>
           </div>
+
+          {sheetWarn && (
+           <div className="mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] font-semibold text-amber-300">
+            ⚠️ {sheetWarn}
+           </div>
+          )}
 
           {syncState !== "idle" && (
            <div className={`mb-4 rounded-2xl border px-3 py-2 text-[10px] font-bold ${syncState === "saved" ? "border-green-500/30 bg-green-500/10 text-green-300" : syncState === "review" ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : syncState === "saving" ? "border-sky-500/30 bg-sky-500/10 text-sky-200" : "border-red-500/30 bg-red-500/10 text-red-200"}`}>
