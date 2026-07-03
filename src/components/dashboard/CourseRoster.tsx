@@ -66,27 +66,9 @@ export function CourseRoster({ courseName, students, availableStudents, isAdmin,
         </form>
       ) : null}
 
-      <div className="mt-4 divide-y divide-[#eef0f3]">
-        {students.length === 0 ? (
-          <p className="rounded-md bg-[#f8fafc] px-3 py-4 text-sm text-[#5b6472]">Este curso todavia no tiene alumnos asignados.</p>
-        ) : (
-          students.map((student) => (
-            <div key={student.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-[#111827]">{student.name}</p>
-                <p className="mt-1 font-mono text-xs text-[#5b6472]">{student.rut ?? student.student_id ?? "Sin ID"}</p>
-              </div>
-              {isAdmin ? (
-                <form action={formAction}>
-                  <input type="hidden" name="student_id" value={student.id} />
-                  <input type="hidden" name="course" value="" />
-                  <SubmitButton label="Quitar del curso" pendingLabel="Quitando..." className="w-full rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 sm:w-auto" />
-                </form>
-              ) : null}
-            </div>
-          ))
-        )}
-      </div>
+      <p className="mt-4 rounded-md bg-[#f8fafc] px-3 py-3 text-sm text-[#5b6472]">
+        Revisa, quita del curso o elimina alumnos desde la tabla inferior.
+      </p>
 
       <ActionFeedbackDialog state={state} />
     </section>

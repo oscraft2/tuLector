@@ -7,6 +7,7 @@ import { StudentForm } from "@/components/dashboard/StudentForm";
 import { DeleteButton } from "@/components/dashboard/DeleteButton";
 import { CourseRoster } from "@/components/dashboard/CourseRoster";
 import { DataTable } from "@/components/dashboard/DataTable";
+import { ActionButton } from "@/components/dashboard/ActionButton";
 import { importStudents, createCourse, deleteCourse, deleteStudent, createStudent, updateStudentCourse } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { isMissingColumnError } from "@/lib/supabase_errors";
@@ -163,13 +164,27 @@ export default async function StudentsPage({ searchParams }: PageProps) {
                 </td>
                 <td className="px-5 py-4 text-xs text-[#5b6472]">{new Date(student.created_at).toLocaleDateString("es-CL")}</td>
                 <td className="px-5 py-4">
-                  {isAdmin && (
-                    <DeleteButton
-                      action={deleteStudent}
-                      id={student.id}
-                      confirm={`¿Eliminar a ${student.name}? Esta acción no se puede deshacer.`}
-                    />
-                  )}
+                  {isAdmin ? (
+                    <div className="flex flex-wrap gap-3">
+                      {selectedCourse ? (
+                        <ActionButton
+                          action={updateStudentCourse}
+                          fields={{ student_id: student.id, course: "" }}
+                          label="Quitar del curso"
+                          pendingLabel="Quitando…"
+                          className="text-xs font-semibold text-amber-700 hover:underline disabled:opacity-50"
+                          confirm={`¿Quitar a ${student.name} de ${selectedCourse.name}?`}
+                          confirmTitle="¿Quitar del curso?"
+                          confirmLabel="Quitar"
+                        />
+                      ) : null}
+                      <DeleteButton
+                        action={deleteStudent}
+                        id={student.id}
+                        confirm={`¿Eliminar a ${student.name}? Esta acción no se puede deshacer.`}
+                      />
+                    </div>
+                  ) : null}
                 </td>
               </tr>
             )}
@@ -186,14 +201,28 @@ export default async function StudentsPage({ searchParams }: PageProps) {
                 </div>
                 <div className="mt-3 flex items-center justify-between text-xs text-[#5b6472]">
                   <span>Registro: {new Date(student.created_at).toLocaleDateString("es-CL")}</span>
-                  {isAdmin && (
+                </div>
+                {isAdmin ? (
+                  <div className="mt-4 flex flex-wrap gap-3 text-sm">
+                    {selectedCourse ? (
+                      <ActionButton
+                        action={updateStudentCourse}
+                        fields={{ student_id: student.id, course: "" }}
+                        label="Quitar del curso"
+                        pendingLabel="Quitando…"
+                        className="font-semibold text-amber-700 underline disabled:opacity-50"
+                        confirm={`¿Quitar a ${student.name} de ${selectedCourse.name}?`}
+                        confirmTitle="¿Quitar del curso?"
+                        confirmLabel="Quitar"
+                      />
+                    ) : null}
                     <DeleteButton
                       action={deleteStudent}
                       id={student.id}
                       confirm={`¿Eliminar a ${student.name}? Esta acción no se puede deshacer.`}
                     />
-                  )}
-                </div>
+                  </div>
+                ) : null}
               </article>
             )}
           />
