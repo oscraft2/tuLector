@@ -76,6 +76,16 @@ export function randomAnswers(numQuestions: number, numOptions: number): number[
   return Array.from({ length: numQuestions }, () => Math.floor(Math.random() * numOptions));
 }
 
+/** Respuestas MIXTAS: las primeras `markUpTo` preguntas quedan premarcadas
+ * (aleatorias, Fase A ideal); el resto queda en -1 (sentinel del motor para
+ * "en blanco", ver SheetMarks en sheet_render.ts) para marcarse A MANO (Fase B
+ * real). Permite probar en una misma hoja el piso del sistema y la robustez al
+ * marcado humano. Ver docs/plan-pruebas-lector.md. */
+export function randomPartialAnswers(numQuestions: number, numOptions: number, markUpTo: number): number[] {
+  const limit = Math.max(0, Math.min(markUpTo, numQuestions));
+  return Array.from({ length: numQuestions }, (_, i) => (i < limit ? Math.floor(Math.random() * numOptions) : -1));
+}
+
 // Sobre SEGURO validado por test:omr (guard "Config sweep"): fuera de este rango
 // las filas quedan muy juntas o faltan marcas de timing → no lee 100%.
 export const MIN_QUESTIONS = 6;

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SHEET_W, SHEET_H, type SheetConfig } from "@/lib/sheet_layout";
 import {
-  renderSheet, randomValidRut, randomAnswers, safeColumns, allowedColumns,
+  renderSheet, randomValidRut, randomAnswers, randomPartialAnswers, safeColumns, allowedColumns,
   MIN_QUESTIONS, MAX_QUESTIONS, type Branding, type GroundTruthEntry, type SheetMarks,
 } from "@/lib/sheet_generator";
 import { validateRut, normalizeRut } from "@/lib/rut";
@@ -61,6 +61,12 @@ export default function SheetPage() {
   const [rutMode, setRutMode] = useState<"random" | "list">("random");
   const [rutList, setRutList] = useState("");
 
+  // Premarcado parcial: primeras N preguntas auto-marcadas (Fase A), resto en
+  // blanco para marcar a mano (Fase B) en la MISMA hoja. Off por defecto (modo
+  // actual: todo premarcado, sin cambios de comportamiento).
+  const [partialMode, setPartialMode] = useState(false);
+  const [markUpTo, setMarkUpTo] = useState(10);
+
   // Ensayo heredado via /sheet?quiz=<id>: la hoja toma su formato + clave + codigo.
   const [quizInfo, setQuizInfo] = useState<{ id: string; title: string; sheetCode: number | null; answerKey: string } | null>(null);
 
@@ -81,6 +87,8 @@ export default function SheetPage() {
     return out;
   };
   const parsedRuts = rutMode === "list" ? parseRutList(rutList) : [];
+  // Nº de preguntas que quedan auto-marcadas; el resto en blanco (marcado a mano).
+  const effectiveMarkUpTo = partialMode ? Math.max(0, Math.min(markUpTo, numQuestions)) : numQuestions;
 
   const cfg: SheetConfig = { numQuestions, numOptions, numColumns };
   const branding: Branding = { title, school, logo };
@@ -182,19 +190,27 @@ export default function SheetPage() {
         while (usedRuts.has(r)) r = randomValidRut();
         usedRuts.add(r);
       }
-      const ans = randomAnswers(numQuestions, numOptions);
+      const ans = partialMode
+        ? randomPartialAnswers(numQuestions, numOptions, effectiveMarkUpTo)
+        : randomAnswers(numQuestions, numOptions);
       urls.push(renderToDataUrl({ rut: r, answers: ans, filled: true, ...(sheetCode ? { code: sheetCode } : {}) }));
-      truth.push({ index: i, rut: r, answers: ans.map((a) => LABELS[a]) });
+      // La verdad-terreno solo cubre lo AUTO-marcado (1..markedUpTo); lo demás se
+      // marca a mano y se evalua contra la clave real del ensayo, no contra este JSON.
+      truth.push({ index: i, rut: r, answers: ans.slice(0, effectiveMarkUpTo).map((a) => LABELS[a]) });
     }
     const meta = {
       generadoEn: new Date().toISOString(),
       origen: rutMode === "list" ? "roster-curso" : "aleatorio",
       config: { numQuestions, numOptions, numColumns },
+      markedUpTo: effectiveMarkUpTo,
       total: count,
       hojas: truth,
     };
-    downloadBlob(JSON.stringify(meta, null, 2), `verdad_terreno_${count}_hojas.json`, "application/json");
-    await exportPdf(urls, `hojas_prueba_${count}.pdf`);
+    const suffix = partialMode && effectiveMarkUpTo < numQuestions
+      ? `parcial_1-${effectiveMarkUpTo}_de_${numQuestions}_${count}_hojas`
+      : `${count}_hojas`;
+    downloadBlob(JSON.stringify(meta, null, 2), `verdad_terreno_${suffix}.json`, "application/json");
+    await exportPdf(urls, `hojas_prueba_${suffix}.pdf`);
     setBusy(false);
   };
 
@@ -319,9 +335,29 @@ export default function SheetPage() {
               </label>
             )}
 
+            {/* Premarcado parcial: combina Fase A (auto) + Fase B (a mano) en la misma hoja */}
+            <label className="flex items-center gap-2 text-white font-semibold">
+              <input type="checkbox" checked={partialMode} onChange={(e) => setPartialMode(e.target.checked)} />
+              Premarcado parcial (dejar preguntas en blanco para marcar a mano)
+            </label>
+            {partialMode && (
+              <label className="block">
+                <span className="text-zinc-400">
+                  Auto-marcar hasta la pregunta <strong className="text-white">{effectiveMarkUpTo}</strong> de {numQuestions}
+                  <span className="text-zinc-500"> · quedan {numQuestions - effectiveMarkUpTo} en blanco</span>
+                </span>
+                <input type="range" min={0} max={numQuestions} value={effectiveMarkUpTo}
+                  onChange={(e) => setMarkUpTo(+e.target.value)} className="w-full" />
+              </label>
+            )}
+
             <button onClick={generateBatch} disabled={busy || (rutMode === "list" && parsedRuts.length === 0)}
               className="w-full py-2.5 bg-indigo-600 rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-50">
-              {busy ? "Generando PDF…" : `Generar ${rutMode === "list" ? parsedRuts.length : batchN} hojas (PDF) + verdad-terreno`}
+              {busy
+                ? "Generando PDF…"
+                : partialMode && effectiveMarkUpTo < numQuestions
+                  ? `Generar ${rutMode === "list" ? parsedRuts.length : batchN} hojas (1–${effectiveMarkUpTo} auto, ${effectiveMarkUpTo + 1}–${numQuestions} en blanco) + verdad-terreno`
+                  : `Generar ${rutMode === "list" ? parsedRuts.length : batchN} hojas (PDF) + verdad-terreno`}
             </button>
           </section>
         </div>
