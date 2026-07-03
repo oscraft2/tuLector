@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { SchoolSelectSwitcher } from "@/components/dashboard/SchoolSelectSwitcher";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
 
 type NavItem = {
@@ -78,14 +77,7 @@ export function AppShell({
           <header className="sticky top-0 z-20 border-b border-[#e1e5ea] bg-white/95 backdrop-blur">
             <div className="flex min-h-20 flex-col gap-3 px-5 py-3 md:px-10 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
-                {userSchools && userSchools.length > 0 && activeSchoolId ? (
-                  <SchoolSelectSwitcher userSchools={userSchools} activeSchoolId={activeSchoolId} />
-                ) : (
-                  <button className="flex w-full items-center justify-between rounded-md border border-[#cfd6df] bg-white px-4 py-3 text-sm font-medium text-[#111827] md:max-w-[345px]" aria-label="Seleccionar institucion">
-                    <span className="flex items-center gap-3"><span aria-hidden="true">⌂</span>{organizationName}</span>
-                    <span aria-hidden="true">⌄</span>
-                  </button>
-                )}
+                <SchoolIdentity userSchools={userSchools} activeSchoolId={activeSchoolId} organizationName={organizationName} />
                 <label className="relative w-full md:max-w-[365px]">
                   <span className="sr-only">Buscar</span>
                   <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#6b7280]" aria-hidden="true">⌕</span>
@@ -131,6 +123,24 @@ export function AppShell({
         </section>
       </div>
     </main>
+  );
+}
+
+function SchoolIdentity({ userSchools, activeSchoolId, organizationName }: { userSchools?: UserSchool[]; activeSchoolId?: string; organizationName: string }) {
+  const active = userSchools?.find((s) => s.id === activeSchoolId);
+  const name = active?.name ?? organizationName;
+  const roleLabel = active
+    ? active.role === "admin" ? "Administrador" : active.role === "teacher" ? "Profesor" : "Observador"
+    : "Institución";
+  const initial = name.trim().charAt(0).toUpperCase() || "T";
+  return (
+    <div className="flex w-full items-center gap-3 rounded-md border border-[#e1e5ea] bg-white px-3 py-2 md:max-w-[345px]" aria-label={`Institución activa: ${name}`}>
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#07305f] text-sm font-bold text-white" aria-hidden="true">{initial}</span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold leading-tight text-[#111827]">{name}</span>
+        <span className="block text-[11px] leading-tight text-[#6b7280]">{roleLabel}</span>
+      </span>
+    </div>
   );
 }
 
