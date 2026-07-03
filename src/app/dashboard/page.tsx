@@ -120,6 +120,9 @@ export default async function DashboardPage() {
           </div>
         </div>
 
+        {/* SIMCE oficial — siempre visible en el tope del panel */}
+        <SimceHistorical simceData={simceData} rbd={school.rbd ?? null} />
+
         {/* OMR Results and SIMCE Comparison Section */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           
@@ -243,76 +246,6 @@ export default async function DashboardPage() {
                 )}
               />
             </div>
-
-            {/* SIMCE Historical Results */}
-            <div className="rounded-md border border-[#e6e8eb] bg-white p-4 md:p-5">
-              <h2 className="text-base font-semibold">Resultados Históricos SIMCE Oficiales (Establecimiento)</h2>
-              <p className="mt-1 text-xs text-[#5b6472]">
-                Historial de puntajes y niveles de logro para el RBD: <span className="font-mono font-bold text-[#07305f]">{school.rbd ?? "Sin configurar"}</span>
-              </p>
-              {school.rbd ? (
-                simceData.length > 0 ? (
-                  <>
-                    <div className="mt-4 hidden overflow-x-auto md:block">
-                    <table className="w-full text-left text-sm">
-                      <thead>
-                        <tr className="border-b border-[#eef0f3] text-xs font-semibold uppercase tracking-wider text-[#5b6472]">
-                          <th className="py-2 pr-2">Año</th>
-                          <th className="py-2 pr-2">Grado</th>
-                          <th className="py-2 pr-2">Asignatura</th>
-                          <th className="py-2 pr-2">Puntaje</th>
-                          <th className="py-2 pr-2 text-right">Niveles (Insuf. / Elem. / Adec.)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#eef0f3]">
-                        {simceData.map((row: any, idx: number) => (
-                          <tr key={idx} className="hover:bg-gray-50 text-xs">
-                            <td className="py-3 pr-2 font-semibold">{row.agno}</td>
-                            <td className="py-3 pr-2">{row.grado}</td>
-                            <td className="py-3 pr-2">{row.asignatura}</td>
-                            <td className="py-3 pr-2 font-bold text-[#07305f]">{row.puntaje_promedio} pts</td>
-                            <td className="py-3 pr-2 text-right font-mono text-[#4b5563]">
-                              {row.nivel_insuficiente_pct !== null ? `${Math.round(row.nivel_insuficiente_pct)}%` : "-"} /{" "}
-                              {row.nivel_elemental_pct !== null ? `${Math.round(row.nivel_elemental_pct)}%` : "-"} /{" "}
-                              {row.nivel_adecuado_pct !== null ? `${Math.round(row.nivel_adecuado_pct)}%` : "-"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="mt-4 grid gap-3 md:hidden">
-                    {simceData.map((row: any, idx: number) => (
-                      <article key={idx} className="rounded-md border border-[#e6e8eb] bg-white p-3 text-sm shadow-sm">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-[#111827]">{row.grado}</p>
-                            <p className="mt-1 text-xs text-[#5b6472]">{row.asignatura} · {row.agno}</p>
-                          </div>
-                          <p className="shrink-0 font-bold text-[#07305f]">{row.puntaje_promedio} pts</p>
-                        </div>
-                        <p className="mt-3 text-xs text-[#5b6472]">
-                          Niveles: {row.nivel_insuficiente_pct !== null ? `${Math.round(row.nivel_insuficiente_pct)}%` : "-"} / {row.nivel_elemental_pct !== null ? `${Math.round(row.nivel_elemental_pct)}%` : "-"} / {row.nivel_adecuado_pct !== null ? `${Math.round(row.nivel_adecuado_pct)}%` : "-"}
-                        </p>
-                      </article>
-                    ))}
-                  </div>
-                  </>
-                ) : (
-                  <p className="mt-4 text-xs text-[#5b6472] italic">No se encontraron registros del SIMCE históricos para este RBD en la base de datos.</p>
-                )
-              ) : (
-                <div className="mt-4 rounded-md bg-amber-50 p-4 text-xs text-amber-800">
-                  <p className="font-semibold">⚠️ RBD no configurado</p>
-                  <p className="mt-1">
-                    Para visualizar las estadísticas oficiales e históricas del SIMCE asociadas a tu colegio, por favor registra el RBD en la sección de{" "}
-                    <Link href="/dashboard/settings" className="underline font-bold">
-                      Configuración
-                    </Link>.
-                  </p>
-                </div>
-              )}
-            </div>
           </div>
 
           <div className="space-y-6">
@@ -339,5 +272,85 @@ function ProfileFact({ label, value }: { label: string; value: string }) {
       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7280]">{label}</p>
       <p className="mt-1 font-semibold text-[#111827]">{value}</p>
     </div>
+  );
+}
+
+function SimceHistorical({ simceData, rbd }: { simceData: any[]; rbd: string | null }) {
+  return (
+    <section className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm md:p-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-[#111827]">Resultados Históricos SIMCE Oficiales (Establecimiento)</h2>
+          <p className="mt-1 text-xs text-[#5b6472]">
+            Historial de puntajes y niveles de logro para el RBD: <span className="font-mono font-bold text-[#07305f]">{rbd ?? "Sin configurar"}</span>
+          </p>
+        </div>
+        <span className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full bg-[#eef4ff] px-3 py-1 text-xs font-semibold text-[#07305f]">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#22a05a]" /> SIMCE oficial
+        </span>
+      </div>
+      {rbd ? (
+        simceData.length > 0 ? (
+          <>
+            <div className="mt-4 hidden overflow-x-auto md:block">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-[#eef0f3] text-xs font-semibold uppercase tracking-wider text-[#5b6472]">
+                    <th className="py-2 pr-2">Año</th>
+                    <th className="py-2 pr-2">Grado</th>
+                    <th className="py-2 pr-2">Asignatura</th>
+                    <th className="py-2 pr-2">Puntaje</th>
+                    <th className="py-2 pr-2 text-right">Niveles (Insuf. / Elem. / Adec.)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#eef0f3]">
+                  {simceData.map((row: any, idx: number) => (
+                    <tr key={idx} className="text-xs hover:bg-gray-50">
+                      <td className="py-3 pr-2 font-semibold">{row.agno}</td>
+                      <td className="py-3 pr-2">{row.grado}</td>
+                      <td className="py-3 pr-2">{row.asignatura}</td>
+                      <td className="py-3 pr-2 font-bold text-[#07305f]">{row.puntaje_promedio} pts</td>
+                      <td className="py-3 pr-2 text-right font-mono text-[#4b5563]">
+                        {row.nivel_insuficiente_pct !== null ? `${Math.round(row.nivel_insuficiente_pct)}%` : "-"} /{" "}
+                        {row.nivel_elemental_pct !== null ? `${Math.round(row.nivel_elemental_pct)}%` : "-"} /{" "}
+                        {row.nivel_adecuado_pct !== null ? `${Math.round(row.nivel_adecuado_pct)}%` : "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4 grid gap-3 md:hidden">
+              {simceData.map((row: any, idx: number) => (
+                <article key={idx} className="rounded-md border border-[#e6e8eb] bg-white p-3 text-sm shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-[#111827]">{row.grado}</p>
+                      <p className="mt-1 text-xs text-[#5b6472]">{row.asignatura} · {row.agno}</p>
+                    </div>
+                    <p className="shrink-0 font-bold text-[#07305f]">{row.puntaje_promedio} pts</p>
+                  </div>
+                  <p className="mt-3 text-xs text-[#5b6472]">
+                    Niveles: {row.nivel_insuficiente_pct !== null ? `${Math.round(row.nivel_insuficiente_pct)}%` : "-"} / {row.nivel_elemental_pct !== null ? `${Math.round(row.nivel_elemental_pct)}%` : "-"} / {row.nivel_adecuado_pct !== null ? `${Math.round(row.nivel_adecuado_pct)}%` : "-"}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="mt-4 text-xs italic text-[#5b6472]">No se encontraron registros del SIMCE históricos para este RBD en la base de datos.</p>
+        )
+      ) : (
+        <div className="mt-4 rounded-md bg-amber-50 p-4 text-xs text-amber-800">
+          <p className="font-semibold">⚠️ RBD no configurado</p>
+          <p className="mt-1">
+            Para visualizar las estadísticas oficiales e históricas del SIMCE asociadas a tu colegio, por favor registra el RBD en la sección de{" "}
+            <Link href="/dashboard/settings" className="font-bold underline">
+              Configuración
+            </Link>.
+          </p>
+        </div>
+      )}
+    </section>
   );
 }
