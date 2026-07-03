@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { findCorners, gradeBubbles, readRut, readSheetCode, warpSheet, cropNameBox, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
-import { isNativeApp, captureNativePhoto } from "@/lib/native/capacitor";
+import { isNativeApp, captureNativePhoto, toggleTorch } from "@/lib/native/capacitor";
 import { enqueueScan, getQueueSize } from "@/lib/offline_queue";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H, rutColX, rutRowY, RUT_COLS, RUT_ROWS, RUT_R, questionLayout } from "@/lib/sheet_layout";
@@ -169,8 +169,9 @@ export default function ScanPage() {
  const [activeQuizId, setActiveQuizId] = useState<string | null>(null);
  const [activeSheetCode, setActiveSheetCode] = useState<number | null>(null);
  const [sheetWarn, setSheetWarn] = useState<string | null>(null);
- const [syncState, setSyncState] = useState<ScanSyncState>("idle");
- const [syncMessage, setSyncMessage] = useState("");
+  const [syncState, setSyncState] = useState<ScanSyncState>("idle");
+  const [syncMessage, setSyncMessage] = useState("");
+  const [torchOn, setTorchOn] = useState(false);
 
  useEffect(() => { let a = true; Promise.resolve().then(() => { if (a) setNative(isNativeApp()); }); return () => { a = false; }; }, []);
 
@@ -731,10 +732,15 @@ export default function ScanPage() {
  };
 
  // Cámara NATIVA (APK): foto de alta resolución → mismo pipeline.
- const onNativeCapture = async () => {
-  const dataUrl = await captureNativePhoto();
-  if (dataUrl) await processImageSrc(dataUrl);
- };
+  const onNativeCapture = async () => {
+   const dataUrl = await captureNativePhoto();
+   if (dataUrl) await processImageSrc(dataUrl);
+  };
+
+  const handleTorchToggle = async () => {
+   const next = await toggleTorch(stream, torchOn);
+   setTorchOn(next);
+  };
 
  // Fallback corner finder with relaxed thresholds
  function tryRelaxedCorners(imageData: ImageData): [number, number][] | null {
@@ -802,9 +808,34 @@ export default function ScanPage() {
    const sharpScore = isFrameSharp(frame);
    const sharp = sharpScore > 40;
 
-   octx.clearRect(0, 0, overlay.width, overlay.height);
+    octx.clearRect(0, 0, overlay.width, overlay.height);
 
-   if (corners && sharp) {
+    // Guía de encuadre (siempre visible, orienta al usuario)
+    const guideRatio = SHEET_W / SHEET_H;
+    const guideW = overlay.width * 0.82;
+    const guideH = guideW / guideRatio;
+    const guideX = (overlay.width - guideW) / 2;
+    const guideY = (overlay.height - guideH) / 2;
+    octx.strokeStyle = "rgba(255,255,255,0.12)";
+    octx.lineWidth = 1;
+    octx.setLineDash([6, 4]);
+    octx.strokeRect(guideX, guideY, guideW, guideH);
+    octx.setLineDash([]);
+    // Esquinas decorativas del encuadre
+    const cl = 24;
+    octx.strokeStyle = "rgba(255,255,255,0.2)";
+    octx.lineWidth = 2;
+    for (const [cx, cy] of [[guideX, guideY], [guideX + guideW, guideY], [guideX + guideW, guideY + guideH], [guideX, guideY + guideH]]) {
+     const dx = cx === guideX ? 1 : -1;
+     const dy = cy === guideY ? 1 : -1;
+     octx.beginPath();
+     octx.moveTo(cx, cy + dy * cl);
+     octx.lineTo(cx, cy);
+     octx.lineTo(cx + dx * cl, cy);
+     octx.stroke();
+    }
+
+    if (corners && sharp) {
     goodFrameCount.current++;
     badFrameCount.current = 0;
     const [tl, tr, br, bl] = corners;
@@ -940,6 +971,18 @@ export default function ScanPage() {
      className="hidden"
     />
     <div className="absolute bottom-8 left-0 right-0 flex items-center justify-center gap-8 z-20">
+     {/* Flash / Torch */}
+     {stream && (
+      <button
+       onClick={handleTorchToggle}
+       className="absolute left-20 flex flex-col items-center gap-1 text-white/80 hover:text-white transition"
+      >
+       <span className={`w-12 h-12 rounded-2xl border flex items-center justify-center text-xl ${torchOn ? "border-amber-400/60 bg-amber-500/20 text-amber-300" : "border-white/40 bg-black/40 backdrop-blur text-white/60"}`}>
+        {torchOn ? "⚡" : "💡"}
+       </span>
+       <span className="text-[9px] font-bold uppercase tracking-wider">{torchOn ? "Apagar" : "Flash"}</span>
+      </button>
+     )}
      {/* Cámara NATIVA (APK): foto de alta resolución (espejo del "Subir foto") */}
      {native && (
       <button

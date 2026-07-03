@@ -86,6 +86,25 @@ export async function shareNativeImage(dataUrl: string, title: string): Promise<
 }
 
 /**
+ * Activa/desactiva la linterna (torch) si el dispositivo la soporta.
+ * Usa applyConstraints sobre el track de video; funciona en Android WebView
+ * (Chrome >=59). Retorna el nuevo estado (true=encendido).
+ */
+export async function toggleTorch(stream: MediaStream | null, current: boolean): Promise<boolean> {
+  if (!stream) return false;
+  const track = stream.getVideoTracks()[0];
+  if (!track) return false;
+  try {
+    await track.applyConstraints({
+      advanced: [{ torch: !current } as unknown as MediaTrackConstraintSet],
+    });
+    return !current;
+  } catch {
+    return current;
+  }
+}
+
+/**
  * Ajusta el "chrome" nativo al arrancar: marca <html> con `cap-native` (CSS que
  * mata el olor a web) y configura la status bar si el plugin existe.
  */
