@@ -283,6 +283,12 @@ export default function ScanPage() {
    const scoreLabel = `${payload.score ?? "-"}/${payload.total ?? config.numQuestions}`;
    // Aviso de cuota (tope suave): se informa junto al resultado, sin bloquear.
    const quotaNote = payload.quota?.warning ? ` ⚠ ${payload.quota.warning}` : "";
+   const sheetMismatch = payload.sheetMismatch;
+   if (sheetMismatch && typeof sheetMismatch.read === "number" && typeof sheetMismatch.expected === "number") {
+    setSyncState("review");
+    setSyncMessage(`Hoja de otro ensayo (codigo ${sheetMismatch.read}, esperado ${sheetMismatch.expected}) -> guardado para revision (${scoreLabel}).${quotaNote}`);
+    return;
+   }
    if (payload.status === "manual_review") {
     setSyncState("review");
     setSyncMessage(`Guardado para revision (${scoreLabel}). ${payload.studentCode ? "Alumno sin identificar." : "RUT no detectado."}${quotaNote}`);

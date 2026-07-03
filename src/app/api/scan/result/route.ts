@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { calculateGrade } from "@/lib/latam";
 import { canonicalRut, normalizeRut } from "@/lib/rut";
+import { isMissingColumnError } from "@/lib/supabase_errors";
 
 type ScanAnswer = {
   q: number;
@@ -60,6 +61,13 @@ function trimDataUrl(value: string | null | undefined) {
   if (!value || typeof value !== "string") return null;
   if (!value.startsWith("data:image/")) return null;
   return value.length <= 750_000 ? value : null;
+}
+
+function readSheetId(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const raw = (value as { sheetId?: unknown }).sheetId;
+  const sheetId = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+  return Number.isInteger(sheetId) && sheetId >= 0 ? sheetId : null;
 }
 
 async function findStudentByCode(
@@ -148,13 +156,25 @@ export async function POST(request: Request) {
 
     const { supabase, user, school } = await getDashboardContext();
 
-    const { data: quiz, error: quizError } = await supabase
+    let quizResult = await supabase
       .from("quizzes")
-      .select("id,school_id,title,answer_key,num_questions,evaluation_type,evaluation_variant")
+      .select("id,school_id,title,answer_key,num_questions,evaluation_type,evaluation_variant,sheet_code")
       .eq("id", quizId)
       .eq("school_id", school.id)
       .is("archived_at", null)
       .single();
+
+    if (quizResult.error && isMissingColumnError(quizResult.error, "sheet_code")) {
+      quizResult = await supabase
+        .from("quizzes")
+        .select("id,school_id,title,answer_key,num_questions,evaluation_type,evaluation_variant")
+        .eq("id", quizId)
+        .eq("school_id", school.id)
+        .is("archived_at", null)
+        .single();
+    }
+
+    const { data: quiz, error: quizError } = quizResult;
 
     if (quizError || !quiz) return NextResponse.json({ error: "Ensayo no disponible" }, { status: 404 });
 
@@ -179,6 +199,9 @@ export async function POST(request: Request) {
       exigencia: school.exigencia ?? 0.60,
     });
     const eqScore = equivalentScore(quiz.evaluation_type, score, total);
+    const sheetIdRead = readSheetId(payload.code);
+    const expectedSheetCode = typeof quiz.sheet_code === "number" ? quiz.sheet_code : null;
+    const sheetMismatch = sheetIdRead !== null && expectedSheetCode !== null && sheetIdRead !== expectedSheetCode;
 
     let studentName: string | null = null;
     let matchedStudent = false;
@@ -191,9 +214,9 @@ export async function POST(request: Request) {
       }
     }
 
-    const status = studentCode && matchedStudent ? "corrected" : "manual_review";
+    const status = sheetMismatch || !studentCode || !matchedStudent ? "manual_review" : "corrected";
     const scannedAt = new Date().toISOString();
-    const paperPayload = {
+    const paperPayloadWithoutSheetCode = {
       school_id: school.id,
       quiz_id: quiz.id,
       user_id: user.id,
@@ -212,6 +235,10 @@ export async function POST(request: Request) {
       scanned_at: scannedAt,
       corrected_answers: [],
     };
+    const paperPayload = {
+      ...paperPayloadWithoutSheetCode,
+      sheet_code_read: sheetIdRead,
+    };
 
     let paperId: string | null = null;
     let action: "inserted" | "updated" = "inserted";
@@ -220,12 +247,23 @@ export async function POST(request: Request) {
       const existing = await findExistingPaper(supabase, school.id, quiz.id, studentRutNorm, candidateCodes);
 
       if (existing?.id) {
-        const { data: updated, error: updateError } = await supabase
+        let updateResult = await supabase
           .from("papers")
           .update(paperPayload)
           .eq("id", existing.id)
           .select("id")
           .single();
+
+        if (updateResult.error && isMissingColumnError(updateResult.error, "sheet_code_read")) {
+          updateResult = await supabase
+            .from("papers")
+            .update(paperPayloadWithoutSheetCode)
+            .eq("id", existing.id)
+            .select("id")
+            .single();
+        }
+
+        const { data: updated, error: updateError } = updateResult;
         if (updateError) throw updateError;
         paperId = updated.id;
         action = "updated";
@@ -233,17 +271,28 @@ export async function POST(request: Request) {
     }
 
     if (!paperId) {
-      const { data: inserted, error: insertError } = await supabase
+      let insertResult = await supabase
         .from("papers")
         .insert(paperPayload)
         .select("id")
         .single();
+
+      if (insertResult.error && isMissingColumnError(insertResult.error, "sheet_code_read")) {
+        insertResult = await supabase
+          .from("papers")
+          .insert(paperPayloadWithoutSheetCode)
+          .select("id")
+          .single();
+      }
+
+      const { data: inserted, error: insertError } = insertResult;
       if (insertError) throw insertError;
       paperId = inserted.id;
     }
 
     const studentRecordCode = studentRutNorm ?? legacyStudentCode;
-    if (studentRecordCode) {
+    // Una hoja de otro ensayo queda en revision y no debe convertirse en nota valida.
+    if (studentRecordCode && !sheetMismatch) {
       await supabase.from("grade_records").upsert({
         school_id: school.id,
         student_code: studentRecordCode,
@@ -286,6 +335,7 @@ export async function POST(request: Request) {
       total,
       grade: gradeResult.grade,
       equivalentScore: eqScore,
+      sheetMismatch: sheetMismatch ? { read: sheetIdRead, expected: expectedSheetCode } : undefined,
       quota,
     });
   } catch (error) {
