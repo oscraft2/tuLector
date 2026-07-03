@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
 import { getDashboardContext } from "@/lib/supabase_server";
+import { canonicalRut } from "@/lib/rut";
 
 export const dynamic = "force-dynamic";
+
+type StudentSearchRow = {
+  id: string;
+  name: string | null;
+  rut: string | null;
+  student_id: string | null;
+  course: string | null;
+};
 
 // Búsqueda global del header: alumnos (nombre / RUT / ID) y ensayos (título),
 // acotada al colegio activo. Se llama desde GlobalSearch con debounce.
@@ -15,13 +24,16 @@ export async function GET(request: Request) {
   try {
     const { supabase, school } = await getDashboardContext();
     const like = `%${q}%`;
+    const rutNorm = canonicalRut(raw);
+    const studentFilters = [`name.ilike.${like}`, `rut.ilike.${like}`, `student_id.ilike.${like}`];
+    if (rutNorm) studentFilters.push(`rut_normalized.eq.${rutNorm}`);
 
     const [studentsRes, quizzesRes, coursesRes] = await Promise.all([
       supabase
         .from("students")
         .select("id, name, rut, student_id, course")
         .eq("school_id", school.id)
-        .or(`name.ilike.${like},rut.ilike.${like},student_id.ilike.${like}`)
+        .or(studentFilters.join(","))
         .order("name")
         .limit(6),
       supabase
@@ -40,7 +52,7 @@ export async function GET(request: Request) {
       if (c?.name) courseMap.set(String(c.name), String(c.id));
     }
 
-    const students = (studentsRes.data ?? []).map((s: any) => ({
+    const students = ((studentsRes.data ?? []) as StudentSearchRow[]).map((s) => ({
       id: s.id,
       name: s.name,
       rut: s.rut ?? null,

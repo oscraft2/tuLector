@@ -3,10 +3,39 @@ import { notFound } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { calculateGrade } from "@/lib/latam";
 import { PrintButton } from "@/components/dashboard/PrintButton";
+import { canonicalRut } from "@/lib/rut";
+import { computeAxisMastery, type AxisStat } from "@/lib/item_analysis";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = { params: Promise<{ id: string }> };
+
+type StudentQuiz = {
+  id: string | null;
+  title: string | null;
+  subject: string | null;
+  grade: string | null;
+  num_questions: number | null;
+  options_per_question: number | null;
+  answer_key: string | null;
+  evaluation_type: string | null;
+};
+
+type StudentPaper = {
+  id: string;
+  quiz_id: string | null;
+  student_rut_norm: string | null;
+  score: number | null;
+  total: number | null;
+  grade: string | number | null;
+  equivalent_score: number | null;
+  scanned_at: string | null;
+  status: string | null;
+  answers: unknown;
+  quizzes: StudentQuiz | null;
+};
+
+type StudentMetadata = { quiz_id: string; question_number: number; axis_name: string | null; skill_name: string | null };
 
 const NOTA = (score: number, total: number) => (total > 0 ? calculateGrade(score, total).grade : 0);
 
@@ -18,27 +47,75 @@ function notaColor(n: number) {
 
 export default async function StudentProfilePage({ params }: PageProps) {
   const { id } = await params;
-  const { supabase } = await getDashboardContext();
+  const { supabase, school } = await getDashboardContext();
 
   const { data: student } = await supabase
     .from("students")
-    .select("id, name, rut, student_id, course, created_at")
+    .select("id, name, rut, rut_normalized, student_id, course, created_at")
     .eq("id", id)
+    .eq("school_id", school.id)
     .single();
   if (!student) notFound();
 
+  const paperSelect = "id, quiz_id, student_rut_norm, score, total, grade, equivalent_score, scanned_at, status, answers, quizzes(id, title, subject, grade, num_questions, options_per_question, answer_key, evaluation_type)";
+  const studentRutNorm = student.rut_normalized ?? canonicalRut(student.rut) ?? canonicalRut(student.student_id);
   const codes = [student.rut, student.student_id].filter(Boolean) as string[];
-  const { data: papersRaw } = codes.length
-    ? await supabase
+  const paperQueries = [];
+  if (studentRutNorm) {
+    paperQueries.push(
+      supabase
         .from("papers")
-        .select("id, quiz_id, score, total, grade, equivalent_score, scanned_at, status, quizzes(id, title, subject, grade, num_questions, evaluation_type)")
+        .select(paperSelect)
+        .eq("school_id", school.id)
+        .eq("student_rut_norm", studentRutNorm)
+        .order("scanned_at", { ascending: true }),
+    );
+  }
+  if (codes.length) {
+    paperQueries.push(
+      supabase
+        .from("papers")
+        .select(paperSelect)
+        .eq("school_id", school.id)
         .in("student_id", codes)
-        .order("scanned_at", { ascending: true })
-    : { data: [] as any[] };
+        .order("scanned_at", { ascending: true }),
+    );
+  }
 
-  const papers = (papersRaw ?? []).filter((p: any) => Number(p.total ?? p.quizzes?.num_questions ?? 0) > 0);
+  const paperResults = paperQueries.length ? await Promise.all(paperQueries) : [];
+  const papersById = new Map<string, StudentPaper>();
+  for (const result of paperResults) {
+    for (const paper of (result.data ?? []) as unknown as StudentPaper[]) papersById.set(String(paper.id), paper);
+  }
+  const papersRaw = [...papersById.values()].sort((a, b) => new Date(a.scanned_at ?? 0).getTime() - new Date(b.scanned_at ?? 0).getTime());
 
-  const rows = papers.map((p: any) => {
+  const papers = (papersRaw ?? []).filter((p) => Number(p.total ?? p.quizzes?.num_questions ?? 0) > 0);
+  const quizIds = [...new Set(papers.map((p) => p.quizzes?.id ?? p.quiz_id).filter((quizId): quizId is string => Boolean(quizId)))];
+  const { data: metadataRaw } = quizIds.length
+    ? await supabase
+        .from("question_metadata")
+        .select("quiz_id, question_number, axis_name, skill_name")
+        .in("quiz_id", quizIds)
+    : { data: [] as StudentMetadata[] };
+  const metadataByQuiz = new Map<string, Array<{ question_number: number; axis_name: string | null; skill_name: string | null }>>();
+  for (const meta of (metadataRaw ?? []) as StudentMetadata[]) {
+    const quizId = String(meta.quiz_id);
+    const rows = metadataByQuiz.get(quizId) ?? [];
+    rows.push({ question_number: Number(meta.question_number), axis_name: meta.axis_name ?? null, skill_name: meta.skill_name ?? null });
+    metadataByQuiz.set(quizId, rows);
+  }
+  const axisMastery = computeAxisMastery(papers.map((p) => {
+    const quiz = p.quizzes;
+    const quizId = quiz?.id ?? p.quiz_id ?? "";
+    return {
+      answers: p.answers,
+      answerKey: quiz?.answer_key ?? null,
+      numQuestions: quiz?.num_questions ?? p.total ?? 0,
+      metadata: metadataByQuiz.get(quizId) ?? [],
+    };
+  }));
+
+  const rows = papers.map((p) => {
     const total = Number(p.total ?? p.quizzes?.num_questions ?? 0);
     const score = Number(p.score ?? 0);
     const pct = total > 0 ? Math.round((score / total) * 100) : 0;
@@ -52,7 +129,7 @@ export default async function StudentProfilePage({ params }: PageProps) {
       grade: p.quizzes?.grade ?? null,
       evalType: p.quizzes?.evaluation_type ?? null,
       score, total, pct, nota,
-      date: p.scanned_at,
+      date: p.scanned_at ?? new Date(0).toISOString(),
     };
   });
 
@@ -134,6 +211,8 @@ export default async function StudentProfilePage({ params }: PageProps) {
             </div>
           </section>
 
+          <AxisMasterySection axes={axisMastery} />
+
           {/* Historial */}
           <section className="mt-4 rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
             <h2 className="text-base font-semibold text-[#111827]">Historial académico</h2>
@@ -193,5 +272,36 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: 
       <p className={`mt-1.5 text-2xl font-bold tracking-tight ${color}`}>{value}</p>
       {sub ? <p className="mt-1 truncate text-[11px] text-[#9aa3af]">{sub}</p> : null}
     </div>
+  );
+}
+
+const AXIS_LVL = {
+  good: { text: "text-[#1a8f52]", bar: "bg-[#1a8f52]" },
+  warn: { text: "text-[#c77700]", bar: "bg-[#c77700]" },
+  bad: { text: "text-[#c2410c]", bar: "bg-[#c2410c]" },
+} as const;
+
+function AxisMasterySection({ axes }: { axes: AxisStat[] }) {
+  return (
+    <section className="mt-4 rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
+      <h2 className="text-base font-semibold text-[#111827]">Fortalezas y debilidades por eje</h2>
+      <p className="mt-1 text-xs text-[#5b6472]">Consolidado entre todos los ensayos rendidos por el alumno.</p>
+      {axes.length > 0 ? (
+        <div className="mt-4 flex flex-col gap-3">
+          {axes.map((axis) => (
+            <div key={axis.axis} className="grid grid-cols-[minmax(110px,180px)_minmax(0,1fr)_48px] items-center gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-[12.5px] font-semibold text-[#111827]" title={axis.axis}>{axis.axis}</div>
+                <div className="text-[10.5px] text-[#9aa3af]">{axis.count} respuesta{axis.count === 1 ? "" : "s"}</div>
+              </div>
+              <div className="h-4 overflow-hidden rounded-full bg-[#eef0f3]"><div className={`h-full rounded-full ${AXIS_LVL[axis.level].bar}`} style={{ width: `${axis.pct}%` }} /></div>
+              <div className={`text-right text-[13px] font-bold ${AXIS_LVL[axis.level].text}`}>{axis.pct}%</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-4 rounded-lg bg-[#f8fafc] px-4 py-5 text-center text-xs text-[#6b7280]">Aún no hay metadatos curriculares por pregunta para consolidar fortalezas y debilidades.</p>
+      )}
+    </section>
   );
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { calculateGrade } from "@/lib/latam";
-import { normalizeRut } from "@/lib/rut";
+import { canonicalRut, normalizeRut } from "@/lib/rut";
 
 type ScanAnswer = {
   q: number;
@@ -19,6 +19,14 @@ type ScanResultPayload = {
   dvOk?: boolean;
   code?: unknown;
   nameImg?: string | null;
+};
+
+type StudentMatch = {
+  id: string;
+  student_id: string | null;
+  rut: string | null;
+  rut_normalized: string | null;
+  name: string | null;
 };
 
 function normalizeAnswers(value: unknown): ScanAnswer[] {
@@ -54,6 +62,80 @@ function trimDataUrl(value: string | null | undefined) {
   return value.length <= 750_000 ? value : null;
 }
 
+async function findStudentByCode(
+  supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"],
+  schoolId: string,
+  studentRutNorm: string | null,
+  candidateCodes: string[],
+) {
+  if (studentRutNorm) {
+    const { data, error } = await supabase
+      .from("students")
+      .select("id,student_id,rut,rut_normalized,name")
+      .eq("school_id", schoolId)
+      .eq("rut_normalized", studentRutNorm)
+      .maybeSingle();
+    if (error) throw error;
+    if (data) return data as StudentMatch;
+  }
+
+  for (const code of candidateCodes) {
+    const { data: byStudentId, error: studentIdError } = await supabase
+      .from("students")
+      .select("id,student_id,rut,rut_normalized,name")
+      .eq("school_id", schoolId)
+      .eq("student_id", code)
+      .maybeSingle();
+    if (studentIdError) throw studentIdError;
+    if (byStudentId) return byStudentId as StudentMatch;
+
+    const { data: byRut, error: rutError } = await supabase
+      .from("students")
+      .select("id,student_id,rut,rut_normalized,name")
+      .eq("school_id", schoolId)
+      .eq("rut", code)
+      .maybeSingle();
+    if (rutError) throw rutError;
+    if (byRut) return byRut as StudentMatch;
+  }
+
+  return null;
+}
+
+async function findExistingPaper(
+  supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"],
+  schoolId: string,
+  quizId: string,
+  studentRutNorm: string | null,
+  candidateCodes: string[],
+) {
+  if (studentRutNorm) {
+    const { data, error } = await supabase
+      .from("papers")
+      .select("id")
+      .eq("school_id", schoolId)
+      .eq("quiz_id", quizId)
+      .eq("student_rut_norm", studentRutNorm)
+      .maybeSingle();
+    if (error) throw error;
+    if (data?.id) return data;
+  }
+
+  for (const code of candidateCodes) {
+    const { data, error } = await supabase
+      .from("papers")
+      .select("id")
+      .eq("school_id", schoolId)
+      .eq("quiz_id", quizId)
+      .eq("student_id", code)
+      .maybeSingle();
+    if (error) throw error;
+    if (data?.id) return data;
+  }
+
+  return null;
+}
+
 export async function POST(request: Request) {
   try {
     const payload = (await request.json().catch(() => null)) as ScanResultPayload | null;
@@ -83,7 +165,10 @@ export async function POST(request: Request) {
     }, 0);
 
     const rawRut = String(payload.rut ?? "").trim();
-    const studentCode = rawRut ? normalizeRut(rawRut) : "";
+    const studentCode = rawRut;
+    const legacyStudentCode = rawRut ? normalizeRut(rawRut) : "";
+    const studentRutNorm = canonicalRut(rawRut);
+    const candidateCodes = Array.from(new Set([studentCode, legacyStudentCode].filter(Boolean)));
     const countryCode = school.country_code ?? "CL";
     const gradeResult = calculateGrade(score, total, countryCode, {
       gradeScale: {
@@ -99,13 +184,7 @@ export async function POST(request: Request) {
     let matchedStudent = false;
 
     if (studentCode) {
-      const { data: student } = await supabase
-        .from("students")
-        .select("student_id,name")
-        .eq("school_id", school.id)
-        .or(`student_id.eq.${studentCode},rut.eq.${studentCode}`)
-        .maybeSingle();
-
+      const student = await findStudentByCode(supabase, school.id, studentRutNorm, candidateCodes);
       if (student) {
         matchedStudent = true;
         studentName = student.name ?? null;
@@ -119,6 +198,7 @@ export async function POST(request: Request) {
       quiz_id: quiz.id,
       user_id: user.id,
       student_id: studentCode || null,
+      student_rut_norm: studentRutNorm,
       student_name: studentName ?? (studentCode ? "Sin identificar" : "Sin RUT"),
       score,
       total,
@@ -137,13 +217,7 @@ export async function POST(request: Request) {
     let action: "inserted" | "updated" = "inserted";
 
     if (studentCode) {
-      const { data: existing } = await supabase
-        .from("papers")
-        .select("id")
-        .eq("school_id", school.id)
-        .eq("quiz_id", quiz.id)
-        .eq("student_id", studentCode)
-        .maybeSingle();
+      const existing = await findExistingPaper(supabase, school.id, quiz.id, studentRutNorm, candidateCodes);
 
       if (existing?.id) {
         const { data: updated, error: updateError } = await supabase
@@ -168,10 +242,11 @@ export async function POST(request: Request) {
       paperId = inserted.id;
     }
 
-    if (studentCode) {
+    const studentRecordCode = studentRutNorm ?? legacyStudentCode;
+    if (studentRecordCode) {
       await supabase.from("grade_records").upsert({
         school_id: school.id,
-        student_code: studentCode,
+        student_code: studentRecordCode,
         quiz_id: quiz.id,
         paper_id: paperId,
         raw_score: score,
@@ -190,6 +265,7 @@ export async function POST(request: Request) {
       matchedStudent,
       studentName,
       studentCode: studentCode || null,
+      studentRutNorm,
       score,
       total,
       grade: gradeResult.grade,

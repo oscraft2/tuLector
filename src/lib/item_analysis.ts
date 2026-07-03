@@ -17,6 +17,13 @@ export type ItemStat = {
 
 export type AxisStat = { axis: string; pct: number; count: number; level: "good" | "warn" | "bad" };
 
+export type AxisMasteryPaper = {
+  answers: unknown;
+  answerKey: string | null | undefined;
+  numQuestions: number | null | undefined;
+  metadata: MetaRow[];
+};
+
 export type ItemAnalysis = {
   items: ItemStat[];
   axes: AxisStat[];
@@ -116,4 +123,45 @@ export function computeItemAnalysis(
     .sort((a, b) => a.pct - b.pct);
 
   return { items, axes, totalPapers, hasMetadata: metaByQ.size > 0 };
+}
+
+export function computeAxisMastery(papers: AxisMasteryPaper[]): AxisStat[] {
+  const axisMap: Record<string, { correct: number; total: number }> = {};
+
+  for (const paper of papers) {
+    const key = String(paper.answerKey ?? "").replace(/[^A-Za-z]/g, "").toUpperCase();
+    const nQ = Math.max(0, Number(paper.numQuestions) || key.length || 0);
+    if (!key || nQ <= 0) continue;
+
+    const answerByQ = new Map<number, string>();
+    const answers = Array.isArray(paper.answers) ? (paper.answers as Array<{ q?: unknown; a?: unknown }>) : [];
+    for (const answer of answers) {
+      const q = Number(answer?.q);
+      if (!Number.isInteger(q) || q < 1 || q > nQ) continue;
+      answerByQ.set(q, String(answer?.a ?? "-").trim().toUpperCase());
+    }
+
+    const metaByQ = new Map<number, string>();
+    for (const meta of paper.metadata ?? []) {
+      const axis = meta.axis_name?.trim();
+      if (!axis) continue;
+      metaByQ.set(Number(meta.question_number), axis);
+    }
+
+    for (let q = 1; q <= nQ; q++) {
+      const axis = metaByQ.get(q);
+      const correct = key[q - 1];
+      if (!axis || !correct) continue;
+      if (!axisMap[axis]) axisMap[axis] = { correct: 0, total: 0 };
+      axisMap[axis].total += 1;
+      if (answerByQ.get(q) === correct) axisMap[axis].correct += 1;
+    }
+  }
+
+  return Object.entries(axisMap)
+    .map(([axis, stat]) => {
+      const pct = stat.total > 0 ? Math.round((stat.correct / stat.total) * 100) : 0;
+      return { axis, pct, count: stat.total, level: levelOf(pct) };
+    })
+    .sort((a, b) => a.pct - b.pct || a.axis.localeCompare(b.axis));
 }

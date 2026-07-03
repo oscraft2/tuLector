@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { parse } from "csv-parse/sync";
 import { getDashboardContext } from "@/lib/supabase_server";
-import { validateRut, normalizeRut } from "@/lib/rut";
+import { canonicalRut, validateRut, normalizeRut } from "@/lib/rut";
 import {
   QUIZ_ALLOWED_OPTIONS,
   QUIZ_MAX_QUESTIONS,
@@ -165,6 +165,7 @@ type StudentPayload = {
   user_id: string;
   student_id: string;
   rut: string;
+  rut_normalized: string | null;
   name: string;
   course: string | null;
   updated_at: string;
@@ -174,14 +175,27 @@ async function saveStudentWithoutConstraint(
   supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"],
   payload: StudentPayload
 ) {
-  const { data: existing, error: findError } = await supabase
-    .from("students")
-    .select("id")
-    .eq("school_id", payload.school_id)
-    .eq("student_id", payload.student_id)
-    .maybeSingle();
+  const { data: existingByRut, error: rutFindError } = payload.rut_normalized
+    ? await supabase
+        .from("students")
+        .select("id")
+        .eq("school_id", payload.school_id)
+        .eq("rut_normalized", payload.rut_normalized)
+        .maybeSingle()
+    : { data: null, error: null };
+  if (rutFindError) throw new Error(rutFindError.message);
+
+  const { data: existingByStudentId, error: findError } = existingByRut?.id
+    ? { data: null, error: null }
+    : await supabase
+        .from("students")
+        .select("id")
+        .eq("school_id", payload.school_id)
+        .eq("student_id", payload.student_id)
+        .maybeSingle();
 
   if (findError) throw new Error(findError.message);
+  const existing = existingByRut ?? existingByStudentId;
 
   if (existing?.id) {
     const { error } = await supabase
@@ -189,6 +203,7 @@ async function saveStudentWithoutConstraint(
       .update({
         user_id: payload.user_id,
         rut: payload.rut,
+        rut_normalized: payload.rut_normalized,
         name: payload.name,
         course: payload.course,
         updated_at: payload.updated_at,
@@ -305,12 +320,14 @@ export async function importStudents(_prevState: DashboardActionState, formData:
       if (!row.rut || !row.name || !validateRut(row.rut)) return null;
       const course = row.course;
       if (course && row.grade && !courseGrades.has(course)) courseGrades.set(course, row.grade);
+      const normalized = normalizeRut(row.rut);
 
       return {
         school_id: school.id,
         user_id: user.id,
-        student_id: normalizeRut(row.rut),
-        rut: normalizeRut(row.rut),
+        student_id: normalized,
+        rut: normalized,
+        rut_normalized: canonicalRut(row.rut),
         name: row.name,
         course,
         updated_at: new Date().toISOString(),
@@ -585,6 +602,7 @@ export async function createStudent(_prevState: DashboardActionState, formData: 
     if (!validateRut(rut)) throw new Error("El RUT chileno ingresado no es valido.");
 
     const normalized = normalizeRut(rut);
+    const rutNormalized = canonicalRut(rut);
 
     // Asegura que el curso exista en el catalogo (por si vino de texto libre).
     await findOrCreateCourse(supabase, school.id, course);
@@ -594,6 +612,7 @@ export async function createStudent(_prevState: DashboardActionState, formData: 
       user_id: user.id,
       student_id: normalized,
       rut: normalized,
+      rut_normalized: rutNormalized,
       name,
       course,
       updated_at: new Date().toISOString(),
@@ -617,12 +636,14 @@ async function assignPaperToStudent(
   school: DashboardSchool,
   paperId: string,
   studentCode: string,
-  studentName: string
+  studentName: string,
+  studentRutNorm: string | null
 ) {
   const { data: paper, error } = await supabase
     .from("papers")
     .update({
       student_id: studentCode,
+      student_rut_norm: studentRutNorm,
       student_name: studentName,
       status: "corrected",
     })
@@ -643,7 +664,7 @@ async function assignPaperToStudent(
 
   await supabase.from("grade_records").upsert({
     school_id: school.id,
-    student_code: studentCode,
+    student_code: studentRutNorm ?? normalizeRut(studentCode),
     quiz_id: paper.quiz_id,
     paper_id: paper.id,
     raw_score: paper.score,
@@ -661,16 +682,39 @@ export async function assignPaperStudent(formData: FormData) {
   const paperId = String(formData.get("paper_id") ?? "").trim();
   const studentCode = String(formData.get("student_id") ?? "").trim();
   if (!paperId || !studentCode) throw new Error("Faltan datos para asignar el alumno.");
+  const studentRutNorm = canonicalRut(studentCode);
 
-  const { data: student } = await supabase
-    .from("students")
-    .select("student_id,name")
-    .eq("school_id", school.id)
-    .or(`student_id.eq.${studentCode},rut.eq.${studentCode}`)
-    .maybeSingle();
+  const { data: studentByRut } = studentRutNorm
+    ? await supabase
+        .from("students")
+        .select("student_id,rut,rut_normalized,name")
+        .eq("school_id", school.id)
+        .eq("rut_normalized", studentRutNorm)
+        .maybeSingle()
+    : { data: null };
+
+  const { data: studentById } = studentByRut
+    ? { data: null }
+    : await supabase
+        .from("students")
+        .select("student_id,rut,rut_normalized,name")
+        .eq("school_id", school.id)
+        .eq("student_id", studentCode)
+        .maybeSingle();
+
+  const { data: studentByRawRut } = studentByRut || studentById
+    ? { data: null }
+    : await supabase
+        .from("students")
+        .select("student_id,rut,rut_normalized,name")
+        .eq("school_id", school.id)
+        .eq("rut", studentCode)
+        .maybeSingle();
+  const student = studentByRut ?? studentById ?? studentByRawRut;
   if (!student) throw new Error("Alumno no encontrado.");
 
-  const quizId = await assignPaperToStudent(supabase, school, paperId, studentCode, student.name);
+  const paperStudentCode = student.rut ?? student.student_id ?? studentCode;
+  const quizId = await assignPaperToStudent(supabase, school, paperId, paperStudentCode, student.name, student.rut_normalized ?? canonicalRut(paperStudentCode));
 
   revalidatePath("/dashboard/papers");
   revalidatePath(`/dashboard/papers/${paperId}`);
@@ -688,18 +732,20 @@ export async function createStudentAndAssignPaper(formData: FormData) {
   if (!validateRut(rut)) throw new Error("El RUT chileno ingresado no es válido.");
 
   const normalized = normalizeRut(rut);
+  const rutNormalized = canonicalRut(rut);
 
   await saveStudentWithoutConstraint(supabase, {
     school_id: school.id,
     user_id: user.id,
     student_id: normalized,
     rut: normalized,
+    rut_normalized: rutNormalized,
     name,
     course,
     updated_at: new Date().toISOString(),
   });
 
-  const quizId = await assignPaperToStudent(supabase, school, paperId, normalized, name);
+  const quizId = await assignPaperToStudent(supabase, school, paperId, normalized, name, rutNormalized);
 
   revalidatePath("/dashboard/students");
   revalidatePath("/dashboard/papers");

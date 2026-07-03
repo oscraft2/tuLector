@@ -6,33 +6,61 @@ import { StatusPill } from "@/components/AppShell";
 import { startScanForQuiz } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { QuizStats } from "@/components/dashboard/QuizStats";
+import { canonicalRut } from "@/lib/rut";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = { params: Promise<{ id: string }> };
 
+type QuizPaper = {
+  id: string;
+  student_name: string | null;
+  student_id: string | null;
+  student_rut_norm: string | null;
+  score: number | null;
+  total: number | null;
+  status: string | null;
+  scanned_at: string;
+  equivalent_score: number | null;
+  grade: string | number | null;
+  answers: unknown;
+};
+
 export default async function QuizDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const { supabase, locale } = await getDashboardContext();
-  const [{ data: quiz }, { data: papers }, { data: metadata }] = await Promise.all([
+  const { supabase, school } = await getDashboardContext();
+  const [{ data: quiz }, { data: papers }, { data: metadata }, { data: students }] = await Promise.all([
     supabase.from("quizzes").select("*").eq("id", id).single(),
-    supabase.from("papers").select("id,student_name,student_id,score,total,status,scanned_at,equivalent_score,grade,answers").eq("quiz_id", id).order("scanned_at", { ascending: false }),
+    supabase.from("papers").select("id,student_name,student_id,student_rut_norm,score,total,status,scanned_at,equivalent_score,grade,answers").eq("quiz_id", id).order("scanned_at", { ascending: false }),
     supabase.from("question_metadata").select("question_number,axis_name,skill_name,difficulty").eq("quiz_id", id).order("question_number"),
+    supabase.from("students").select("id,rut,student_id,rut_normalized").eq("school_id", school.id),
   ]);
   if (!quiz) notFound();
-  const avg = papers?.length ? Math.round(papers.reduce((s, p) => s + ((p.score ?? 0) / Math.max(1, p.total ?? quiz.num_questions)) * 100, 0) / papers.length) : 0;
+  const quizPapers = (papers ?? []) as QuizPaper[];
+  const avg = quizPapers.length ? Math.round(quizPapers.reduce((s, p) => s + ((p.score ?? 0) / Math.max(1, p.total ?? quiz.num_questions)) * 100, 0) / quizPapers.length) : 0;
 
   const isPAES = quiz.evaluation_type === "paes";
   const isSIMCE = quiz.evaluation_type === "simce";
+  const studentIdByRut = new Map<string, string>();
+  for (const student of students ?? []) {
+    const rutNorm = student.rut_normalized ?? canonicalRut(student.rut) ?? canonicalRut(student.student_id);
+    if (rutNorm) studentIdByRut.set(rutNorm, student.id);
+  }
 
-  const getScoreDisplay = (paper: any) => {
+  const studentHrefForPaper = (paper: { student_rut_norm?: string | null; student_id?: string | null }) => {
+    const rutNorm = paper.student_rut_norm ?? canonicalRut(paper.student_id);
+    const studentId = rutNorm ? studentIdByRut.get(rutNorm) : null;
+    return studentId ? `/dashboard/students/${studentId}` : null;
+  };
+
+  const getScoreDisplay = (paper: QuizPaper) => {
     if (isPAES) {
       return `${paper.equivalent_score ?? Math.round(100 + ((paper.score ?? 0) / (paper.total || quiz.num_questions)) * 900)} pts PAES`;
     }
     if (isSIMCE) {
       return `${paper.equivalent_score ?? Math.round(100 + ((paper.score ?? 0) / (paper.total || quiz.num_questions)) * 300)} pts SIMCE`;
     }
-    const defaultGrade = paper.grade || (paper.total ? calculateGradeFallback(paper.score, paper.total) : "-");
+    const defaultGrade = paper.grade || (paper.total ? calculateGradeFallback(Number(paper.score ?? 0), Number(paper.total)) : "-");
     return `Nota ${defaultGrade}`;
   };
 
@@ -81,30 +109,44 @@ export default async function QuizDetailPage({ params }: PageProps) {
         </section>
         <DataTable
           columns={["Alumno", "Respuestas Correctas", "Resultado Equivalente", "Estado", "Fecha"]}
-          rows={papers ?? []}
+          rows={quizPapers}
           empty="Aun no hay lecturas sincronizadas para este ensayo."
-          renderRow={(paper) => (
-            <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0">
-              <td className="px-5 py-4 font-semibold">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</td>
-              <td className="px-5 py-4">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</td>
-              <td className="px-5 py-4 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
-              <td className="px-5 py-4"><StatusPill>{paper.status ?? "active"}</StatusPill></td>
-              <td className="px-5 py-4 text-[#5b6472]">{new Date(paper.scanned_at).toLocaleString("es-CL")}</td>
-            </tr>
-          )}
-          renderMobileRow={(paper) => (
-            <article key={paper.id} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <p className="min-w-0 truncate text-base font-semibold text-[#111827]">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</p>
-                <StatusPill>{paper.status ?? "active"}</StatusPill>
-              </div>
-              <div className="mt-3 grid gap-1 text-sm text-[#5b6472]">
-                <p>Correctas: <span className="font-semibold text-[#111827]">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</span></p>
-                <p>Resultado: <span className="font-semibold text-[#07305f]">{getScoreDisplay(paper)}</span></p>
-                <p className="text-xs">Fecha: {new Date(paper.scanned_at).toLocaleString("es-CL")}</p>
-              </div>
-            </article>
-          )}
+          renderRow={(paper) => {
+            const studentLabel = paper.student_name ?? paper.student_id ?? "Sin identificar";
+            const studentHref = studentHrefForPaper(paper);
+            return (
+              <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0">
+                <td className="px-5 py-4 font-semibold">
+                  {studentHref ? <Link href={studentHref} className="text-[#07305f] hover:underline">{studentLabel}</Link> : studentLabel}
+                </td>
+                <td className="px-5 py-4">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</td>
+                <td className="px-5 py-4 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
+                <td className="px-5 py-4"><StatusPill>{paper.status ?? "active"}</StatusPill></td>
+                <td className="px-5 py-4 text-[#5b6472]">{new Date(paper.scanned_at).toLocaleString("es-CL")}</td>
+              </tr>
+            );
+          }}
+          renderMobileRow={(paper) => {
+            const studentLabel = paper.student_name ?? paper.student_id ?? "Sin identificar";
+            const studentHref = studentHrefForPaper(paper);
+            return (
+              <article key={paper.id} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  {studentHref ? (
+                    <Link href={studentHref} className="min-w-0 truncate text-base font-semibold text-[#07305f] hover:underline">{studentLabel}</Link>
+                  ) : (
+                    <p className="min-w-0 truncate text-base font-semibold text-[#111827]">{studentLabel}</p>
+                  )}
+                  <StatusPill>{paper.status ?? "active"}</StatusPill>
+                </div>
+                <div className="mt-3 grid gap-1 text-sm text-[#5b6472]">
+                  <p>Correctas: <span className="font-semibold text-[#111827]">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</span></p>
+                  <p>Resultado: <span className="font-semibold text-[#07305f]">{getScoreDisplay(paper)}</span></p>
+                  <p className="text-xs">Fecha: {new Date(paper.scanned_at).toLocaleString("es-CL")}</p>
+                </div>
+              </article>
+            );
+          }}
         />
         <DataTable
           columns={["Pregunta", "Eje", "Habilidad", "Dificultad"]}
