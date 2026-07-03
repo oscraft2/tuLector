@@ -9,6 +9,7 @@ import {
 } from "@/lib/sheet_generator";
 import { validateRut, normalizeRut } from "@/lib/rut";
 import { SHEET_CODE_VERSION, type SheetCodeData } from "@/lib/sheet_code";
+import { isNativeApp, shareNativeImage } from "@/lib/native/capacitor";
 
 const DEFAULT_TEST_RUT = "12345678-5";
 const LABELS = "ABCDE";
@@ -57,6 +58,8 @@ export default function SheetPage() {
   // Beta
   const [batchN, setBatchN] = useState(40);
   const [busy, setBusy] = useState(false);
+  const [native, setNative] = useState(false);
+  const [sharing, setSharing] = useState(false);
   // Origen de RUTs del beta: "random" (aleatorios) o "list" (roster de un curso).
   const [rutMode, setRutMode] = useState<"random" | "list">("random");
   const [rutList, setRutList] = useState("");
@@ -107,6 +110,13 @@ export default function SheetPage() {
       localStorage.setItem("tulector_scan_config", JSON.stringify({ numQuestions, numOptions, numColumns }));
     } catch { /* sin storage */ }
   }, [numQuestions, numOptions, numColumns]);
+
+  // Detecta si corremos en el APK (para mostrar botón "Compartir" nativo).
+  useEffect(() => {
+    let a = true;
+    Promise.resolve().then(() => { if (a) setNative(isNativeApp()); });
+    return () => { a = false; };
+  }, []);
 
   // Vista previa (mismo render que la salida)
   useEffect(() => {
@@ -163,6 +173,15 @@ export default function SheetPage() {
     a.href = renderToDataUrl(marks);
     a.download = fillRut ? `hoja_tulector_${rut}.png` : "hoja_tulector.png";
     a.click();
+  };
+
+  /** Comparte un PNG de la hoja via share sheet nativo (Android/iOS). */
+  const shareNative = async () => {
+    setSharing(true);
+    const dataUrl = renderToDataUrl(marks);
+    const shareTitle = title.trim() || (fillRut ? `Hoja ${rut}` : "Hoja TuLector");
+    await shareNativeImage(dataUrl, shareTitle);
+    setSharing(false);
   };
 
   /** Beta: N hojas autollenadas (RUT+respuestas aleatorias) + verdad-terreno.
@@ -239,6 +258,12 @@ export default function SheetPage() {
             <button onClick={pdfOne} className="flex-1 py-2 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500">
               Descargar PDF
             </button>
+            {native && (
+              <button onClick={shareNative} disabled={sharing}
+                className="flex-1 py-2 bg-indigo-600 rounded-lg text-sm font-semibold hover:bg-indigo-500 disabled:opacity-50">
+                {sharing ? "Compartiendo..." : "Compartir"}
+              </button>
+            )}
           </div>
         </div>
 

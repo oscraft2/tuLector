@@ -65,6 +65,27 @@ export async function captureNativePhoto(): Promise<string | null> {
 }
 
 /**
+ * Abre el share sheet nativo (compartir PDF/PNG por WhatsApp, guardar, etc.).
+ * Recibe un dataURL de imagen/png, lo convierte a base64 y lo comparte via la
+ * API Capacitor Share. null si no es nativo o el plugin no está disponible.
+ */
+export async function shareNativeImage(dataUrl: string, title: string): Promise<boolean> {
+  const Share = plugin<{ share: (o: unknown) => Promise<{ activityType?: string }> }>("Share");
+  if (!Share) return false;
+  try {
+    const base64 = dataUrl.split(",")[1];
+    if (!base64) return false;
+    await Share.share({
+      title,
+      files: [base64],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Ajusta el "chrome" nativo al arrancar: marca <html> con `cap-native` (CSS que
  * mata el olor a web) y configura la status bar si el plugin existe.
  */
