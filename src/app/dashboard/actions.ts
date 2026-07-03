@@ -63,40 +63,54 @@ export async function createQuiz(formData: FormData) {
   const evalVariant = String(formData.get("evaluation_variant") ?? "") || null;
   if (!title) throw new Error("Ingresa un titulo para el ensayo.");
   if (answerKey.length !== numQuestions) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
-  // Nº de columnas: derivado (misma heuristica que ya usaba el lector). El sobre
-  // valido es 1 col <=40 y 2 col >=12; con <=40 preguntas siempre cae bien.
+  // Nº de columnas: derivado (misma heuristica que ya usaba el lector).
   const numColumns = numQuestions > 30 ? 2 : 1;
-
-  // sheet_code: correlativo por colegio (cabe en los 20 bits del codigo de hoja del
-  // motor). Ata la hoja impresa a su ensayo para verificar "hoja correcta" al escanear.
   const SHEET_CODE_MAX = 0xfffff; // 1.048.575
-  const baseCode = await nextSheetCode(supabase, school.id);
 
-  const insertQuiz = (sheetCode: number) =>
-    supabase.from("quizzes").insert({
-      school_id: school.id,
-      user_id: user.id,
-      created_by: user.id,
-      title,
-      num_questions: numQuestions,
-      options_per_question: numOptions,
-      num_columns: numColumns,
-      sheet_code: Math.min(sheetCode, SHEET_CODE_MAX),
-      option_labels: optionLabelsFor(numOptions).split("").join(","),
-      answer_key: answerKey,
-      subject: String(formData.get("subject") ?? "") || null,
-      grade: String(formData.get("grade") ?? "") || null,
-      evaluation_type: evalType,
-      evaluation_variant: evalVariant,
-    });
+  // Campos base del ensayo (lo que SIEMPRE se guarda, como antes de Fase 1).
+  const base = {
+    school_id: school.id,
+    user_id: user.id,
+    created_by: user.id,
+    title,
+    num_questions: numQuestions,
+    options_per_question: numOptions,
+    option_labels: optionLabelsFor(numOptions).split("").join(","),
+    answer_key: answerKey,
+    subject: String(formData.get("subject") ?? "") || null,
+    grade: String(formData.get("grade") ?? "") || null,
+    evaluation_type: evalType,
+    evaluation_variant: evalVariant,
+  };
 
-  // Reintento acotado ante colision del indice unico (school_id, sheet_code).
-  let attempt = 0;
-  while (true) {
-    const { error } = await insertQuiz(baseCode + attempt);
-    if (!error) break;
-    if (error.code === "23505" && attempt < 3) { attempt++; continue; } // unique_violation
-    throw new Error(error.message);
+  // Intento ENRIQUECIDO (num_columns + sheet_code correlativo, con reintento ante
+  // colision del indice unico). Si algo falla NO rompemos la creacion de ensayos:
+  // registramos el error real en scan_logs (lectura publica) y caemos al insert basico.
+  let enriched = false;
+  try {
+    const baseCode = await nextSheetCode(supabase, school.id);
+    for (let attempt = 0; ; attempt++) {
+      const { error } = await supabase.from("quizzes").insert({
+        ...base,
+        num_columns: numColumns,
+        sheet_code: Math.min(baseCode + attempt, SHEET_CODE_MAX),
+      });
+      if (!error) { enriched = true; break; }
+      if (error.code === "23505" && attempt < 3) continue; // unique_violation -> reintenta
+      throw new Error(`${error.code ?? "?"}: ${error.message}`);
+    }
+  } catch (e) {
+    try {
+      await supabase.from("scan_logs").insert({
+        log: { type: "diagnostic", where: "createQuiz.enriched", error: e instanceof Error ? e.message : String(e), ts: new Date().toISOString() },
+      });
+    } catch { /* no critico */ }
+  }
+
+  // Fallback: si el enriquecido no entro, guarda el ensayo como antes (garantiza que crea).
+  if (!enriched) {
+    const { error } = await supabase.from("quizzes").insert(base);
+    if (error) throw new Error(error.message);
   }
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/quizzes");
