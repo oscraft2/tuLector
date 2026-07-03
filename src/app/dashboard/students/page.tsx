@@ -1,8 +1,11 @@
 import { getDashboardContext } from "@/lib/supabase_server";
 import { getDashboardMessages } from "@/locales";
 import { CSVImport } from "@/components/dashboard/CSVImport";
+import { CourseForm } from "@/components/dashboard/CourseForm";
+import { StudentForm } from "@/components/dashboard/StudentForm";
+import { DeleteButton } from "@/components/dashboard/DeleteButton";
 import { DataTable } from "@/components/dashboard/DataTable";
-import { importStudents, logExport, createCourse, deleteCourse, createStudent } from "@/app/dashboard/actions";
+import { importStudents, logExport, createCourse, deleteCourse, deleteStudent, createStudent } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +33,7 @@ export default async function StudentsPage() {
 
   // Fetch students and courses
   const [{ data: students }, { data: courses }] = await Promise.all([
-    supabase.from("students").select("id,student_id,rut,name,course,grade,created_at").order("name"),
+    supabase.from("students").select("id,student_id,rut,name,course,created_at").order("name"),
     supabase.from("courses").select("id,name,grade").order("name"),
   ]);
 
@@ -40,7 +43,7 @@ export default async function StudentsPage() {
     <>
       <PageHeader title={t.students} description="Administra alumnos de forma individual o masiva, gestiona los cursos oficiales y expórtalos en formatos estandarizados." />
       
-      <div className="grid gap-6 lg:grid-cols-[450px_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,450px)_minmax(0,1fr)] lg:gap-6">
         
         {/* Left Column: Course Catalog & Student Addition */}
         <div className="space-y-6">
@@ -61,91 +64,25 @@ export default async function StudentsPage() {
                       <span className="ml-2 text-xs text-[#6b7280]">({course.grade})</span>
                     </div>
                     {isAdmin && (
-                      <form action={deleteCourse}>
-                        <input type="hidden" name="id" value={course.id} />
-                        <button type="submit" className="text-xs font-semibold text-red-600 hover:underline">Eliminar</button>
-                      </form>
+                      <DeleteButton
+                        action={deleteCourse}
+                        id={course.id}
+                        confirm={`¿Eliminar el curso "${course.name}"? Los alumnos no se borran, pero deberás reasignarlos.`}
+                      />
                     )}
                   </div>
                 ))}
               </div>
             )}
             
-            {isAdmin && (
-              <form action={createCourse} className="pt-2 border-t border-[#eef0f3] space-y-3">
-                <p className="text-xs font-semibold text-[#07305f]">Agregar nuevo curso</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    name="name"
-                    required
-                    placeholder="Ej: IV Medio A"
-                    className="w-full rounded-md border border-[#cfd6df] px-3 py-1.5 text-sm"
-                  />
-                  <select
-                    name="grade"
-                    required
-                    className="w-full rounded-md border border-[#cfd6df] bg-white px-2 py-1.5 text-sm"
-                  >
-                    <option value="">Selecciona nivel</option>
-                    {CHILEAN_GRADES.map((g) => (
-                      <option key={g} value={g}>{g}</option>
-                    ))}
-                  </select>
-                </div>
-                <button type="submit" className="w-full rounded-md bg-[#07305f] py-1.5 text-xs font-semibold text-white hover:bg-[#062447]">
-                  Crear curso
-                </button>
-              </form>
-            )}
+            {isAdmin && <CourseForm action={createCourse} grades={CHILEAN_GRADES} />}
           </div>
 
           {/* 2. Add Single Student */}
           <div className="rounded-md border border-[#e6e8eb] bg-white p-5 space-y-4">
             <h2 className="text-lg font-semibold text-[#111827]">Agregar alumno individual</h2>
             
-            <form action={createStudent} className="space-y-3">
-              <label className="block text-xs font-semibold">
-                Nombre completo
-                <input
-                  name="name"
-                  required
-                  placeholder="Ej: Juan Pérez"
-                  className="mt-1 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal text-sm"
-                />
-              </label>
-              
-              <label className="block text-xs font-semibold">
-                RUT Chileno
-                <input
-                  name="rut"
-                  required
-                  placeholder="Ej: 12.345.678-5"
-                  className="mt-1 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal text-sm"
-                />
-              </label>
-              
-              <label className="block text-xs font-semibold">
-                Curso / Grupo
-                <select
-                  name="course"
-                  required
-                  className="mt-1 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal text-sm"
-                >
-                  <option value="">Selecciona curso</option>
-                  {courseList.map((c) => (
-                    <option key={c.id} value={c.name}>{c.name} ({c.grade})</option>
-                  ))}
-                </select>
-              </label>
-              
-              <button
-                type="submit"
-                disabled={courseList.length === 0}
-                className="w-full rounded-md bg-[#111827] py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50"
-              >
-                {courseList.length === 0 ? "Primero crea un curso" : "Agregar Alumno"}
-              </button>
-            </form>
+            <StudentForm action={createStudent} courses={courseList} />
           </div>
 
           {/* 3. Bulk CSV Import */}
@@ -156,17 +93,17 @@ export default async function StudentsPage() {
         {/* Right Column: Students Table */}
         <div className="space-y-4">
           <div className="flex justify-end">
-            <form action={logExport}>
+            <form action={logExport} className="w-full sm:w-auto">
               <input type="hidden" name="export_type" value="students_csv" />
               <input type="hidden" name="entity_type" value="students" />
-              <button disabled={!isAdmin} className="rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold disabled:opacity-50">
+              <button disabled={!isAdmin} className="w-full rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold disabled:opacity-50 sm:w-auto">
                 Exportar CSV
               </button>
             </form>
           </div>
           
           <DataTable
-            columns={["RUT/ID", "Nombre", "Curso", "Registro"]}
+            columns={["RUT/ID", "Nombre", "Curso", "Registro", "Acción"]}
             rows={students ?? []}
             empty="No hay alumnos registrados en el establecimiento."
             renderRow={(student) => (
@@ -175,11 +112,43 @@ export default async function StudentsPage() {
                 <td className="px-5 py-4 font-semibold">{student.name}</td>
                 <td className="px-5 py-4 text-[#5b6472]">
                   <span className="rounded bg-[#f4f6f8] px-2 py-0.5 text-xs font-semibold text-[#1e293b]">
-                    {student.course ?? student.grade ?? "-"}
+                    {student.course ?? "-"}
                   </span>
                 </td>
                 <td className="px-5 py-4 text-xs text-[#5b6472]">{new Date(student.created_at).toLocaleDateString("es-CL")}</td>
+                <td className="px-5 py-4">
+                  {isAdmin && (
+                    <DeleteButton
+                      action={deleteStudent}
+                      id={student.id}
+                      confirm={`¿Eliminar a ${student.name}? Esta acción no se puede deshacer.`}
+                    />
+                  )}
+                </td>
               </tr>
+            )}
+            renderMobileRow={(student) => (
+              <article key={student.id} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-base font-semibold text-[#111827]">{student.name}</p>
+                    <p className="mt-1 font-mono text-xs text-[#5b6472]">{student.rut ?? student.student_id}</p>
+                  </div>
+                  <span className="rounded bg-[#f4f6f8] px-2 py-0.5 text-xs font-semibold text-[#1e293b]">
+                    {student.course ?? "-"}
+                  </span>
+                </div>
+                <div className="mt-3 flex items-center justify-between text-xs text-[#5b6472]">
+                  <span>Registro: {new Date(student.created_at).toLocaleDateString("es-CL")}</span>
+                  {isAdmin && (
+                    <DeleteButton
+                      action={deleteStudent}
+                      id={student.id}
+                      confirm={`¿Eliminar a ${student.name}? Esta acción no se puede deshacer.`}
+                    />
+                  )}
+                </div>
+              </article>
             )}
           />
         </div>

@@ -67,21 +67,54 @@ export default async function QuizDetailPage({ params }: PageProps) {
         <section className="rounded-md border border-[#e1e5ea] bg-white p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div><h2 className="text-xl font-semibold">Clave</h2><p className="mt-1 font-mono text-sm tracking-wider text-[#5b6472]">{quiz.answer_key}</p></div>
-            <div className="flex gap-2"><Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold">Generar hoja</Link><form action={startScanForQuiz}><input type="hidden" name="quiz_id" value={quiz.id} /><button className="rounded-md bg-[#07305f] px-4 py-2 text-sm font-semibold text-white">Abrir lector</button></form></div>
+            <div className="flex flex-col gap-2 sm:flex-row"><Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold">Generar hoja</Link><form action={startScanForQuiz}><input type="hidden" name="quiz_id" value={quiz.id} /><button className="w-full rounded-md bg-[#07305f] px-4 py-2 text-sm font-semibold text-white sm:w-auto">Abrir lector</button></form></div>
           </div>
         </section>
-        <DataTable columns={["Alumno", "Respuestas Correctas", "Resultado Equivalente", "Estado", "Fecha"]} rows={papers ?? []} empty="Aun no hay lecturas sincronizadas para este ensayo." renderRow={(paper) => (
-          <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0">
-            <td className="px-5 py-4 font-semibold">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</td>
-            <td className="px-5 py-4">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</td>
-            <td className="px-5 py-4 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
-            <td className="px-5 py-4"><StatusPill>{paper.status ?? "active"}</StatusPill></td>
-            <td className="px-5 py-4 text-[#5b6472]">{new Date(paper.scanned_at).toLocaleString("es-CL")}</td>
-          </tr>
-        )} />
-        <DataTable columns={["Pregunta", "Eje", "Habilidad", "Dificultad"]} rows={metadata ?? []} empty="Sin metadatos curriculares por item." renderRow={(row) => (
-          <tr key={row.question_number} className="border-b border-[#eef0f3] last:border-0"><td className="px-5 py-4 font-semibold">{row.question_number}</td><td className="px-5 py-4 text-[#5b6472]">{row.axis_name ?? "-"}</td><td className="px-5 py-4 text-[#5b6472]">{row.skill_name ?? "-"}</td><td className="px-5 py-4 text-[#5b6472]">{row.difficulty ?? "-"}</td></tr>
-        )} />
+        <DataTable
+          columns={["Alumno", "Respuestas Correctas", "Resultado Equivalente", "Estado", "Fecha"]}
+          rows={papers ?? []}
+          empty="Aun no hay lecturas sincronizadas para este ensayo."
+          renderRow={(paper) => (
+            <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0">
+              <td className="px-5 py-4 font-semibold">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</td>
+              <td className="px-5 py-4">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</td>
+              <td className="px-5 py-4 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
+              <td className="px-5 py-4"><StatusPill>{paper.status ?? "active"}</StatusPill></td>
+              <td className="px-5 py-4 text-[#5b6472]">{new Date(paper.scanned_at).toLocaleString("es-CL")}</td>
+            </tr>
+          )}
+          renderMobileRow={(paper) => (
+            <article key={paper.id} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <p className="min-w-0 truncate text-base font-semibold text-[#111827]">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</p>
+                <StatusPill>{paper.status ?? "active"}</StatusPill>
+              </div>
+              <div className="mt-3 grid gap-1 text-sm text-[#5b6472]">
+                <p>Correctas: <span className="font-semibold text-[#111827]">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</span></p>
+                <p>Resultado: <span className="font-semibold text-[#07305f]">{getScoreDisplay(paper)}</span></p>
+                <p className="text-xs">Fecha: {new Date(paper.scanned_at).toLocaleString("es-CL")}</p>
+              </div>
+            </article>
+          )}
+        />
+        <DataTable
+          columns={["Pregunta", "Eje", "Habilidad", "Dificultad"]}
+          rows={metadata ?? []}
+          empty="Sin metadatos curriculares por item."
+          renderRow={(row) => (
+            <tr key={row.question_number} className="border-b border-[#eef0f3] last:border-0"><td className="px-5 py-4 font-semibold">{row.question_number}</td><td className="px-5 py-4 text-[#5b6472]">{row.axis_name ?? "-"}</td><td className="px-5 py-4 text-[#5b6472]">{row.skill_name ?? "-"}</td><td className="px-5 py-4 text-[#5b6472]">{row.difficulty ?? "-"}</td></tr>
+          )}
+          renderMobileRow={(row) => (
+            <article key={row.question_number} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
+              <p className="text-base font-semibold text-[#111827]">Pregunta {row.question_number}</p>
+              <div className="mt-3 grid gap-1 text-sm text-[#5b6472]">
+                <p>Eje: <span className="font-medium text-[#111827]">{row.axis_name ?? "-"}</span></p>
+                <p>Habilidad: <span className="font-medium text-[#111827]">{row.skill_name ?? "-"}</span></p>
+                <p>Dificultad: <span className="font-medium text-[#111827]">{row.difficulty ?? "-"}</span></p>
+              </div>
+            </article>
+          )}
+        />
       </div>
     </>
   );

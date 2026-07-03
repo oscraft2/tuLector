@@ -128,7 +128,7 @@ export function AnswerKeyEditor({
       </div>
 
       {evalType === "custom" ? (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-sm font-semibold">
             Preguntas
             <input
@@ -181,7 +181,7 @@ export function AnswerKeyEditor({
       <p className={valid ? "mt-2 text-xs text-[#4b5563]" : "mt-2 text-xs font-semibold text-[#b45309]"}>
         {clean.length}/{questionCount} respuestas validas {labels}.
       </p>
-      <div className="mt-3 grid grid-cols-10 gap-1" aria-label="Vista de clave">
+      <div className="mt-3 grid grid-cols-5 gap-1 sm:grid-cols-10" aria-label="Vista de clave">
         {preview.map((answer, index) => (
           <span key={index} className="rounded border border-[#e6e8eb] bg-[#f8f9fb] px-2 py-1 text-center text-xs font-semibold">{index + 1}:{answer}</span>
         ))}

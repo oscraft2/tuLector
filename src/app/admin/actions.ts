@@ -99,6 +99,42 @@ export async function sendTestEmail(formData: FormData) {
   });
 }
 
+
+export async function updateContactLead(formData: FormData) {
+  const { user, role, admin } = await requirePlatformContext(["platform_admin", "marketing"]);
+  const leadId = String(formData.get("lead_id") ?? "");
+  const status = String(formData.get("status") ?? "new");
+  const internalNote = String(formData.get("internal_note") ?? "").trim();
+  const allowed = new Set(["new", "contacted", "qualified", "discarded", "blocked"]);
+
+  if (!leadId || !allowed.has(status)) throw new Error("Lead o estado invalido.");
+
+  const update: Record<string, unknown> = {
+    status,
+    internal_note: internalNote || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (status === "contacted" || status === "qualified") {
+    update.contacted_at = new Date().toISOString();
+  }
+
+  const { error } = await admin.from("contact_leads").update(update).eq("id", leadId);
+  if (error) throw new Error(`Error al actualizar lead: ${error.message}`);
+
+  await writeAuditLog({
+    actorUserId: user.id,
+    actorRole: role,
+    targetType: "contact_lead",
+    targetId: leadId,
+    action: "contact_lead.update",
+    reason: "Actualizacion desde panel admin de marketing",
+    metadata: { status, internalNote },
+  });
+
+  revalidatePath("/admin/marketing");
+}
+
 export async function refundOrVoidOrder(formData: FormData) {
   const { user, role, admin } = await requirePlatformContext(["platform_admin", "finance"]);
   const orderId = String(formData.get("order_id") ?? "");
@@ -344,3 +380,4 @@ export async function impersonateSchool(formData: FormData) {
   revalidatePath("/dashboard");
   redirect("/dashboard");
 }
+

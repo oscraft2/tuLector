@@ -65,18 +65,36 @@ export default async function ResultsPage({ params }: PageProps) {
           <KPI label="Minimo Correctas" value={`${min}/${quiz.num_questions}`} />
         </KPIGrid>
         <div className="rounded-md border border-[#e1e5ea] bg-white p-5">
-          <div className="mb-4 flex items-center justify-between"><h2 className="text-xl font-semibold">Exportaciones</h2><form action={logExport}><input type="hidden" name="export_type" value="results_pdf" /><input type="hidden" name="entity_type" value="quiz" /><button disabled={!isAdmin} className="rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold disabled:opacity-50">Registrar exportacion PDF/Excel</button></form></div>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><h2 className="text-xl font-semibold">Exportaciones</h2><form action={logExport} className="w-full sm:w-auto"><input type="hidden" name="export_type" value="results_pdf" /><input type="hidden" name="entity_type" value="quiz" /><button disabled={!isAdmin} className="w-full rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold disabled:opacity-50 sm:w-auto">Registrar exportacion PDF/Excel</button></form></div>
           <p className="text-sm text-[#5b6472]">La generacion real de PDF/Excel debe quedar tras este log de exportacion y solo para admin del colegio.</p>
         </div>
-        <DataTable columns={["Alumno", "Respuestas", "Resultado Equivalente", "Porcentaje", "Fecha"]} rows={rows} empty="Sin resultados para este ensayo." renderRow={(paper) => (
-          <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0">
-            <td className="px-5 py-4 font-semibold">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</td>
-            <td className="px-5 py-4">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</td>
-            <td className="px-5 py-4 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
-            <td className="px-5 py-4">{paper.total ? Math.round(((paper.score ?? 0) / paper.total) * 100) : 0}%</td>
-            <td className="px-5 py-4 text-[#5b6472]">{new Date(paper.scanned_at).toLocaleString("es-CL")}</td>
-          </tr>
-        )} />
+        <DataTable
+          columns={["Alumno", "Respuestas", "Resultado Equivalente", "Porcentaje", "Fecha"]}
+          rows={rows}
+          empty="Sin resultados para este ensayo."
+          renderRow={(paper) => (
+            <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0">
+              <td className="px-5 py-4 font-semibold">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</td>
+              <td className="px-5 py-4">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</td>
+              <td className="px-5 py-4 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
+              <td className="px-5 py-4">{paper.total ? Math.round(((paper.score ?? 0) / paper.total) * 100) : 0}%</td>
+              <td className="px-5 py-4 text-[#5b6472]">{new Date(paper.scanned_at).toLocaleString("es-CL")}</td>
+            </tr>
+          )}
+          renderMobileRow={(paper) => (
+            <article key={paper.id} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <p className="min-w-0 truncate text-base font-semibold text-[#111827]">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</p>
+                <span className="shrink-0 rounded bg-[#eef4ff] px-2 py-1 text-xs font-bold text-[#07305f]">{paper.total ? Math.round(((paper.score ?? 0) / paper.total) * 100) : 0}%</span>
+              </div>
+              <div className="mt-3 grid gap-1 text-sm text-[#5b6472]">
+                <p>Respuestas: <span className="font-semibold text-[#111827]">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</span></p>
+                <p>Resultado: <span className="font-semibold text-[#07305f]">{getScoreDisplay(paper)}</span></p>
+                <p className="text-xs">Fecha: {new Date(paper.scanned_at).toLocaleString("es-CL")}</p>
+              </div>
+            </article>
+          )}
+        />
       </div>
     </>
   );

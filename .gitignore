@@ -44,3 +44,6 @@ tsconfig.tsbuildinfo
 
 # scratch files
 scratch/
+
+# logs del servidor de dev (codex)
+.codex-next-dev.*.log

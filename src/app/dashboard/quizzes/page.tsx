@@ -41,7 +41,7 @@ export default async function QuizzesPage() {
     <>
       <PageHeader title={t.quizzes} description="Crea ensayos, define claves, duplica instrumentos y genera hojas v2 imprimibles para leerlas luego desde la app movil." />
       
-      <div className="grid gap-6 xl:grid-cols-[450px_1fr]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,450px)_minmax(0,1fr)] xl:gap-6">
         
         {/* Left Column: Create Quiz Form */}
         <form action={createQuiz} className="rounded-md border border-[#e1e5ea] bg-white p-5 space-y-4">
@@ -58,7 +58,7 @@ export default async function QuizzesPage() {
               />
             </label>
             
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <label className="block text-sm font-semibold">
                 Asignatura (Base Curricular)
                 <select
@@ -133,7 +133,7 @@ export default async function QuizzesPage() {
               <td className="px-5 py-4 text-[#5b6472]">{quiz.num_questions}x{quiz.options_per_question ?? 5}</td>
               <td className="px-5 py-4 text-xs text-[#5b6472]">{formatDate(quiz.created_at, locale)}</td>
               <td className="px-5 py-4">
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-3 py-1.5 text-xs font-semibold hover:bg-gray-50">
                     Hoja
                   </Link>
@@ -158,6 +158,23 @@ export default async function QuizzesPage() {
                 </div>
               </td>
             </tr>
+          )}
+          renderMobileRow={(quiz) => (
+            <article key={quiz.id} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
+              <Link href={`/dashboard/quizzes/${quiz.id}`} className="block text-base font-semibold text-[#07305f] hover:underline">{quiz.title}</Link>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[#5b6472]">
+                <p><span className="font-semibold text-[#111827]">Asignatura:</span> {quiz.subject ?? "-"}</p>
+                <p><span className="font-semibold text-[#111827]">Curso:</span> {quiz.grade ?? "-"}</p>
+                <p><span className="font-semibold text-[#111827]">Formato:</span> {quiz.num_questions}x{quiz.options_per_question ?? 5}</p>
+                <p><span className="font-semibold text-[#111827]">Creado:</span> {formatDate(quiz.created_at, locale)}</p>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold hover:bg-gray-50">Hoja</Link>
+                <form action={startScanForQuiz}><input type="hidden" name="quiz_id" value={quiz.id} /><button className="rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold hover:bg-gray-50">Escanear</button></form>
+                <form action={duplicateQuiz}><input type="hidden" name="id" value={quiz.id} /><button className="rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold hover:bg-gray-50">Duplicar</button></form>
+                <form action={archiveQuiz}><input type="hidden" name="id" value={quiz.id} /><button className="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50">Archivar</button></form>
+              </div>
+            </article>
           )}
         />
       </div>

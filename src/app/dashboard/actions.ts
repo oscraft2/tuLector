@@ -92,27 +92,139 @@ export async function duplicateQuiz(formData: FormData) {
   revalidatePath("/dashboard/quizzes");
 }
 
-export async function importStudents(formData: FormData) {
+export type DashboardActionState = {
+  status: "idle" | "success" | "error";
+  title?: string;
+  message?: string;
+  emoji?: string;
+  key?: number;
+};
+
+function actionSuccess(title: string, message: string, emoji = "✓"): DashboardActionState {
+  return { status: "success", title, message, emoji, key: Date.now() };
+}
+
+function actionError(error: unknown, title = "No se pudo completar"): DashboardActionState {
+  return { status: "error", title, message: error instanceof Error ? error.message : "Intenta nuevamente.", emoji: "!", key: Date.now() };
+}
+
+type StudentPayload = {
+  school_id: string;
+  user_id: string;
+  student_id: string;
+  rut: string;
+  name: string;
+  course: string | null;
+  updated_at: string;
+};
+
+async function saveStudentWithoutConstraint(
+  supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"],
+  payload: StudentPayload
+) {
+  const { data: existing, error: findError } = await supabase
+    .from("students")
+    .select("id")
+    .eq("school_id", payload.school_id)
+    .eq("student_id", payload.student_id)
+    .maybeSingle();
+
+  if (findError) throw new Error(findError.message);
+
+  if (existing?.id) {
+    const { error } = await supabase
+      .from("students")
+      .update({
+        user_id: payload.user_id,
+        rut: payload.rut,
+        name: payload.name,
+        course: payload.course,
+        updated_at: payload.updated_at,
+      })
+      .eq("id", existing.id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const { error } = await supabase.from("students").insert(payload);
+  if (error) throw new Error(error.message);
+}
+
+/** Asegura que el curso exista en la tabla `courses` (find-or-insert, robusto
+ * ante constraint ausente). Esto mantiene SINCRONIZADO el catalogo de cursos con
+ * los alumnos: un curso escrito al crear/importar alumnos queda disponible para
+ * asociarlo a un ensayo. Devuelve el id del curso. */
+async function findOrCreateCourse(
+  supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"],
+  schoolId: string,
+  name: string,
+  grade?: string | null
+): Promise<string | null> {
+  const clean = name.trim();
+  if (!clean) return null;
+
+  const { data: existing, error: findError } = await supabase
+    .from("courses")
+    .select("id")
+    .eq("school_id", schoolId)
+    .eq("name", clean)
+    .maybeSingle();
+  if (findError) throw new Error(findError.message);
+  if (existing?.id) return existing.id;
+
+  const { data: inserted, error } = await supabase
+    .from("courses")
+    .insert({ school_id: schoolId, name: clean, grade: (grade || "").trim() || "Sin nivel" })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return inserted.id;
+}
+
+export async function importStudents(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
   const { supabase, user, school } = await getDashboardContext();
-  const csv = String(formData.get("csv") ?? "");
-  const rows = csv.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const payload = rows.slice(rows[0]?.toLowerCase().includes("rut") ? 1 : 0).map((line) => {
-    const [rutRaw, nameRaw, courseRaw] = line.split(",").map((cell) => cell?.trim() ?? "");
-    if (!rutRaw || !nameRaw || !validateRut(rutRaw)) return null;
-    return {
-      school_id: school.id,
-      user_id: user.id,
-      student_id: normalizeRut(rutRaw),
-      rut: normalizeRut(rutRaw),
-      name: nameRaw,
-      grade: courseRaw || null,
-      course: courseRaw || null,
-      updated_at: new Date().toISOString(),
-    };
-  }).filter((row): row is NonNullable<typeof row> => row !== null);
-  if (payload.length === 0) throw new Error("No hay alumnos validos para importar.");
-  await supabase.from("students").upsert(payload, { onConflict: "school_id,student_id" });
-  revalidatePath("/dashboard/students");
+
+  try {
+    const csv = String(formData.get("csv") ?? "");
+    const rows = csv.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    // Acepta "rut,nombre,curso" y opcionalmente un 4º campo "nivel".
+    const courseGrades = new Map<string, string>(); // curso -> nivel
+    const payload = rows.slice(rows[0]?.toLowerCase().includes("rut") ? 1 : 0).map((line) => {
+      const [rutRaw, nameRaw, courseRaw, gradeRaw] = line.split(",").map((cell) => cell?.trim() ?? "");
+      if (!rutRaw || !nameRaw || !validateRut(rutRaw)) return null;
+      const course = courseRaw || null;
+      if (course && gradeRaw && !courseGrades.has(course)) courseGrades.set(course, gradeRaw);
+      return {
+        school_id: school.id,
+        user_id: user.id,
+        student_id: normalizeRut(rutRaw),
+        rut: normalizeRut(rutRaw),
+        name: nameRaw,
+        course,
+        updated_at: new Date().toISOString(),
+      };
+    }).filter((row): row is NonNullable<typeof row> => row !== null);
+
+    if (payload.length === 0) throw new Error("No hay alumnos validos para importar. Revisa RUT, nombre y curso.");
+
+    // Sincroniza el catalogo de cursos: cada curso del CSV queda registrado en
+    // `courses` para poder asociarlo a un ensayo (antes solo quedaba como texto).
+    const cursos = [...new Set(payload.map((p) => p.course).filter((c): c is string => !!c))];
+    for (const curso of cursos) {
+      await findOrCreateCourse(supabase, school.id, curso, courseGrades.get(curso));
+    }
+
+    for (const student of payload) {
+      await saveStudentWithoutConstraint(supabase, student);
+    }
+
+    revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/quizzes");
+    const cursoMsg = cursos.length ? ` en ${cursos.length} curso${cursos.length === 1 ? "" : "s"}` : "";
+    return actionSuccess("Importacion lista", `${payload.length} alumno${payload.length === 1 ? "" : "s"} importado${payload.length === 1 ? "" : "s"} o actualizado${payload.length === 1 ? "" : "s"}${cursoMsg}.`);
+  } catch (error) {
+    return actionError(error, "No se pudo importar");
+  }
 }
 
 export async function inviteMember(formData: FormData) {
@@ -239,60 +351,111 @@ export async function switchActiveSchool(formData: FormData) {
   redirect("/dashboard");
 }
 
-export async function createCourse(formData: FormData) {
+export async function createCourse(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
   const { supabase, school } = await getDashboardContext();
-  const name = String(formData.get("name") ?? "").trim();
-  const grade = String(formData.get("grade") ?? "").trim();
 
-  if (!name || !grade) throw new Error("Nombre y curso son obligatorios.");
+  try {
+    const name = String(formData.get("name") ?? "").trim();
+    const grade = String(formData.get("grade") ?? "").trim();
 
-  const { error } = await supabase.from("courses").insert({
-    school_id: school.id,
-    name,
-    grade,
-  });
-  if (error) throw new Error(error.message);
+    if (!name || !grade) throw new Error("Nombre y nivel son obligatorios.");
 
-  revalidatePath("/dashboard/students");
-  revalidatePath("/dashboard/quizzes");
+    const { error } = await supabase.from("courses").insert({
+      school_id: school.id,
+      name,
+      grade,
+    });
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/quizzes");
+    return actionSuccess("Curso creado", `${name} quedo disponible para asociar alumnos.`, "✓");
+  } catch (error) {
+    return actionError(error, "No se pudo crear el curso");
+  }
 }
 
-export async function deleteCourse(formData: FormData) {
-  const { supabase } = await getDashboardContext();
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
+export async function deleteCourse(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  const { supabase, school } = await getDashboardContext();
+  try {
+    const id = String(formData.get("id") ?? "");
+    if (!id) throw new Error("Falta el curso a eliminar.");
 
-  const { error } = await supabase.from("courses").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+    const { data: course, error: findError } = await supabase
+      .from("courses")
+      .select("name")
+      .eq("id", id)
+      .eq("school_id", school.id)
+      .maybeSingle();
+    if (findError) throw new Error(findError.message);
 
-  revalidatePath("/dashboard/students");
-  revalidatePath("/dashboard/quizzes");
+    const { error } = await supabase.from("courses").delete().eq("id", id).eq("school_id", school.id);
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/quizzes");
+    return actionSuccess("Curso eliminado", `${course?.name ?? "El curso"} fue eliminado del catalogo.`, "🗑");
+  } catch (error) {
+    return actionError(error, "No se pudo eliminar el curso");
+  }
 }
 
-export async function createStudent(formData: FormData) {
+export async function deleteStudent(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  const { supabase, school } = await getDashboardContext();
+  try {
+    const id = String(formData.get("id") ?? "");
+    if (!id) throw new Error("Falta el alumno a eliminar.");
+
+    const { data: student, error: findError } = await supabase
+      .from("students")
+      .select("name")
+      .eq("id", id)
+      .eq("school_id", school.id)
+      .maybeSingle();
+    if (findError) throw new Error(findError.message);
+
+    const { error } = await supabase.from("students").delete().eq("id", id).eq("school_id", school.id);
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/dashboard/students");
+    return actionSuccess("Alumno eliminado", `${student?.name ?? "El alumno"} fue eliminado del establecimiento.`, "🗑");
+  } catch (error) {
+    return actionError(error, "No se pudo eliminar el alumno");
+  }
+}
+
+export async function createStudent(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
   const { supabase, user, school } = await getDashboardContext();
-  const name = String(formData.get("name") ?? "").trim();
-  const rut = String(formData.get("rut") ?? "").trim();
-  const course = String(formData.get("course") ?? "").trim();
 
-  if (!name || !rut || !course) throw new Error("Nombre, RUT y curso son obligatorios.");
-  if (!validateRut(rut)) throw new Error("El RUT chileno ingresado no es válido.");
+  try {
+    const name = String(formData.get("name") ?? "").trim();
+    const rut = String(formData.get("rut") ?? "").trim();
+    const course = String(formData.get("course") ?? "").trim();
 
-  const normalized = normalizeRut(rut);
+    if (!name || !rut || !course) throw new Error("Nombre, RUT y curso son obligatorios.");
+    if (!validateRut(rut)) throw new Error("El RUT chileno ingresado no es valido.");
 
-  const { error } = await supabase.from("students").upsert({
-    school_id: school.id,
-    user_id: user.id,
-    student_id: normalized,
-    rut: normalized,
-    name,
-    grade: course,
-    course,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "school_id,student_id" });
-  if (error) throw new Error(error.message);
+    const normalized = normalizeRut(rut);
 
-  revalidatePath("/dashboard/students");
+    // Asegura que el curso exista en el catalogo (por si vino de texto libre).
+    await findOrCreateCourse(supabase, school.id, course);
+
+    await saveStudentWithoutConstraint(supabase, {
+      school_id: school.id,
+      user_id: user.id,
+      student_id: normalized,
+      rut: normalized,
+      name,
+      course,
+      updated_at: new Date().toISOString(),
+    });
+
+    revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/quizzes");
+    return actionSuccess("Alumno agregado", `${name} quedo registrado en ${course}.`, "✓");
+  } catch (error) {
+    return actionError(error, "No se pudo agregar el alumno");
+  }
 }
 
 // Comparte la logica entre "asignar alumno existente" y "crear alumno y asignar":
@@ -377,16 +540,15 @@ export async function createStudentAndAssignPaper(formData: FormData) {
 
   const normalized = normalizeRut(rut);
 
-  await supabase.from("students").upsert({
+  await saveStudentWithoutConstraint(supabase, {
     school_id: school.id,
     user_id: user.id,
     student_id: normalized,
     rut: normalized,
     name,
-    grade: course,
     course,
     updated_at: new Date().toISOString(),
-  }, { onConflict: "school_id,student_id" });
+  });
 
   const quizId = await assignPaperToStudent(supabase, school, paperId, normalized, name);
 

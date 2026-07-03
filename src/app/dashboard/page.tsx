@@ -108,7 +108,7 @@ export default async function DashboardPage() {
     <>
       <div className="mb-6">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7280]">TuLector School</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">{t.dashboard}</h1>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl md:text-4xl">{t.dashboard}</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5b6472]">Consola web para administrar cursos, alumnos, ensayos, claves, resultados y exportaciones. La lectura OMR ocurre desde la app movil sincronizada.</p>
       </div>
       
@@ -214,10 +214,10 @@ export default async function DashboardPage() {
           <KPI label="Promedio reciente" value={`${avg}%`} detail="ultimas lecturas" />
         </KPIGrid>
 
-        <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] xl:gap-6">
           <div className="space-y-6">
             {/* Recent Quizzes */}
-            <div className="rounded-md border border-[#e6e8eb] bg-white p-5">
+            <div className="rounded-md border border-[#e6e8eb] bg-white p-4 md:p-5">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-base font-semibold">Ensayos recientes</h2>
                 <Link href="/dashboard/quizzes" className="text-sm font-semibold text-[#4b5563] hover:text-[#111827]">Ver todos</Link>
@@ -234,18 +234,26 @@ export default async function DashboardPage() {
                     <td className="px-5 py-4"><Link href={`/dashboard/quizzes/${quiz.id}`} className="font-semibold underline">Abrir</Link></td>
                   </tr>
                 )}
+                renderMobileRow={(quiz) => (
+                  <article key={quiz.id} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
+                    <p className="text-base font-semibold text-[#111827]">{quiz.title}</p>
+                    <p className="mt-2 text-sm text-[#5b6472]">{quiz.subject ?? "-"} · {quiz.grade ?? "-"}</p>
+                    <Link href={`/dashboard/quizzes/${quiz.id}`} className="mt-3 inline-block text-sm font-semibold text-[#07305f] underline">Abrir</Link>
+                  </article>
+                )}
               />
             </div>
 
             {/* SIMCE Historical Results */}
-            <div className="rounded-md border border-[#e6e8eb] bg-white p-5">
+            <div className="rounded-md border border-[#e6e8eb] bg-white p-4 md:p-5">
               <h2 className="text-base font-semibold">Resultados Históricos SIMCE Oficiales (Establecimiento)</h2>
               <p className="mt-1 text-xs text-[#5b6472]">
                 Historial de puntajes y niveles de logro para el RBD: <span className="font-mono font-bold text-[#07305f]">{school.rbd ?? "Sin configurar"}</span>
               </p>
               {school.rbd ? (
                 simceData.length > 0 ? (
-                  <div className="mt-4 overflow-x-auto">
+                  <>
+                    <div className="mt-4 hidden overflow-x-auto md:block">
                     <table className="w-full text-left text-sm">
                       <thead>
                         <tr className="border-b border-[#eef0f3] text-xs font-semibold uppercase tracking-wider text-[#5b6472]">
@@ -273,6 +281,23 @@ export default async function DashboardPage() {
                       </tbody>
                     </table>
                   </div>
+                  <div className="mt-4 grid gap-3 md:hidden">
+                    {simceData.map((row: any, idx: number) => (
+                      <article key={idx} className="rounded-md border border-[#e6e8eb] bg-white p-3 text-sm shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-[#111827]">{row.grado}</p>
+                            <p className="mt-1 text-xs text-[#5b6472]">{row.asignatura} · {row.agno}</p>
+                          </div>
+                          <p className="shrink-0 font-bold text-[#07305f]">{row.puntaje_promedio} pts</p>
+                        </div>
+                        <p className="mt-3 text-xs text-[#5b6472]">
+                          Niveles: {row.nivel_insuficiente_pct !== null ? `${Math.round(row.nivel_insuficiente_pct)}%` : "-"} / {row.nivel_elemental_pct !== null ? `${Math.round(row.nivel_elemental_pct)}%` : "-"} / {row.nivel_adecuado_pct !== null ? `${Math.round(row.nivel_adecuado_pct)}%` : "-"}
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                  </>
                 ) : (
                   <p className="mt-4 text-xs text-[#5b6472] italic">No se encontraron registros del SIMCE históricos para este RBD en la base de datos.</p>
                 )
@@ -291,8 +316,8 @@ export default async function DashboardPage() {
           </div>
 
           <div className="space-y-6">
-            <div className="rounded-md border border-[#e6e8eb] bg-white p-5"><QuotaBar used={scansUsed} limit={scansLimit} /></div>
-            <div className="rounded-md border border-[#e6e8eb] bg-white p-5">
+            <div className="rounded-md border border-[#e6e8eb] bg-white p-4 md:p-5"><QuotaBar used={scansUsed} limit={scansLimit} /></div>
+            <div className="rounded-md border border-[#e6e8eb] bg-white p-4 md:p-5">
               <h2 className="text-base font-semibold">Flujo correcto</h2>
               <div className="mt-4 grid gap-3 text-sm">
                 <Link href="/dashboard/quizzes" className="rounded-md border border-[#e6e8eb] px-4 py-3 font-semibold hover:bg-gray-50 transition-colors">1. Crear ensayo y clave</Link>
