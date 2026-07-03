@@ -52,7 +52,7 @@ export default function AppMenuPage() {
         <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7280]">Herramientas</p>
         <div className="grid gap-4">
           <Link
-            href="/scan"
+            href="/dashboard/quizzes"
             className="group flex items-center gap-4 rounded-2xl border border-[#e6e8eb] bg-white p-5 shadow-sm transition-all active:scale-[0.98]"
           >
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#07305f] text-white">
@@ -63,7 +63,10 @@ export default function AppMenuPage() {
             </div>
             <div className="min-w-0">
               <h2 className="text-base font-bold text-[#111827]">Lector Prueba</h2>
-              <p className="mt-0.5 text-sm text-[#5b6472]">Escanea la hoja de respuestas con la cámara.</p>
+              {/* Ojo: antes iba directo a /scan sin ensayo seleccionado, imposible
+               * asociar el escaneo. Ahora pasa por la lista para elegir el ensayo
+               * y usar su boton "Escanear" (fija tulector_active_quiz). */}
+              <p className="mt-0.5 text-sm text-[#5b6472]">Elige el ensayo y escanea la hoja de respuestas.</p>
             </div>
             <svg className="ml-auto h-5 w-5 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
           </Link>
