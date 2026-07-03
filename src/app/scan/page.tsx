@@ -281,12 +281,14 @@ export default function ScanPage() {
    const payload = await response.json().catch(() => ({}));
    if (!response.ok) throw new Error(payload?.error || "No se pudo guardar");
    const scoreLabel = `${payload.score ?? "-"}/${payload.total ?? config.numQuestions}`;
+   // Aviso de cuota (tope suave): se informa junto al resultado, sin bloquear.
+   const quotaNote = payload.quota?.warning ? ` ⚠ ${payload.quota.warning}` : "";
    if (payload.status === "manual_review") {
     setSyncState("review");
-    setSyncMessage(`Guardado para revision (${scoreLabel}). ${payload.studentCode ? "Alumno sin identificar." : "RUT no detectado."}`);
+    setSyncMessage(`Guardado para revision (${scoreLabel}). ${payload.studentCode ? "Alumno sin identificar." : "RUT no detectado."}${quotaNote}`);
    } else {
     setSyncState("saved");
-    setSyncMessage(`Sincronizado en dashboard (${scoreLabel}).`);
+    setSyncMessage(`Sincronizado en dashboard (${scoreLabel}).${quotaNote}`);
    }
   } catch (err) {
    setSyncState("error");

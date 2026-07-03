@@ -257,6 +257,22 @@ export async function POST(request: Request) {
       }, { onConflict: "school_id,student_code,quiz_id" });
     }
 
+    // Cuota REAL: cada escaneo procesado consume 1 (alimenta QuotaBar, alertas 90/100%
+    // y billing). RPC atomica SECURITY DEFINER (los profes no pueden editar schools por
+    // RLS). Tope SUAVE: se informa, no se bloquea el escaneo. Si la funcion aun no
+    // existe en la BD, el escaneo NO falla (degrada sin cuota).
+    let quota: { used: number; limit: number; warning: string | null } | null = null;
+    try {
+      const { data: used, error: quotaError } = await supabase.rpc("increment_scans_used", { p_school_id: school.id });
+      if (!quotaError && typeof used === "number") {
+        const limit = school.scans_limit ?? 0;
+        let warning: string | null = null;
+        if (limit > 0 && used >= limit) warning = `Cuota de escaneos agotada (${used}/${limit}). Amplia tu plan en Facturacion.`;
+        else if (limit > 0 && used >= limit * 0.9) warning = `Cuota casi agotada (${used}/${limit}).`;
+        quota = { used, limit, warning };
+      }
+    } catch { /* sin cuota disponible: no bloquea el flujo */ }
+
     return NextResponse.json({
       ok: true,
       action,
@@ -270,6 +286,7 @@ export async function POST(request: Request) {
       total,
       grade: gradeResult.grade,
       equivalentScore: eqScore,
+      quota,
     });
   } catch (error) {
     console.error("[scan/result]", error);
