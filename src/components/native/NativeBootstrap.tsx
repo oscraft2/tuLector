@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { applyNativeChrome } from "@/lib/native/capacitor";
-import { setupOnlineListener } from "@/lib/offline_sync";
-import { syncOfflineQueue } from "@/lib/offline_sync";
+import { applyNativeChrome, pushRegister, pushOnForeground } from "@/lib/native/capacitor";
+import { setupOnlineListener, syncOfflineQueue } from "@/lib/offline_sync";
 import { getQueueSize } from "@/lib/offline_queue";
 import { UpdateBanner } from "./UpdateBanner";
 
@@ -20,6 +19,31 @@ export function NativeBootstrap() {
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
     navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const doRegister = async () => {
+      const token = await pushRegister();
+      if (!token) return;
+      try {
+        await fetch("/api/push/register", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+      } catch { /* sin red */ }
+
+      pushOnForeground(({ title, body }) => {
+        if (typeof window === "undefined") return;
+        if ("Notification" in window && Notification.permission === "granted") {
+          new Notification(title || "TuLector", { body });
+        }
+      });
+    };
+
+    const timeout = setTimeout(doRegister, 3000);
+    return () => clearTimeout(timeout);
   }, []);
 
   useEffect(() => {

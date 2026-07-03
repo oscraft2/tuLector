@@ -3,6 +3,7 @@ import { getDashboardContext } from "@/lib/supabase_server";
 import { calculateGrade } from "@/lib/latam";
 import { canonicalRut, normalizeRut } from "@/lib/rut";
 import { isMissingColumnError } from "@/lib/supabase_errors";
+import { sendPushToSchool } from "@/lib/push_server";
 
 type ScanAnswer = {
   q: number;
@@ -319,6 +320,16 @@ export async function POST(request: Request) {
         if (limit > 0 && used >= limit) warning = `Cuota de escaneos agotada (${used}/${limit}). Amplia tu plan en Facturacion.`;
         else if (limit > 0 && used >= limit * 0.9) warning = `Cuota casi agotada (${used}/${limit}).`;
         quota = { used, limit, warning };
+
+        if (limit > 0 && used >= limit * 0.9) {
+          void sendPushToSchool(school.id, {
+            title: used >= limit ? "Cuota de escaneos agotada" : "Cuota de escaneos casi agotada",
+            body: used >= limit
+              ? `Alcanzaste el limite de ${limit} escaneos. Amplia tu plan para seguir escaneando.`
+              : `Has usado ${used} de ${limit} escaneos. Queda poco para llegar al limite.`,
+            data: { type: "quota", used: String(used), limit: String(limit) },
+          });
+        }
       }
     } catch { /* sin cuota disponible: no bloquea el flujo */ }
 

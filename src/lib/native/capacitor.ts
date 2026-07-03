@@ -145,6 +145,68 @@ export async function biometricVerify(reason: string): Promise<boolean> {
 }
 
 /**
+ * Registra el dispositivo para notificaciones push (FCM). Retorna el token FCM
+ * si se obtiene, o null si no está disponible (web o sin permiso).
+ */
+export async function pushRegister(): Promise<string | null> {
+  const Push = plugin<{
+    register: () => Promise<void>;
+    requestPermissions: () => Promise<{ receive: string }>;
+    addListener: (event: string, fn: (data: unknown) => void) => void;
+    removeAllListeners: () => Promise<void>;
+  }>("PushNotifications");
+  if (!Push) return null;
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    const timeout = setTimeout(() => { if (!resolved) { resolved = true; resolve(null); } }, 8000);
+
+    Push.addListener("registration", (data: unknown) => {
+      if (resolved) return;
+      const token = (data as { value?: string })?.value ?? null;
+      resolved = true;
+      clearTimeout(timeout);
+      resolve(token);
+    });
+
+    Push.addListener("registrationError", () => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+      resolve(null);
+    });
+
+    Push.requestPermissions()
+      .then(() => Push.register())
+      .catch(() => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timeout);
+        resolve(null);
+      });
+  });
+}
+
+/**
+ * Escucha notificaciones push entrantes mientras la app está en primer plano.
+ * Retorna una función para cancelar la suscripción.
+ */
+export function pushOnForeground(handler: (data: { title?: string; body?: string }) => void): () => void {
+  const Push = plugin<{
+    addListener: (event: string, fn: (data: unknown) => void) => void;
+    removeAllListeners: () => Promise<void>;
+  }>("PushNotifications");
+  if (!Push) return () => {};
+
+  Push.addListener("pushNotificationReceived", (data: unknown) => {
+    const n = data as { title?: string; body?: string };
+    handler(n);
+  });
+
+  return () => { Push.removeAllListeners().catch(() => {}); };
+}
+
+/**
  * Ajusta el "chrome" nativo al arrancar: marca <html> con `cap-native` (CSS que
  * mata el olor a web) y configura la status bar si el plugin existe.
  */
