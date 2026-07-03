@@ -13,7 +13,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("quizzes")
-    .select("id,title,answer_key,num_questions,options_per_question,option_labels")
+    .select("id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code")
     .eq("id", quizId)
     .is("archived_at", null)
     .single();
@@ -27,5 +27,7 @@ export async function GET() {
     num_questions: data.num_questions,
     options_per_question: data.options_per_question,
     option_labels: data.option_labels,
+    num_columns: data.num_columns,
+    sheet_code: data.sheet_code,
   });
 }
