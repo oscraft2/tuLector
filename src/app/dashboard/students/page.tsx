@@ -133,7 +133,7 @@ export default async function StudentsPage({ searchParams }: PageProps) {
             renderRow={(student) => (
               <tr key={student.id} className="border-b border-[#eef0f3] last:border-0">
                 <td className="px-5 py-4 font-mono text-sm">{student.rut ?? student.student_id}</td>
-                <td className="px-5 py-4 font-semibold">{student.name}</td>
+                <td className="px-5 py-4 font-semibold"><Link href={`/dashboard/students/${student.id}`} className="text-[#07305f] hover:underline">{student.name}</Link></td>
                 <td className="px-5 py-4 text-[#5b6472]">
                   <span className="rounded bg-[#f4f6f8] px-2 py-0.5 text-xs font-semibold text-[#1e293b]">
                     {student.course ?? "-"}
@@ -155,7 +155,7 @@ export default async function StudentsPage({ searchParams }: PageProps) {
               <article key={student.id} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-base font-semibold text-[#111827]">{student.name}</p>
+                    <Link href={`/dashboard/students/${student.id}`} className="block truncate text-base font-semibold text-[#07305f] hover:underline">{student.name}</Link>
                     <p className="mt-1 font-mono text-xs text-[#5b6472]">{student.rut ?? student.student_id}</p>
                   </div>
                   <span className="rounded bg-[#f4f6f8] px-2 py-0.5 text-xs font-semibold text-[#1e293b]">

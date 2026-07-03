@@ -76,7 +76,7 @@ export function GlobalSearch() {
     if (r.type === "quiz") {
       router.push(`/dashboard/quizzes/${r.item.id}`);
     } else {
-      router.push(r.item.courseId ? `/dashboard/students?course=${r.item.courseId}` : "/dashboard/students");
+      router.push(`/dashboard/students/${r.item.id}`);
     }
   }
 

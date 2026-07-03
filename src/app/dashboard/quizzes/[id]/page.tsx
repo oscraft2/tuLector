@@ -5,6 +5,7 @@ import { DataTable } from "@/components/dashboard/DataTable";
 import { StatusPill } from "@/components/AppShell";
 import { startScanForQuiz } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { QuizStats } from "@/components/dashboard/QuizStats";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export default async function QuizDetailPage({ params }: PageProps) {
   const { supabase, locale } = await getDashboardContext();
   const [{ data: quiz }, { data: papers }, { data: metadata }] = await Promise.all([
     supabase.from("quizzes").select("*").eq("id", id).single(),
-    supabase.from("papers").select("id,student_name,student_id,score,total,status,scanned_at,equivalent_score,grade").eq("quiz_id", id).order("scanned_at", { ascending: false }),
+    supabase.from("papers").select("id,student_name,student_id,score,total,status,scanned_at,equivalent_score,grade,answers").eq("quiz_id", id).order("scanned_at", { ascending: false }),
     supabase.from("question_metadata").select("question_number,axis_name,skill_name,difficulty").eq("quiz_id", id).order("question_number"),
   ]);
   if (!quiz) notFound();
@@ -69,6 +70,14 @@ export default async function QuizDetailPage({ params }: PageProps) {
             <div><h2 className="text-xl font-semibold">Clave</h2><p className="mt-1 font-mono text-sm tracking-wider text-[#5b6472]">{quiz.answer_key}</p></div>
             <div className="flex flex-col gap-2 sm:flex-row"><Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold">Generar hoja</Link><form action={startScanForQuiz}><input type="hidden" name="quiz_id" value={quiz.id} /><button className="w-full rounded-md bg-[#07305f] px-4 py-2 text-sm font-semibold text-white sm:w-auto">Abrir lector</button></form></div>
           </div>
+        </section>
+
+        <section>
+          <div className="mb-3 flex items-center gap-3">
+            <h2 className="whitespace-nowrap text-[12.5px] font-semibold uppercase tracking-[0.1em] text-[#6b7280]">Estadística global</h2>
+            <span className="h-px flex-1 bg-[#e6e8eb]" />
+          </div>
+          <QuizStats quiz={quiz} papers={papers ?? []} metadata={metadata ?? []} />
         </section>
         <DataTable
           columns={["Alumno", "Respuestas Correctas", "Resultado Equivalente", "Estado", "Fecha"]}
