@@ -37,6 +37,17 @@ type StudentPaper = {
 
 type StudentMetadata = { quiz_id: string; question_number: number; axis_name: string | null; skill_name: string | null };
 
+type StudentGradeRecord = {
+  id: string;
+  quiz_id: string;
+  raw_score: number | null;
+  total_questions: number | null;
+  calculated_grade: number | string | null;
+  passing: boolean | null;
+  graded_at: string | null;
+  quizzes: { title: string | null } | Array<{ title: string | null }> | null;
+};
+
 const NOTA = (score: number, total: number) => (total > 0 ? calculateGrade(score, total).grade : 0);
 
 function notaColor(n: number) {
@@ -88,6 +99,29 @@ export default async function StudentProfilePage({ params }: PageProps) {
     for (const paper of (result.data ?? []) as unknown as StudentPaper[]) papersById.set(String(paper.id), paper);
   }
   const papersRaw = [...papersById.values()].sort((a, b) => new Date(a.scanned_at ?? 0).getTime() - new Date(b.scanned_at ?? 0).getTime());
+
+  const { data: gradeRecordsRaw } = studentRutNorm
+    ? await supabase
+        .from("grade_records")
+        .select("id, quiz_id, raw_score, total_questions, calculated_grade, passing, graded_at, quizzes(title)")
+        .eq("school_id", school.id)
+        .eq("student_code", studentRutNorm)
+        .order("graded_at", { ascending: false })
+    : { data: [] as StudentGradeRecord[] };
+  const gradeHistory = ((gradeRecordsRaw ?? []) as unknown as StudentGradeRecord[]).map((record) => {
+    const quiz = Array.isArray(record.quizzes) ? record.quizzes[0] : record.quizzes;
+    const grade = Number(record.calculated_grade ?? 0);
+    return {
+      id: record.id,
+      quizId: record.quiz_id,
+      title: quiz?.title ?? "Ensayo",
+      score: record.raw_score ?? 0,
+      total: record.total_questions ?? 0,
+      grade: Number.isFinite(grade) ? grade : 0,
+      passing: record.passing,
+      date: record.graded_at ?? new Date(0).toISOString(),
+    };
+  });
 
   const papers = (papersRaw ?? []).filter((p) => Number(p.total ?? p.quizzes?.num_questions ?? 0) > 0);
   const quizIds = [...new Set(papers.map((p) => p.quizzes?.id ?? p.quiz_id).filter((quizId): quizId is string => Boolean(quizId)))];
@@ -215,48 +249,55 @@ export default async function StudentProfilePage({ params }: PageProps) {
 
           {/* Historial */}
           <section className="mt-4 rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-[#111827]">Historial académico</h2>
-            <p className="mt-1 text-xs text-[#5b6472]">Cada ensayo rendido. Pincha para ver la estadística global.</p>
-            <div className="mt-4 hidden overflow-x-auto md:block">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[#eef0f3] text-xs font-semibold uppercase tracking-wider text-[#5b6472]">
-                    <th className="py-2 pr-2">Fecha</th>
-                    <th className="py-2 pr-2">Ensayo</th>
-                    <th className="py-2 pr-2">Asignatura</th>
-                    <th className="py-2 pr-2">Correctas</th>
-                    <th className="py-2 pr-2">Logro</th>
-                    <th className="py-2 pr-2 text-right">Nota</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#eef0f3]">
-                  {[...rows].reverse().map((r) => (
-                    <tr key={r.id} className="text-sm hover:bg-gray-50">
-                      <td className="py-3 pr-2 text-xs text-[#5b6472]">{new Date(r.date).toLocaleDateString("es-CL")}</td>
-                      <td className="py-3 pr-2 font-semibold"><Link href={`/dashboard/quizzes/${r.quizId}`} className="text-[#07305f] hover:underline">{r.title}</Link></td>
-                      <td className="py-3 pr-2 text-[#5b6472]">{r.subject ?? "-"}</td>
-                      <td className="py-3 pr-2 font-mono">{r.score}/{r.total}</td>
-                      <td className="py-3 pr-2">{r.pct}%</td>
-                      <td className={`py-3 pr-2 text-right text-base font-bold ${notaColor(r.nota)}`}>{r.nota.toFixed(1)}</td>
-                    </tr>
+            <h2 className="text-base font-semibold text-[#111827]">Historial de evaluaciones</h2>
+            <p className="mt-1 text-xs text-[#5b6472]">Notas consolidadas desde grade_records. Pincha para ver la estadística global.</p>
+            {gradeHistory.length === 0 ? (
+              <p className="mt-4 rounded-lg bg-[#f8fafc] px-4 py-5 text-center text-sm text-[#6b7280]">Aún no rinde evaluaciones.</p>
+            ) : (
+              <>
+                <div className="mt-4 hidden overflow-x-auto md:block">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-[#eef0f3] text-xs font-semibold uppercase tracking-wider text-[#5b6472]">
+                        <th className="py-2 pr-2">Ensayo</th>
+                        <th className="py-2 pr-2">Correctas</th>
+                        <th className="py-2 pr-2 text-right">Nota</th>
+                        <th className="py-2 pr-2">Aprobado</th>
+                        <th className="py-2 pr-2">Fecha</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#eef0f3]">
+                      {gradeHistory.map((record) => (
+                        <tr key={record.id} className="text-sm hover:bg-gray-50">
+                          <td className="py-3 pr-2 font-semibold"><Link href={`/dashboard/quizzes/${record.quizId}`} className="text-[#07305f] hover:underline">{record.title}</Link></td>
+                          <td className="py-3 pr-2 font-mono">{record.score}/{record.total}</td>
+                          <td className={`py-3 pr-2 text-right text-base font-bold ${notaColor(record.grade)}`}>{record.grade.toFixed(1)}</td>
+                          <td className="py-3 pr-2"><ApprovedPill passing={record.passing} /></td>
+                          <td className="py-3 pr-2 text-xs text-[#5b6472]">{new Date(record.date).toLocaleDateString("es-CL")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-4 grid gap-3 md:hidden">
+                  {gradeHistory.map((record) => (
+                    <Link key={record.id} href={`/dashboard/quizzes/${record.quizId}`} className="block rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-[#111827]">{record.title}</p>
+                          <p className="mt-1 text-xs text-[#5b6472]">{new Date(record.date).toLocaleDateString("es-CL")}</p>
+                        </div>
+                        <span className={`shrink-0 text-lg font-bold ${notaColor(record.grade)}`}>{record.grade.toFixed(1)}</span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-3 text-xs text-[#5b6472]">
+                        <span>Correctas: <b className="font-mono text-[#111827]">{record.score}/{record.total}</b></span>
+                        <ApprovedPill passing={record.passing} />
+                      </div>
+                    </Link>
                   ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="mt-4 grid gap-3 md:hidden">
-              {[...rows].reverse().map((r) => (
-                <Link key={r.id} href={`/dashboard/quizzes/${r.quizId}`} className="block rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[#111827]">{r.title}</p>
-                      <p className="mt-1 text-xs text-[#5b6472]">{r.subject ?? "-"} · {new Date(r.date).toLocaleDateString("es-CL")}</p>
-                    </div>
-                    <span className={`shrink-0 text-lg font-bold ${notaColor(r.nota)}`}>{r.nota.toFixed(1)}</span>
-                  </div>
-                  <p className="mt-2 text-xs text-[#5b6472]">Correctas: <b className="font-mono text-[#111827]">{r.score}/{r.total}</b> · {r.pct}%</p>
-                </Link>
-              ))}
-            </div>
+                </div>
+              </>
+            )}
           </section>
         </>
       )}
@@ -273,6 +314,11 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: 
       {sub ? <p className="mt-1 truncate text-[11px] text-[#9aa3af]">{sub}</p> : null}
     </div>
   );
+}
+
+function ApprovedPill({ passing }: { passing: boolean | null }) {
+  if (passing === null) return <span className="text-xs text-[#6b7280]">-</span>;
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${passing ? "bg-emerald-50 text-emerald-700" : "bg-orange-50 text-orange-700"}`}>{passing ? "Si" : "No"}</span>;
 }
 
 const AXIS_LVL = {

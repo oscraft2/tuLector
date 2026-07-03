@@ -19,18 +19,23 @@ type PaperResult = {
   grade: string | number | null;
 };
 
+type GradePassing = { passing: boolean | null };
+
 export default async function ResultsPage({ params }: PageProps) {
   const { quizId } = await params;
-  const { supabase, isAdmin } = await getDashboardContext();
-  const [{ data: quiz }, { data: papers }] = await Promise.all([
+  const { supabase, isAdmin, school } = await getDashboardContext();
+  const [{ data: quiz }, { data: papers }, { data: gradeRecords }] = await Promise.all([
     supabase.from("quizzes").select("id,title,num_questions,answer_key,evaluation_type,evaluation_variant").eq("id", quizId).single(),
     supabase.from("papers").select("id,student_name,student_id,score,total,answers,scanned_at,equivalent_score,grade").eq("quiz_id", quizId).order("score", { ascending: false }),
+    supabase.from("grade_records").select("passing").eq("school_id", school.id).eq("quiz_id", quizId),
   ]);
   if (!quiz) notFound();
   const rows = (papers ?? []) as PaperResult[];
+  const grades = (gradeRecords ?? []) as GradePassing[];
   const avg = rows.length ? Math.round(rows.reduce((sum, p) => sum + ((p.score ?? 0) / Math.max(1, p.total ?? quiz.num_questions)) * 100, 0) / rows.length) : 0;
   const max = rows.reduce((best, p) => Math.max(best, p.score ?? 0), 0);
   const min = rows.length ? rows.reduce((low, p) => Math.min(low, p.score ?? 0), rows[0].score ?? 0) : 0;
+  const approval = grades.length ? `${Math.round((grades.filter((record) => record.passing).length / grades.length) * 100)}%` : "—";
 
   const isPAES = quiz.evaluation_type === "paes";
   const isSIMCE = quiz.evaluation_type === "simce";
@@ -73,6 +78,7 @@ export default async function ResultsPage({ params }: PageProps) {
           <KPI label="Logro Promedio" value={`${avg}%`} />
           <KPI label="Maximo Correctas" value={`${max}/${quiz.num_questions}`} />
           <KPI label="Minimo Correctas" value={`${min}/${quiz.num_questions}`} />
+          <KPI label="Aprobación" value={approval} />
         </KPIGrid>
         <div className="rounded-md border border-[#e1e5ea] bg-white p-5">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
