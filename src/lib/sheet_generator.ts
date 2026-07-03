@@ -6,6 +6,7 @@
 import { drawSheet, type Ctx2D } from "@/lib/sheet_render";
 import { computeRutDV } from "@/lib/omr";
 import { SHEET_W, type SheetConfig } from "@/lib/sheet_layout";
+import { type SheetCodeData } from "@/lib/sheet_code";
 
 export interface Branding {
   title?: string;     // título del ensayo
@@ -17,6 +18,7 @@ export interface SheetMarks {
   answers?: number[];
   rut?: string;
   filled?: boolean;
+  code?: SheetCodeData; // codigo de hoja (ata la hoja a su ensayo). Ver sheet_code.
 }
 
 // Zona segura de branding: banda superior y=0..48 (las anclas están en y≥50).

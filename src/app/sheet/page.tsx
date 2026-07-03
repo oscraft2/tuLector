@@ -5,9 +5,10 @@ import Link from "next/link";
 import { SHEET_W, SHEET_H, type SheetConfig } from "@/lib/sheet_layout";
 import {
   renderSheet, randomValidRut, randomAnswers, safeColumns, allowedColumns,
-  MIN_QUESTIONS, MAX_QUESTIONS, type Branding, type GroundTruthEntry,
+  MIN_QUESTIONS, MAX_QUESTIONS, type Branding, type GroundTruthEntry, type SheetMarks,
 } from "@/lib/sheet_generator";
 import { validateRut, normalizeRut } from "@/lib/rut";
+import { SHEET_CODE_VERSION, type SheetCodeData } from "@/lib/sheet_code";
 
 const DEFAULT_TEST_RUT = "12345678-5";
 const LABELS = "ABCDE";
@@ -60,6 +61,9 @@ export default function SheetPage() {
   const [rutMode, setRutMode] = useState<"random" | "list">("random");
   const [rutList, setRutList] = useState("");
 
+  // Ensayo heredado via /sheet?quiz=<id>: la hoja toma su formato + clave + codigo.
+  const [quizInfo, setQuizInfo] = useState<{ id: string; title: string; sheetCode: number | null; answerKey: string } | null>(null);
+
   // Parsea la lista pegada (acepta "rut" o "rut,nombre,curso" por línea, salta
   // encabezado). Devuelve RUTs válidos normalizados, sin duplicados.
   const parseRutList = (raw: string): string[] => {
@@ -80,7 +84,13 @@ export default function SheetPage() {
 
   const cfg: SheetConfig = { numQuestions, numOptions, numColumns };
   const branding: Branding = { title, school, logo };
-  const marks = fillRut ? { rut, filled: true } : {};
+  // Codigo de hoja: si viene de un ensayo, lleva su sheet_code (ata la hoja al
+  // ensayo y habilita verificar "hoja correcta" al escanear).
+  const sheetCode: SheetCodeData | undefined =
+    quizInfo && quizInfo.sheetCode != null
+      ? { version: SHEET_CODE_VERSION, sheetId: quizInfo.sheetCode, page: 1, pagesTotal: 1 }
+      : undefined;
+  const marks: SheetMarks = { ...(fillRut ? { rut, filled: true } : {}), ...(sheetCode ? { code: sheetCode } : {}) };
 
   // Sincroniza la config con el escáner: /scan la lee de localStorage para leer
   // la hoja con el MISMO nº de preguntas/opciones/columnas que se imprimió.
@@ -99,7 +109,27 @@ export default function SheetPage() {
     const ctx = canvas.getContext("2d");
     if (ctx) renderSheet(ctx, marks, cfg, branding);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numQuestions, numOptions, numColumns, title, school, logo, fillRut, rut]);
+  }, [numQuestions, numOptions, numColumns, title, school, logo, fillRut, rut, quizInfo]);
+
+  // Carga el ensayo desde ?quiz=<id> y hace que la hoja HEREDE su formato + codigo.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("quiz");
+    if (!id) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/quiz/${id}`, { credentials: "include", cache: "no-store" });
+        if (!res.ok) return;
+        const q = await res.json();
+        const nq = Number(q.num_questions) || 20;
+        const no = Number(q.options_per_question) || 5;
+        setNumQuestions(nq);
+        setNumOptions(no);
+        setNumColumns(safeColumns(nq, Number(q.num_columns) || 1));
+        if (q.title) setTitle(String(q.title));
+        setQuizInfo({ id: String(q.id), title: String(q.title ?? ""), sheetCode: q.sheet_code ?? null, answerKey: String(q.answer_key ?? "") });
+      } catch { /* sin ensayo -> generador manual */ }
+    })();
+  }, []);
 
   const onLogo = (file: File | undefined) => {
     if (!file) { setLogo(null); return; }
@@ -109,7 +139,7 @@ export default function SheetPage() {
   };
 
   /** Renderiza una hoja a dataURL PNG (2x para nitidez de impresión). */
-  const renderToDataUrl = (m: { answers?: number[]; rut?: string; filled?: boolean }) => {
+  const renderToDataUrl = (m: SheetMarks) => {
     const c = document.createElement("canvas");
     c.width = SHEET_W * 2; c.height = SHEET_H * 2;
     const ctx = c.getContext("2d")!;
@@ -153,7 +183,7 @@ export default function SheetPage() {
         usedRuts.add(r);
       }
       const ans = randomAnswers(numQuestions, numOptions);
-      urls.push(renderToDataUrl({ rut: r, answers: ans, filled: true }));
+      urls.push(renderToDataUrl({ rut: r, answers: ans, filled: true, ...(sheetCode ? { code: sheetCode } : {}) }));
       truth.push({ index: i, rut: r, answers: ans.map((a) => LABELS[a]) });
     }
     const meta = {
@@ -201,22 +231,29 @@ export default function SheetPage() {
           {/* Config del lector */}
           <section className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
             <h3 className="font-bold text-white">Configuración</h3>
+            {quizInfo && (
+              <div className="rounded-lg border border-emerald-800/60 bg-emerald-950/40 px-3 py-2 text-xs text-emerald-200">
+                📋 Hoja del ensayo: <strong className="text-white">{quizInfo.title || "sin título"}</strong>
+                {quizInfo.sheetCode != null && <span className="text-emerald-300"> · código #{quizInfo.sheetCode}</span>}
+                <span className="block text-emerald-400/80">Formato heredado del ensayo (bloqueado). <a href="/sheet" className="underline">Generar hoja libre</a></span>
+              </div>
+            )}
             <label className="block">
               <span className="text-zinc-400">N° de preguntas: <strong className="text-white">{numQuestions}</strong></span>
-              <input type="range" min={MIN_QUESTIONS} max={MAX_QUESTIONS} value={numQuestions}
+              <input type="range" min={MIN_QUESTIONS} max={MAX_QUESTIONS} value={numQuestions} disabled={!!quizInfo}
                 onChange={(e) => { const n = +e.target.value; setNumQuestions(n); setNumColumns(safeColumns(n, numColumns)); }}
-                className="w-full" />
+                className="w-full disabled:opacity-50" />
             </label>
             <div className="flex gap-3">
               <label className="flex-1">
                 <span className="text-zinc-400">Opciones</span>
-                <select value={numOptions} onChange={(e) => setNumOptions(+e.target.value)} className={inputCls}>
+                <select value={numOptions} disabled={!!quizInfo} onChange={(e) => setNumOptions(+e.target.value)} className={inputCls}>
                   {[3, 4, 5].map((n) => <option key={n} value={n}>{n} ({LABELS.slice(0, n)})</option>)}
                 </select>
               </label>
               <label className="flex-1">
                 <span className="text-zinc-400">Columnas</span>
-                <select value={numColumns} onChange={(e) => setNumColumns(+e.target.value)} className={inputCls}>
+                <select value={numColumns} disabled={!!quizInfo} onChange={(e) => setNumColumns(+e.target.value)} className={inputCls}>
                   {allowedColumns(numQuestions).map((n) => <option key={n} value={n}>{n} columna{n > 1 ? "s" : ""}</option>)}
                 </select>
               </label>
