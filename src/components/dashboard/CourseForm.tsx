@@ -1,9 +1,9 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
-import { useFormStatus } from "react-dom";
 import type { DashboardActionState } from "@/app/dashboard/actions";
 import { ActionFeedbackDialog } from "@/components/dashboard/ActionFeedbackDialog";
+import { SubmitButton } from "@/components/dashboard/SubmitButton";
 
 const initialState: DashboardActionState = { status: "idle" };
 
@@ -11,16 +11,6 @@ type CourseFormProps = {
   action: (state: DashboardActionState, formData: FormData) => Promise<DashboardActionState>;
   grades: readonly string[];
 };
-
-function SubmitButton() {
-  const { pending } = useFormStatus();
-
-  return (
-    <button type="submit" disabled={pending} className="w-full rounded-md bg-[#07305f] py-1.5 text-xs font-semibold text-white hover:bg-[#062447] disabled:cursor-not-allowed disabled:opacity-60">
-      {pending ? "Creando..." : "Crear curso"}
-    </button>
-  );
-}
 
 export function CourseForm({ action, grades }: CourseFormProps) {
   const [state, formAction] = useActionState(action, initialState);
@@ -52,7 +42,7 @@ export function CourseForm({ action, grades }: CourseFormProps) {
             ))}
           </select>
         </div>
-        <SubmitButton />
+        <SubmitButton pendingLabel="Creando…" className="w-full rounded-md bg-[#07305f] py-1.5 text-xs font-semibold text-white hover:bg-[#062447] disabled:cursor-not-allowed disabled:opacity-60">Crear curso</SubmitButton>
       </form>
       <ActionFeedbackDialog state={state} />
     </>

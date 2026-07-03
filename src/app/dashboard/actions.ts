@@ -45,104 +45,103 @@ async function nextSheetCode(
   return ((data?.sheet_code as number | null) ?? 0) + 1;
 }
 
-export async function createQuiz(formData: FormData) {
-  const { supabase, user, school } = await getDashboardContext();
-  const title = String(formData.get("title") ?? "").trim();
-  const requestedQuestions = Number(formData.get("num_questions") ?? 20);
-  const requestedOptions = Number(formData.get("options_per_question") ?? 5);
-  if (!Number.isInteger(requestedQuestions) || requestedQuestions < QUIZ_MIN_QUESTIONS || requestedQuestions > QUIZ_MAX_QUESTIONS) {
-    throw new Error("El lector movil soporta entre 1 y 40 preguntas.");
-  }
-  if (!QUIZ_ALLOWED_OPTIONS.includes(requestedOptions as (typeof QUIZ_ALLOWED_OPTIONS)[number])) {
-    throw new Error("El lector movil soporta 3, 4 o 5 opciones.");
-  }
-  const numQuestions = normalizeQuestionCount(formData.get("num_questions"));
-  const numOptions = normalizeQuizOptions(formData.get("options_per_question"));
-  const answerKey = normalizeAnswerKeyForOptions(formData.get("answer_key_clean") ?? formData.get("answer_key"), numOptions);
-  const evalType = String(formData.get("evaluation_type") ?? "custom");
-  const evalVariant = String(formData.get("evaluation_variant") ?? "") || null;
-  if (!title) throw new Error("Ingresa un titulo para el ensayo.");
-  if (answerKey.length !== numQuestions) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
-  // Nº de columnas: derivado (misma heuristica que ya usaba el lector).
-  const numColumns = numQuestions > 30 ? 2 : 1;
-  const SHEET_CODE_MAX = 0xfffff; // 1.048.575
-
-  // Campos base del ensayo (lo que SIEMPRE se guarda, como antes de Fase 1).
-  const base = {
-    school_id: school.id,
-    user_id: user.id,
-    created_by: user.id,
-    title,
-    num_questions: numQuestions,
-    options_per_question: numOptions,
-    option_labels: optionLabelsFor(numOptions).split("").join(","),
-    answer_key: answerKey,
-    subject: String(formData.get("subject") ?? "") || null,
-    grade: String(formData.get("grade") ?? "") || null,
-    evaluation_type: evalType,
-    evaluation_variant: evalVariant,
-  };
-
-  // Intento ENRIQUECIDO (num_columns + sheet_code correlativo, con reintento ante
-  // colision del indice unico). Si algo falla NO rompemos la creacion de ensayos:
-  // registramos el error real en scan_logs (lectura publica) y caemos al insert basico.
-  let enriched = false;
+export async function createQuiz(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
   try {
-    const baseCode = await nextSheetCode(supabase, school.id);
-    for (let attempt = 0; ; attempt++) {
-      const { error } = await supabase.from("quizzes").insert({
-        ...base,
-        num_columns: numColumns,
-        sheet_code: Math.min(baseCode + attempt, SHEET_CODE_MAX),
-      });
-      if (!error) { enriched = true; break; }
-      if (error.code === "23505" && attempt < 3) continue; // unique_violation -> reintenta
-      throw new Error(`${error.code ?? "?"}: ${error.message}`);
+    const { supabase, user, school } = await getDashboardContext();
+    const title = String(formData.get("title") ?? "").trim();
+    const requestedQuestions = Number(formData.get("num_questions") ?? 20);
+    const requestedOptions = Number(formData.get("options_per_question") ?? 5);
+    if (!Number.isInteger(requestedQuestions) || requestedQuestions < QUIZ_MIN_QUESTIONS || requestedQuestions > QUIZ_MAX_QUESTIONS) {
+      throw new Error("El lector movil soporta entre 1 y 40 preguntas.");
     }
-  } catch (e) {
-    try {
-      await supabase.from("scan_logs").insert({
-        log: { type: "diagnostic", where: "createQuiz.enriched", error: e instanceof Error ? e.message : String(e), ts: new Date().toISOString() },
-      });
-    } catch { /* no critico */ }
-  }
+    if (!QUIZ_ALLOWED_OPTIONS.includes(requestedOptions as (typeof QUIZ_ALLOWED_OPTIONS)[number])) {
+      throw new Error("El lector movil soporta 3, 4 o 5 opciones.");
+    }
+    const numQuestions = normalizeQuestionCount(formData.get("num_questions"));
+    const numOptions = normalizeQuizOptions(formData.get("options_per_question"));
+    const answerKey = normalizeAnswerKeyForOptions(formData.get("answer_key_clean") ?? formData.get("answer_key"), numOptions);
+    const evalType = String(formData.get("evaluation_type") ?? "custom");
+    const evalVariant = String(formData.get("evaluation_variant") ?? "") || null;
+    if (!title) throw new Error("Ingresa un titulo para el ensayo.");
+    if (answerKey.length !== numQuestions) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
 
-  // Fallback: si el enriquecido no entro, guarda el ensayo como antes (garantiza que crea).
-  if (!enriched) {
-    const { error } = await supabase.from("quizzes").insert(base);
+    // N.  de columnas derivado + sheet_code correlativo (con reintento anti-colision).
+    const numColumns = numQuestions > 30 ? 2 : 1;
+    const SHEET_CODE_MAX = 0xfffff; // 1.048.575
+    const baseCode = await nextSheetCode(supabase, school.id);
+    const payload = {
+      school_id: school.id,
+      user_id: user.id,
+      created_by: user.id,
+      title,
+      num_questions: numQuestions,
+      options_per_question: numOptions,
+      num_columns: numColumns,
+      option_labels: optionLabelsFor(numOptions).split("").join(","),
+      answer_key: answerKey,
+      subject: String(formData.get("subject") ?? "") || null,
+      grade: String(formData.get("grade") ?? "") || null,
+      evaluation_type: evalType,
+      evaluation_variant: evalVariant,
+    };
+    for (let attempt = 0; ; attempt++) {
+      const { error } = await supabase.from("quizzes").insert({ ...payload, sheet_code: Math.min(baseCode + attempt, SHEET_CODE_MAX) });
+      if (!error) break;
+      if (error.code === "23505" && attempt < 3) continue; // unique_violation -> reintenta
+      throw new Error(error.message);
+    }
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/quizzes");
+    return actionSuccess("Ensayo creado", `"${title}" quedo listo para generar su hoja.`, "✓");
+  } catch (error) {
+    return actionError(error, "No se pudo crear el ensayo");
+  }
+}
+
+export async function archiveQuiz(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  try {
+    const { supabase } = await getDashboardContext();
+    const id = String(formData.get("id") ?? "");
+    if (!id) throw new Error("Falta el ensayo a archivar.");
+    const { error } = await supabase.from("quizzes").update({ archived_at: new Date().toISOString() }).eq("id", id);
     if (error) throw new Error(error.message);
+    revalidatePath("/dashboard/quizzes");
+    return actionSuccess("Ensayo archivado", "Se movio a archivados.", "🗃");
+  } catch (error) {
+    return actionError(error, "No se pudo archivar");
   }
-  revalidatePath("/dashboard");
-  revalidatePath("/dashboard/quizzes");
 }
 
-export async function archiveQuiz(formData: FormData) {
-  const { supabase } = await getDashboardContext();
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
-  await supabase.from("quizzes").update({ archived_at: new Date().toISOString() }).eq("id", id);
-  revalidatePath("/dashboard/quizzes");
-}
-
-export async function duplicateQuiz(formData: FormData) {
-  const { supabase, user, school } = await getDashboardContext();
-  const id = String(formData.get("id") ?? "");
-  const { data } = await supabase.from("quizzes").select("*").eq("id", id).single();
-  if (!data) return;
-  await supabase.from("quizzes").insert({
-    school_id: school.id,
-    user_id: user.id,
-    created_by: user.id,
-    title: `${data.title} copia`,
-    num_questions: data.num_questions,
-    options_per_question: data.options_per_question,
-    option_labels: data.option_labels,
-    answer_key: data.answer_key,
-    subject: data.subject,
-    grade: data.grade,
-    duplicated_from: data.id,
-  });
-  revalidatePath("/dashboard/quizzes");
+export async function duplicateQuiz(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  try {
+    const { supabase, user, school } = await getDashboardContext();
+    const id = String(formData.get("id") ?? "");
+    const { data } = await supabase.from("quizzes").select("*").eq("id", id).single();
+    if (!data) throw new Error("Ensayo no encontrado.");
+    const sheetCode = await nextSheetCode(supabase, school.id);
+    const { error } = await supabase.from("quizzes").insert({
+      school_id: school.id,
+      user_id: user.id,
+      created_by: user.id,
+      title: `${data.title} copia`,
+      num_questions: data.num_questions,
+      options_per_question: data.options_per_question,
+      num_columns: data.num_columns ?? (Number(data.num_questions) > 30 ? 2 : 1),
+      sheet_code: sheetCode,
+      option_labels: data.option_labels,
+      answer_key: data.answer_key,
+      subject: data.subject,
+      grade: data.grade,
+      evaluation_type: data.evaluation_type ?? "custom",
+      evaluation_variant: data.evaluation_variant ?? null,
+      duplicated_from: data.id,
+    });
+    if (error) throw new Error(error.message);
+    revalidatePath("/dashboard/quizzes");
+    return actionSuccess("Ensayo duplicado", `Se creo "${data.title} copia".`, "⧉");
+  } catch (error) {
+    return actionError(error, "No se pudo duplicar");
+  }
 }
 
 export type DashboardActionState = {

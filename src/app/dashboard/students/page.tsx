@@ -9,6 +9,7 @@ import { CourseRoster } from "@/components/dashboard/CourseRoster";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { importStudents, logExport, createCourse, deleteCourse, deleteStudent, createStudent, updateStudentCourse } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { SubmitButton } from "@/components/dashboard/SubmitButton";
 
 export const dynamic = "force-dynamic";
 
@@ -121,9 +122,7 @@ export default async function StudentsPage({ searchParams }: PageProps) {
             <form action={logExport} className="w-full sm:w-auto">
               <input type="hidden" name="export_type" value="students_csv" />
               <input type="hidden" name="entity_type" value="students" />
-              <button disabled={!isAdmin} className="w-full rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold disabled:opacity-50 sm:w-auto">
-                Exportar CSV
-              </button>
+              <SubmitButton disabled={!isAdmin} pendingLabel="Registrando…" className="w-full rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold disabled:opacity-50 sm:w-auto">Exportar CSV</SubmitButton>
             </form>
           </div>
 

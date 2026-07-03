@@ -1,9 +1,9 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
-import { useFormStatus } from "react-dom";
 import type { DashboardActionState } from "@/app/dashboard/actions";
 import { ActionFeedbackDialog } from "@/components/dashboard/ActionFeedbackDialog";
+import { SubmitButton } from "@/components/dashboard/SubmitButton";
 
 const initialState: DashboardActionState = { status: "idle" };
 
@@ -18,20 +18,6 @@ type StudentFormProps = {
   courses: readonly CourseOption[];
   defaultCourse?: string;
 };
-
-function SubmitButton({ disabled }: { disabled: boolean }) {
-  const { pending } = useFormStatus();
-
-  return (
-    <button
-      type="submit"
-      disabled={disabled || pending}
-      className="w-full rounded-md bg-[#111827] py-2 text-sm font-semibold text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      {disabled ? "Primero crea un curso" : pending ? "Agregando..." : "Agregar alumno"}
-    </button>
-  );
-}
 
 export function StudentForm({ action, courses, defaultCourse }: StudentFormProps) {
   const [state, formAction] = useActionState(action, initialState);
@@ -84,7 +70,7 @@ export function StudentForm({ action, courses, defaultCourse }: StudentFormProps
           </label>
         )}
 
-        <SubmitButton disabled={disabled} />
+        <SubmitButton pendingLabel="Agregando…" disabled={disabled} className="w-full rounded-md bg-[#111827] py-2 text-sm font-semibold text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-50">{disabled ? "Primero crea un curso" : "Agregar alumno"}</SubmitButton>
       </form>
       <ActionFeedbackDialog state={state} />
     </>
