@@ -2,8 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { calculateGrade } from "@/lib/latam";
-
-export const dynamic = "force-dynamic";
+import { NativeBottomNav } from "@/components/native/NativeBottomNav";
 
 type PageProps = { params: Promise<{ quizId: string }> };
 
@@ -59,7 +58,7 @@ export default async function NativeQuizResultsPage({ params }: PageProps) {
         <h1 className="truncate text-lg font-black tracking-tight">{quiz.title}</h1>
       </header>
 
-      <section className="space-y-5 px-5 py-6">
+      <section className="space-y-5 px-5 py-6 pb-24">
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl border border-[#e6e8eb] bg-white p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6b7280]">Alumnos</p>
@@ -97,6 +96,7 @@ export default async function NativeQuizResultsPage({ params }: PageProps) {
           </div>
         )}
       </section>
+      <NativeBottomNav />
     </main>
   );
 }

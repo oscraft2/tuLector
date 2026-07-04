@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { getDashboardContext } from "@/lib/supabase_server";
-
-export const dynamic = "force-dynamic";
+import { NativeBottomNav } from "@/components/native/NativeBottomNav";
 
 type QuizRow = { id: string; title: string; subject: string | null; grade: string | null; num_questions: number | null };
 type PaperCount = { quiz_id: string; status: string | null };
@@ -41,7 +40,7 @@ export default async function NativeResultsPage() {
         <h1 className="text-lg font-black tracking-tight">Resultados</h1>
       </header>
 
-      <section className="space-y-5 px-5 py-6">
+      <section className="space-y-5 px-5 py-6 pb-24">
         {totalPending > 0 ? (
           <div className="rounded-2xl border border-[#fbceb1] bg-[#fdf3ec] p-4 text-sm text-[#9a3412]">
             <span className="font-bold">{totalPending} hoja{totalPending === 1 ? "" : "s"}</span> quedaron para revision manual (respuestas dudosas). Revisalas desde el navegador en tulector.cl.
@@ -76,6 +75,7 @@ export default async function NativeResultsPage() {
           </div>
         )}
       </section>
+      <NativeBottomNav />
     </main>
   );
 }

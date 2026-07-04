@@ -3,8 +3,7 @@ import { cookies } from "next/headers";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { startScanForQuiz } from "@/app/dashboard/actions";
 import { QuizCreateForm } from "@/components/dashboard/QuizCreateForm";
-
-export const dynamic = "force-dynamic";
+import { NativeBottomNav } from "@/components/native/NativeBottomNav";
 
 type QuizRow = {
   id: string;
@@ -49,7 +48,7 @@ export default async function NativeScanPage() {
         <h1 className="text-lg font-black tracking-tight">Escanear</h1>
       </header>
 
-      <section className="space-y-5 px-5 py-6">
+      <section className="space-y-5 px-5 py-6 pb-24">
         {activeQuiz ? (
           <form action={startScanForQuiz}>
             <input type="hidden" name="quiz_id" value={activeQuiz.id} />
@@ -92,6 +91,7 @@ export default async function NativeScanPage() {
           <QuizCreateForm courses={(courses ?? []) as { id: string; name: string; grade: string | null }[]} />
         </div>
       </section>
+      <NativeBottomNav />
     </main>
   );
 }
