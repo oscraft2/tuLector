@@ -1,10 +1,12 @@
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { calculateGrade } from "@/lib/latam";
 import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { DateRangeFilter } from "@/components/dashboard/DateRangeFilter";
+import { ResultSharePanel } from "@/components/dashboard/ResultSharePanel";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +70,11 @@ export default async function ResultsPage({ params, searchParams }: PageProps) {
     const defaultGrade = paper.grade || (paper.total ? resolveGrade(paper.score ?? 0, paper.total) : "-");
     return `Nota ${defaultGrade}`;
   };
+
+  const headersList = await headers();
+  const host = headersList.get("host") ?? "localhost:3000";
+  const proto = headersList.get("x-forwarded-proto") ?? "http";
+  const baseUrl = `${proto}://${host}`;
 
   const getVariantLabel = () => {
     if (!quiz.evaluation_variant) return "Personalizado";
@@ -140,6 +147,7 @@ export default async function ResultsPage({ params, searchParams }: PageProps) {
             </article>
           )}
         />
+        <ResultSharePanel quizId={quiz.id} baseUrl={baseUrl} />
       </div>
     </>
   );
