@@ -8,13 +8,22 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // Read pathname from middleware header
   const headersList = await headers();
 
-  // App nativa (Capacitor): el dashboard web no aplica → al menú /app. Se detecta
-  // por el token del User-Agent (appendUserAgent) en el SERVIDOR → sin flash ni
-  // cargar el dashboard. Atrapa cualquier camino (login email, callback OAuth…).
+  // App nativa (Capacitor): la mayoria del dashboard web no aplica → al menú
+  // /app. Se detecta por el token del User-Agent (appendUserAgent) en el
+  // SERVIDOR → sin flash ni cargar el dashboard. EXCEPCIONES explicitas:
+  //  - /dashboard/quizzes: paso intermedio de "Lector Prueba" (elegir ensayo →
+  //    boton Escanear → /scan). Sin esto el boton del menu nativo no lleva a
+  //    ningun lado (redirige de vuelta a /app).
+  //  - /dashboard/billing: se permite, pero la propia pagina renderiza una
+  //    vista de solo lectura en nativo (sin el checkout de Flow) — ver
+  //    docs/apk-plan.md sobre por que el pago NUNCA se hace dentro del APK
+  //    (reglas de Apple/Google sobre compras de contenido digital in-app).
   const ua = headersList.get("user-agent") ?? "";
-  if (/TuLectorApp/i.test(ua)) redirect("/app");
-
   const pathname = headersList.get("x-pathname") ?? "";
+  const nativeAllowedPrefixes = ["/dashboard/quizzes", "/dashboard/billing"];
+  if (/TuLectorApp/i.test(ua) && !nativeAllowedPrefixes.some((p) => pathname.startsWith(p))) {
+    redirect("/app");
+  }
 
   // Skip the shell for the onboarding page — it has its own full-page layout.
   // Also skip if pathname is empty (fallback).

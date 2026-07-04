@@ -71,12 +71,28 @@ export default function AppMenuPage() {
             <svg className="ml-auto h-5 w-5 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
           </Link>
 
+          <Link
+            href="/dashboard/billing"
+            className="group flex items-center gap-4 rounded-2xl border border-[#e6e8eb] bg-white p-5 shadow-sm transition-all active:scale-[0.98]"
+          >
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#e6e8eb] text-[#111827]">
+              <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-[#111827]">Mi plan</h2>
+              <p className="mt-0.5 text-sm text-[#5b6472]">Cuota de lecturas y facturas. Para comprar, ingresa desde un navegador.</p>
+            </div>
+            <svg className="ml-auto h-5 w-5 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+          </Link>
+
           {/* Placeholder de futuras opciones (deshabilitado) */}
           <div className="flex items-center gap-4 rounded-2xl border border-dashed border-[#dfe3e8] bg-white/50 p-5 opacity-60">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#e6e8eb] text-[#9aa3af] text-2xl">＋</div>
             <div>
               <h2 className="text-base font-bold text-[#9aa3af]">Más opciones</h2>
-              <p className="mt-0.5 text-sm text-[#9aa3af]">Pronto: resultados, alumnos, pruebas.</p>
+              <p className="mt-0.5 text-sm text-[#9aa3af]">Pronto: resultados, alumnos.</p>
             </div>
           </div>
         </div>
