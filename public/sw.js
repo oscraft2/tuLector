@@ -38,10 +38,10 @@ self.addEventListener("fetch", (event) => {
 
   if (event.request.method !== "GET") return;
 
-  if (url.pathname === SCAN_ROUTE || url.pathname.startsWith("/_next/")) {
-    event.respondWith(staleWhileRevalidate(event.request));
-  } else if (url.pathname === SCAN_ROUTE) {
+  if (url.pathname === SCAN_ROUTE) {
     event.respondWith(networkFirst(event.request));
+  } else if (url.pathname.startsWith("/_next/")) {
+    event.respondWith(staleWhileRevalidate(event.request));
   }
 });
 

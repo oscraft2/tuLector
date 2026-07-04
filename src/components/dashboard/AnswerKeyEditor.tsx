@@ -23,7 +23,8 @@ export function AnswerKeyEditor({
   const [questionCount, setQuestionCount] = useState(questions);
   const [optionCount, setOptionCount] = useState(defaultOptions);
 
-  // Auto-configure questions and options when evalType or evalVariant changes
+  // Pre-fill question/option count when evalType or variant changes.
+  // Campos SIEMPRE editables (el profesor puede ajustar el N° de preguntas).
   useEffect(() => {
     if (evalType === "paes") {
       if (evalVariant === "paes_lectora" || evalVariant === "paes_historia" || evalVariant === "paes_ciencias") {
@@ -33,7 +34,6 @@ export function AnswerKeyEditor({
         setQuestionCount(40);
         setOptionCount(4);
       } else {
-        // default paes
         setQuestionCount(40);
         setOptionCount(5);
       }
@@ -42,7 +42,6 @@ export function AnswerKeyEditor({
         setQuestionCount(30);
         setOptionCount(4);
       } else {
-        // 8° Básico or II Medio
         setQuestionCount(40);
         setOptionCount(4);
       }
@@ -156,13 +155,40 @@ export function AnswerKeyEditor({
           </label>
         </div>
       ) : (
-        <div className="rounded-md bg-blue-50/50 border border-blue-100 p-3 text-xs text-blue-800 space-y-1">
-          <p className="font-semibold">Configuración de formato automática:</p>
-          <p>• Preguntas: <span className="font-bold">{questionCount}</span> (La hoja real tiene más preguntas, pero se reduce a 40 para el lector móvil)</p>
-          <p>• Opciones de respuesta: <span className="font-bold">{optionCount} ({labels})</span></p>
-          {/* Hidden inputs to send form values when fields are disabled/locked */}
-          <input type="hidden" name="num_questions" value={questionCount} />
-          <input type="hidden" name="options_per_question" value={optionCount} />
+        <div className="space-y-3">
+          <div className="rounded-md bg-blue-50/50 border border-blue-100 p-3 text-xs text-blue-800 space-y-1">
+            <p className="font-semibold">Equivalencia {evalType === "paes" ? "PAES" : "SIMCE"}:</p>
+            <p>• El puntaje se calcula como porcentaje de acierto &times; {evalType === "paes" ? "900" : "300"} + 100, <strong>independiente del numero de preguntas</strong>.</p>
+            <p>• Un 80% de acierto en 30 preguntas equivale al mismo puntaje que un 80% en 65.</p>
+            <p>• Puedes ajustar libremente el numero de preguntas abajo.</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-sm font-semibold">
+              Preguntas
+              <input
+                name="num_questions"
+                type="number"
+                min="1"
+                max={QUIZ_MAX_QUESTIONS}
+                value={questionCount}
+                onChange={(event) => setQuestionCount(Math.max(1, Math.min(QUIZ_MAX_QUESTIONS, Number(event.target.value) || 1)))}
+                className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal"
+              />
+            </label>
+            <label className="text-sm font-semibold">
+              Opciones
+              <select
+                name="options_per_question"
+                value={optionCount}
+                onChange={(event) => setOptionCount(Number(event.target.value))}
+                className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal"
+              >
+                {QUIZ_ALLOWED_OPTIONS.map((count) => (
+                  <option key={count} value={count}>{count} opciones ({optionLabelsFor(count)})</option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
       )}
 

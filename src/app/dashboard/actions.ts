@@ -63,6 +63,8 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     const answerKey = normalizeAnswerKeyForOptions(formData.get("answer_key_clean") ?? formData.get("answer_key"), numOptions);
     const evalType = String(formData.get("evaluation_type") ?? "custom");
     const evalVariant = String(formData.get("evaluation_variant") ?? "") || null;
+    const rawExigencia = formData.get("exigencia");
+    const exigencia = rawExigencia ? Math.max(0, Math.min(1, Number(rawExigencia) || 0.60)) : null;
     if (!title) throw new Error("Ingresa un titulo para el ensayo.");
     if (answerKey.length !== numQuestions) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
 
@@ -87,6 +89,7 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
       course_id: courseId,
       evaluation_type: evalType,
       evaluation_variant: evalVariant,
+      ...(exigencia !== null ? { exigencia } : {}),
     };
     for (let attempt = 0; ; attempt++) {
       const insertPayload = { ...payload, sheet_code: Math.min(baseCode + attempt, SHEET_CODE_MAX) };
@@ -144,6 +147,7 @@ export async function duplicateQuiz(_prevState: DashboardActionState, formData: 
       course_id: courseId,
       evaluation_type: data.evaluation_type ?? "custom",
       evaluation_variant: data.evaluation_variant ?? null,
+      ...(data.exigencia != null ? { exigencia: data.exigencia } : {}),
       duplicated_from: data.id,
     };
     let { error } = await supabase.from("quizzes").insert(payload);

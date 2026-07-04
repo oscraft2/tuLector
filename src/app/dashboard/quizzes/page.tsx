@@ -54,6 +54,11 @@ export default async function QuizzesPage() {
       <div className="grid gap-5 xl:grid-cols-[minmax(0,450px)_minmax(0,1fr)] xl:gap-6">
 
         {/* Left Column: Create Quiz Form (cliente: toast + estado "Creando…") */}
+        {quizzes.length === 0 && (
+          <p className="rounded-md border border-blue-100 bg-blue-50/50 px-4 py-3 text-sm text-blue-800">
+            Un ensayo define las preguntas, la clave de respuestas y el tipo de evaluacion (personalizada, PAES o SIMCE). Al crearlo podras generar su hoja imprimible y escanearla desde la app movil.
+          </p>
+        )}
         <QuizCreateForm courses={courseList} />
 
         {/* Right Column: Quiz Datatable */}

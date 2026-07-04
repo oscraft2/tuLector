@@ -4,6 +4,7 @@ import { getDashboardMessages } from "@/locales";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { StatusPill } from "@/components/AppShell";
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { EmptyState } from "@/components/dashboard/EmptyState";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 
 export const dynamic = "force-dynamic";
@@ -26,17 +27,26 @@ type PaperRow = {
 export default async function PapersPage() {
   const { supabase, locale } = await getDashboardContext();
   const t = getDashboardMessages(locale);
-  const papersResult = await supabase.from("papers").select("id,quiz_id,student_name,student_id,score,total,status,image_url,storage_path,scanned_at,sheet_code_read,quizzes(sheet_code)").order("scanned_at", { ascending: false }).limit(100);
+  const papersResult = await supabase.from("papers").select("id,quiz_id,student_name,student_id,score,total,status,image_url,storage_path,scanned_at,sheet_code_read,quizzes(sheet_code)").neq("status", "void").order("scanned_at", { ascending: false }).limit(100);
   let papersData: unknown = papersResult.data;
   if (papersResult.error && isMissingColumnError(papersResult.error, "sheet_code_read")) {
-    const fallbackResult = await supabase.from("papers").select("id,quiz_id,student_name,student_id,score,total,status,image_url,storage_path,scanned_at,quizzes(sheet_code)").order("scanned_at", { ascending: false }).limit(100);
+    const fallbackResult = await supabase.from("papers").select("id,quiz_id,student_name,student_id,score,total,status,image_url,storage_path,scanned_at,quizzes(sheet_code)").neq("status", "void").order("scanned_at", { ascending: false }).limit(100);
     papersData = fallbackResult.data;
   }
   const papers = (papersData ?? []) as unknown as PaperRow[];
   return (
     <>
       <PageHeader title={t.papers} description="Lecturas sincronizadas desde la app movil. Desde aqui se auditan, anulan, corrigen manualmente y alimentan ground truth para entrenamiento." />
-      <DataTable
+      {papers.length === 0 ? (
+        <EmptyState
+          icon="📄"
+          title="Sin hojas escaneadas"
+          description="Escanea hojas de respuesta desde la app movil (APK). Los resultados apareceran aqui automaticamente al sincronizar."
+          action={{ label: "Ir al lector", href: "/dashboard/quizzes" }}
+          secondary={{ label: "Gestionar alumnos", href: "/dashboard/students" }}
+        />
+      ) : (
+        <DataTable
         columns={["Alumno", "Puntaje", "Estado", "Foto", "Fecha", "Accion"]}
         rows={papers}
         empty="La app todavia no ha sincronizado lecturas."
@@ -85,6 +95,7 @@ export default async function PapersPage() {
           </article>
         )}
       />
+      )}
     </>
   );
 }

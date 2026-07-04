@@ -84,6 +84,18 @@ export function QuizCreateForm({ courses }: { courses: CourseOption[] }) {
 
           <AnswerKeyEditor questions={20} />
 
+          <label className="block text-sm font-semibold">
+            Exigencia
+            <select name="exigencia" defaultValue="0.60" className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-2 py-2 font-normal text-sm">
+              <option value="0.50">50% — Mas exigente (nota 4.0 con la mitad)</option>
+              <option value="0.55">55%</option>
+              <option value="0.60">60% — Estandar chileno</option>
+              <option value="0.65">65%</option>
+              <option value="0.70">70% — Muy exigente</option>
+            </select>
+            <span className="mt-1 block text-[10px] text-[#5b6472]">Porcentaje de acierto minimo para obtener nota 4.0. No afecta puntajes PAES/SIMCE.</span>
+          </label>
+
           <p className="text-xs text-[#5b6472]">
             Formatos compatibles con el lector móvil: hasta {QUIZ_MAX_QUESTIONS} preguntas y 3, 4 o 5 opciones.
           </p>

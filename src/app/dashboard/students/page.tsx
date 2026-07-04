@@ -8,6 +8,7 @@ import { DeleteButton } from "@/components/dashboard/DeleteButton";
 import { CourseRoster } from "@/components/dashboard/CourseRoster";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { ActionButton } from "@/components/dashboard/ActionButton";
+import { EmptyState } from "@/components/dashboard/EmptyState";
 import { importStudents, createCourse, deleteCourse, deleteStudent, createStudent, updateStudentCourse } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { isMissingColumnError } from "@/lib/supabase_errors";
@@ -149,6 +150,15 @@ export default async function StudentsPage({ searchParams }: PageProps) {
             </a>
           </div>
 
+          {allStudents.length === 0 ? (
+            <EmptyState
+              icon="👥"
+              title="Sin alumnos registrados"
+              description="Importa tu lista de alumnos desde un archivo CSV o crea el primer alumno manualmente."
+              action={{ label: "Importar alumnos", href: "#" }}
+              secondary={{ label: "Crear alumno", href: "#" }}
+            />
+          ) : (
           <DataTable
             columns={["RUT/ID", "Nombre", "Curso", "Registro", "Acción"]}
             rows={visibleStudents}
@@ -226,6 +236,7 @@ export default async function StudentsPage({ searchParams }: PageProps) {
               </article>
             )}
           />
+          )}
         </div>
       </div>
     </>

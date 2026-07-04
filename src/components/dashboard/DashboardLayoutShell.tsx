@@ -6,6 +6,7 @@ import { useTransition, useState, useEffect, useRef, type ReactNode, type RefObj
 import { TuLectorLogo } from "@/components/TuLectorLogo";
 import { GlobalSearch } from "@/components/dashboard/GlobalSearch";
 import { createClient } from "@/lib/supabase";
+import { NotificationBell } from "@/components/dashboard/NotificationBell";
 
 type NavItem = { href: string; label: string };
 type UserSchool = { id: string; name: string; role: string };
@@ -112,7 +113,7 @@ export function DashboardLayoutShell({
               <div className="flex items-center justify-between gap-3 lg:hidden">
                 <TuLectorLogo href="/dashboard" size="sm" />
                 <div className="flex items-center gap-2">
-                  <NotifBell count={notifCount} size="sm" />
+                  <NotificationBell />
                   <ProfileMenu userInitials={userInitials} userName={userName} showProfileMenu={showProfileMenu} setShowProfileMenu={setShowProfileMenu} menuRef={mobileMenuRef} handleLogout={handleLogout} />
                 </div>
               </div>
@@ -126,7 +127,7 @@ export function DashboardLayoutShell({
                 </div>
 
                 <div className="hidden items-center justify-end gap-5 lg:flex">
-                  <NotifBell count={notifCount} size="lg" />
+                  <NotificationBell />
                   <ProfileMenu userInitials={userInitials} userName={userName} showProfileMenu={showProfileMenu} setShowProfileMenu={setShowProfileMenu} menuRef={desktopMenuRef} handleLogout={handleLogout} />
                 </div>
               </div>
@@ -244,24 +245,6 @@ function SchoolIdentity({ userSchools, activeSchoolId, organizationName }: { use
         <span className="block text-[11px] leading-tight text-[#6b7280]">{roleLabel}</span>
       </span>
     </div>
-  );
-}
-
-function NotifBell({ count, size }: { count: number; size: "sm" | "lg" }) {
-  const lg = size === "lg";
-  return (
-    <Link
-      href="/dashboard/papers"
-      className="relative rounded-full p-2 text-[#111827] hover:bg-[#f4f6f8]"
-      aria-label={count > 0 ? `${count} hojas por revisar` : "Notificaciones"}
-    >
-      <span aria-hidden="true" className={lg ? "text-xl" : "text-lg"}>◔</span>
-      {count > 0 && (
-        <span className={`absolute right-0 top-0 flex items-center justify-center rounded-full bg-[#c2410c] font-semibold text-white ${lg ? "h-5 w-5 text-[11px]" : "h-4 w-4 text-[10px]"}`}>
-          {count > 9 ? "9+" : count}
-        </span>
-      )}
-    </Link>
   );
 }
 

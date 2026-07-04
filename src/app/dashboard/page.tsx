@@ -3,6 +3,8 @@ import { getDashboardContext } from "@/lib/supabase_server";
 import { getDashboardMessages, formatNumber } from "@/locales";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { QuotaBar } from "@/components/dashboard/QuotaBar";
+import { EmptyState } from "@/components/dashboard/EmptyState";
+import { DateRangeFilter } from "@/components/dashboard/DateRangeFilter";
 import { checkAndTriggerQuotaAlerts } from "@/lib/quota_alerts";
 import { levelOf } from "@/lib/item_analysis";
 import { QuizStats } from "@/components/dashboard/QuizStats";
@@ -41,9 +43,22 @@ type SimceRow = {
   nivel_adecuado_pct: number | null;
 };
 
-export default async function DashboardPage() {
+type PageProps = { searchParams?: Promise<{ from?: string; to?: string }> };
+
+export default async function DashboardPage({ searchParams }: PageProps) {
   const { supabase, school, countryProfile, locale } = await getDashboardContext();
   const t = getDashboardMessages(locale);
+  const sp = ((await searchParams) ?? {}) as { from?: string; to?: string };
+  const from = sp.from ?? null;
+  const to = sp.to ?? null;
+
+  let allSchoolPapersQuery = supabase
+    .from("papers")
+    .select("id, score, total, status, quizzes!inner(id, subject, grade, evaluation_type, school_id)")
+    .eq("quizzes.school_id", school.id)
+    .in("status", ["corrected", "active"]);
+  if (from) allSchoolPapersQuery = allSchoolPapersQuery.gte("scanned_at", from);
+  if (to) allSchoolPapersQuery = allSchoolPapersQuery.lte("scanned_at", `${to}T23:59:59`);
 
   const [{ count: quizzesCount }, { count: studentsCount }, { data: papers }, { data: quizzes }, simceResult, allSchoolPapersResult] = await Promise.all([
     supabase.from("quizzes").select("id", { count: "exact", head: true }).is("archived_at", null),
@@ -53,11 +68,7 @@ export default async function DashboardPage() {
     school.rbd
       ? supabase.from("simce_resultados").select("agno, grado, asignatura, puntaje_promedio, nivel_insuficiente_pct, nivel_elemental_pct, nivel_adecuado_pct, alumnos_evaluados").eq("rbd", school.rbd).order("agno", { ascending: false })
       : Promise.resolve({ data: [] }),
-    supabase
-      .from("papers")
-      .select("id, score, total, status, quizzes!inner(id, subject, grade, evaluation_type, school_id)")
-      .eq("quizzes.school_id", school.id)
-      .in("status", ["corrected", "active"]),
+    allSchoolPapersQuery,
     checkAndTriggerQuotaAlerts(school.id),
   ]);
 
@@ -147,6 +158,15 @@ export default async function DashboardPage() {
       </div>
 
       <div className="space-y-6">
+        {quizzesCount === 0 && allSchoolPapers.length === 0 && (
+          <EmptyState
+            icon="📋"
+            title="Bienvenido a TuLector"
+            description="Crea tu primer ensayo, importa tus alumnos y comienza a escanear hojas de respuesta desde la app movil."
+            action={{ label: "Crear primer ensayo", href: "/dashboard/quizzes" }}
+            secondary={{ label: "Importar alumnos", href: "/dashboard/students" }}
+          />
+        )}
         <div className="flex flex-col gap-4 rounded-md border border-[#e6e8eb] bg-white p-5 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm font-semibold text-[#111827]">{school.name}</p>
@@ -157,6 +177,8 @@ export default async function DashboardPage() {
             <Link href="/scan" className="rounded-md bg-[#07305f] px-4 py-2 text-sm font-semibold text-white">Escanear</Link>
           </div>
         </div>
+
+        <DateRangeFilter />
 
         {/* SIMCE oficial — siempre visible en el tope del panel */}
         <SimceHistorical simceData={simceData} rbd={school.rbd ?? null} />

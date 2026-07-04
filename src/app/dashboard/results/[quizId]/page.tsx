@@ -1,12 +1,14 @@
 import { notFound } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
+import { calculateGrade } from "@/lib/latam";
 import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { DateRangeFilter } from "@/components/dashboard/DateRangeFilter";
 
 export const dynamic = "force-dynamic";
 
-type PageProps = { params: Promise<{ quizId: string }> };
+type PageProps = { params: Promise<{ quizId: string }>; searchParams?: Promise<{ from?: string; to?: string }> };
 
 type PaperResult = {
   id: string;
@@ -21,12 +23,21 @@ type PaperResult = {
 
 type GradePassing = { passing: boolean | null };
 
-export default async function ResultsPage({ params }: PageProps) {
+export default async function ResultsPage({ params, searchParams }: PageProps) {
   const { quizId } = await params;
+  const sp = ((await searchParams) ?? {}) as { from?: string; to?: string };
+  const from = sp.from ?? null;
+  const to = sp.to ?? null;
   const { supabase, isAdmin, school } = await getDashboardContext();
+
+  let papersQuery = supabase.from("papers").select("id,student_name,student_id,score,total,answers,scanned_at,equivalent_score,grade").eq("quiz_id", quizId);
+  if (from) papersQuery = papersQuery.gte("scanned_at", from);
+  if (to) papersQuery = papersQuery.lte("scanned_at", `${to}T23:59:59`);
+  papersQuery = papersQuery.order("score", { ascending: false });
+
   const [{ data: quiz }, { data: papers }, { data: gradeRecords }] = await Promise.all([
-    supabase.from("quizzes").select("id,title,num_questions,answer_key,evaluation_type,evaluation_variant").eq("id", quizId).single(),
-    supabase.from("papers").select("id,student_name,student_id,score,total,answers,scanned_at,equivalent_score,grade").eq("quiz_id", quizId).order("score", { ascending: false }),
+    supabase.from("quizzes").select("id,title,num_questions,answer_key,evaluation_type,evaluation_variant,exigencia").eq("id", quizId).single(),
+    papersQuery,
     supabase.from("grade_records").select("passing").eq("school_id", school.id).eq("quiz_id", quizId),
   ]);
   if (!quiz) notFound();
@@ -36,6 +47,13 @@ export default async function ResultsPage({ params }: PageProps) {
   const max = rows.reduce((best, p) => Math.max(best, p.score ?? 0), 0);
   const min = rows.length ? rows.reduce((low, p) => Math.min(low, p.score ?? 0), rows[0].score ?? 0) : 0;
   const approval = grades.length ? `${Math.round((grades.filter((record) => record.passing).length / grades.length) * 100)}%` : "—";
+
+  const resolveGrade = (score: number, total: number) => {
+    const gradeResult = calculateGrade(score, total, school.country_code ?? "CL", {
+      exigencia: (quiz.exigencia as number | undefined) ?? school.exigencia ?? 0.60,
+    });
+    return String(gradeResult.grade);
+  };
 
   const isPAES = quiz.evaluation_type === "paes";
   const isSIMCE = quiz.evaluation_type === "simce";
@@ -47,7 +65,7 @@ export default async function ResultsPage({ params }: PageProps) {
     if (isSIMCE) {
       return `${paper.equivalent_score ?? Math.round(100 + ((paper.score ?? 0) / (paper.total || quiz.num_questions)) * 300)} pts SIMCE`;
     }
-    const defaultGrade = paper.grade || (paper.total ? calculateGradeFallback(paper.score ?? 0, paper.total) : "-");
+    const defaultGrade = paper.grade || (paper.total ? resolveGrade(paper.score ?? 0, paper.total) : "-");
     return `Nota ${defaultGrade}`;
   };
 
@@ -72,6 +90,7 @@ export default async function ResultsPage({ params }: PageProps) {
   return (
     <>
       <PageHeader title={`Resultados: ${quiz.title}`} description={`Tipo de evaluación: ${getVariantLabel()}. Distribucion de puntaje, logro por alumno y exportaciones.`} />
+      <DateRangeFilter />
       <div className="space-y-6">
         <KPIGrid>
           <KPI label="Alumnos" value={rows.length} />
@@ -124,14 +143,4 @@ export default async function ResultsPage({ params }: PageProps) {
       </div>
     </>
   );
-}
-
-function calculateGradeFallback(score: number, total: number): string {
-  if (total <= 0) return "1.0";
-  const pct = score / total;
-  const exigencia = 0.6;
-  const grade = pct >= exigencia
-    ? ((pct - exigencia) / (1 - exigencia)) * (7.0 - 4.0) + 4.0
-    : (pct / exigencia) * (4.0 - 1.0) + 1.0;
-  return grade.toFixed(1);
 }

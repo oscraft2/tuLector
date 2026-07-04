@@ -159,7 +159,7 @@ export async function POST(request: Request) {
 
     let quizResult = await supabase
       .from("quizzes")
-      .select("id,school_id,title,answer_key,num_questions,evaluation_type,evaluation_variant,sheet_code")
+      .select("id,school_id,title,answer_key,num_questions,evaluation_type,evaluation_variant,sheet_code,exigencia")
       .eq("id", quizId)
       .eq("school_id", school.id)
       .is("archived_at", null)
@@ -168,7 +168,7 @@ export async function POST(request: Request) {
     if (quizResult.error && isMissingColumnError(quizResult.error, "sheet_code")) {
       quizResult = await supabase
         .from("quizzes")
-        .select("id,school_id,title,answer_key,num_questions,evaluation_type,evaluation_variant")
+        .select("id,school_id,title,answer_key,num_questions,evaluation_type,evaluation_variant,exigencia")
         .eq("id", quizId)
         .eq("school_id", school.id)
         .is("archived_at", null)
@@ -197,7 +197,7 @@ export async function POST(request: Request) {
         max: school.grading_scale_max ?? 7.0,
       },
       passingGrade: school.passing_grade ?? 4.0,
-      exigencia: school.exigencia ?? 0.60,
+      exigencia: (quiz.exigencia as number | undefined) ?? school.exigencia ?? 0.60,
     });
     const eqScore = equivalentScore(quiz.evaluation_type, score, total);
     const sheetIdRead = readSheetId(payload.code);
@@ -307,14 +307,17 @@ export async function POST(request: Request) {
       }, { onConflict: "school_id,student_code,quiz_id" });
     }
 
-    // Cuota REAL: cada escaneo procesado consume 1 (alimenta QuotaBar, alertas 90/100%
-    // y billing). RPC atomica SECURITY DEFINER (los profes no pueden editar schools por
-    // RLS). Tope SUAVE: se informa, no se bloquea el escaneo. Si la funcion aun no
-    // existe en la BD, el escaneo NO falla (degrada sin cuota).
+    // Cuota: el trigger on_paper_insert ya incrementa scans_used al insertar
+    // el paper (lineas 274-291). Aqui solo leemos el valor actual para alertas.
     let quota: { used: number; limit: number; warning: string | null } | null = null;
     try {
-      const { data: used, error: quotaError } = await supabase.rpc("increment_scans_used", { p_school_id: school.id });
-      if (!quotaError && typeof used === "number") {
+      const { data: schoolRow, error: quotaError } = await supabase
+        .from("schools")
+        .select("scans_used")
+        .eq("id", school.id)
+        .single();
+      const used = schoolRow?.scans_used ?? (school.scans_used ?? 0) + 1;
+      if (!quotaError) {
         const limit = school.scans_limit ?? 0;
         let warning: string | null = null;
         if (limit > 0 && used >= limit) warning = `Cuota de escaneos agotada (${used}/${limit}). Amplia tu plan en Facturacion.`;

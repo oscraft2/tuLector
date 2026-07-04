@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
+import { calculateGrade } from "@/lib/latam";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { StatusPill } from "@/components/AppShell";
 import { startScanForQuiz } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { QuizStats } from "@/components/dashboard/QuizStats";
 import { canonicalRut } from "@/lib/rut";
+import { PrintButton } from "@/components/dashboard/PrintButton";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +41,13 @@ export default async function QuizDetailPage({ params }: PageProps) {
   const quizPapers = (papers ?? []) as QuizPaper[];
   const avg = quizPapers.length ? Math.round(quizPapers.reduce((s, p) => s + ((p.score ?? 0) / Math.max(1, p.total ?? quiz.num_questions)) * 100, 0) / quizPapers.length) : 0;
 
+  const resolveGrade = (score: number, total: number) => {
+    const gradeResult = calculateGrade(score, total, school.country_code ?? "CL", {
+      exigencia: (quiz.exigencia as number | undefined) ?? school.exigencia ?? 0.60,
+    });
+    return String(gradeResult.grade);
+  };
+
   const isPAES = quiz.evaluation_type === "paes";
   const isSIMCE = quiz.evaluation_type === "simce";
   const studentIdByRut = new Map<string, string>();
@@ -60,7 +69,7 @@ export default async function QuizDetailPage({ params }: PageProps) {
     if (isSIMCE) {
       return `${paper.equivalent_score ?? Math.round(100 + ((paper.score ?? 0) / (paper.total || quiz.num_questions)) * 300)} pts SIMCE`;
     }
-    const defaultGrade = paper.grade || (paper.total ? calculateGradeFallback(Number(paper.score ?? 0), Number(paper.total)) : "-");
+    const defaultGrade = paper.grade || (paper.total ? resolveGrade(Number(paper.score ?? 0), Number(paper.total)) : "-");
     return `Nota ${defaultGrade}`;
   };
 
@@ -96,7 +105,7 @@ export default async function QuizDetailPage({ params }: PageProps) {
         <section className="rounded-md border border-[#e1e5ea] bg-white p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div><h2 className="text-xl font-semibold">Clave</h2><p className="mt-1 font-mono text-sm tracking-wider text-[#5b6472]">{quiz.answer_key}</p></div>
-            <div className="flex flex-col gap-2 sm:flex-row"><Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold">Generar hoja</Link><form action={startScanForQuiz}><input type="hidden" name="quiz_id" value={quiz.id} /><button className="w-full rounded-md bg-[#07305f] px-4 py-2 text-sm font-semibold text-white sm:w-auto">Abrir lector</button></form></div>
+            <div className="flex flex-col gap-2 sm:flex-row"><Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold">Generar hoja</Link><form action={startScanForQuiz}><input type="hidden" name="quiz_id" value={quiz.id} /><button className="w-full rounded-md bg-[#07305f] px-4 py-2 text-sm font-semibold text-white sm:w-auto">Abrir lector</button></form><PrintButton label="Imprimir" className="rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold text-[#111827] hover:bg-gray-50" /></div>
           </div>
         </section>
 
@@ -173,14 +182,4 @@ export default async function QuizDetailPage({ params }: PageProps) {
 
 function Info({ label, value }: { label: string; value: string | number }) {
   return <div className="rounded-md border border-[#e1e5ea] bg-white p-5"><p className="text-sm text-[#5b6472]">{label}</p><p className="mt-2 text-2xl font-semibold">{value}</p></div>;
-}
-
-function calculateGradeFallback(score: number, total: number): string {
-  if (total <= 0) return "1.0";
-  const pct = score / total;
-  const exigencia = 0.6;
-  const grade = pct >= exigencia
-    ? ((pct - exigencia) / (1 - exigencia)) * (7.0 - 4.0) + 4.0
-    : (pct / exigencia) * (4.0 - 1.0) + 1.0;
-  return grade.toFixed(1);
 }
