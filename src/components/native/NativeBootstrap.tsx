@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { applyNativeChrome, pushRegister, pushOnForeground } from "@/lib/native/capacitor";
+import { applyNativeChrome, pushRegister, pushOnForeground, isNativeApp } from "@/lib/native/capacitor";
 import { setupOnlineListener, syncOfflineQueue } from "@/lib/offline_sync";
 import { getQueueSize } from "@/lib/offline_queue";
 import { UpdateBanner } from "./UpdateBanner";
@@ -18,6 +18,10 @@ export function NativeBootstrap() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    // SOLO en el APK: el modo offline es del lector nativo. En la web NO registramos
+    // service worker → evita que el navegador de los profes quede sirviendo assets
+    // viejos (el mismo "pegado en versión vieja" que queremos evitar, pero para todos).
+    if (!isNativeApp()) return;
     navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
   }, []);
 
