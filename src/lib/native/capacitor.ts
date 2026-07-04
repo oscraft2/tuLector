@@ -151,8 +151,53 @@ export async function biometricVerify(reason: string): Promise<boolean> {
 // registro (historial git de este archivo). El endpoint /api/push/register y
 // push_server.ts quedan intactos (no-op sin FCM_SERVER_KEY).
 
-/** Deep link con el que Supabase vuelve al APK tras el OAuth externo. */
+/** Deep link con el que Supabase vuelve al APK tras el OAuth externo (Apple). */
 export const OAUTH_DEEP_LINK = "cl.tulector.app://auth-callback";
+
+/** Web Client ID de Google (mismo que usa el proveedor Google en Supabase Auth). */
+const GOOGLE_WEB_CLIENT_ID = "390355977468-k6fr90qikaor197g7rslrmo36ei1bur3.apps.googleusercontent.com";
+
+let googleSignInReady: Promise<boolean> | null = null;
+
+/**
+ * Inicializa Credential Manager para Google (una vez). Idempotente: llamadas
+ * repetidas reutilizan la misma promesa. Debe llamarse antes de googleNativeSignIn().
+ */
+export function initGoogleSignIn(): Promise<boolean> {
+  if (googleSignInReady) return googleSignInReady;
+  googleSignInReady = (async () => {
+    const SocialLogin = plugin<{ initialize: (o: unknown) => Promise<void> }>("SocialLogin");
+    if (!SocialLogin) return false;
+    try {
+      await SocialLogin.initialize({ google: { webClientId: GOOGLE_WEB_CLIENT_ID } });
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  return googleSignInReady;
+}
+
+/**
+ * Login nativo con Google via Credential Manager: bottom-sheet del sistema con
+ * las cuentas Google del dispositivo, SIN abrir navegador. Retorna el idToken
+ * (JWT) para canjear por sesión con `supabase.auth.signInWithIdToken`, o null
+ * si el usuario cancela o el plugin no está disponible (web).
+ */
+export async function googleNativeSignIn(): Promise<string | null> {
+  const SocialLogin = plugin<{
+    login: (o: { provider: "google"; options: { scopes: string[] } }) => Promise<{ result?: { idToken?: string | null } }>;
+  }>("SocialLogin");
+  if (!SocialLogin) return null;
+
+  await initGoogleSignIn();
+  try {
+    const res = await SocialLogin.login({ provider: "google", options: { scopes: ["email", "profile"] } });
+    return res?.result?.idToken ?? null;
+  } catch {
+    return null; // cancelado por el usuario o sin cuenta Google en el dispositivo
+  }
+}
 
 /**
  * Abre una URL en el navegador del sistema (Chrome Custom Tabs). Necesario para

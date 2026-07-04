@@ -6,6 +6,7 @@ import {
   isNativeApp,
   onAppUrlOpen,
   closeExternalBrowser,
+  initGoogleSignIn,
   OAUTH_DEEP_LINK,
 } from "@/lib/native/capacitor";
 import { createClient } from "@/lib/supabase";
@@ -21,6 +22,7 @@ import { UpdateBanner } from "./UpdateBanner";
 export function NativeBootstrap() {
   useEffect(() => {
     applyNativeChrome();
+    if (isNativeApp()) initGoogleSignIn();
   }, []);
 
   useEffect(() => {
@@ -33,10 +35,11 @@ export function NativeBootstrap() {
   }, []);
 
   useEffect(() => {
-    // OAuth nativo: el login con Google sale a Chrome Custom Tabs (Google bloquea
-    // WebViews) y Supabase vuelve al APK via deep link cl.tulector.app://auth-callback
-    // con el ?code= PKCE. Lo intercambiamos por sesión AQUÍ (mismo WebView que
+    // OAuth de Apple (Android no tiene SDK nativo): sale a Chrome Custom Tabs y
+    // Supabase vuelve al APK via deep link cl.tulector.app://auth-callback con
+    // el ?code= PKCE. Lo intercambiamos por sesión AQUÍ (mismo WebView que
     // inició el flujo, donde vive el code_verifier) y entramos a /app.
+    // (Google usa Credential Manager — sin navegador, ver initGoogleSignIn arriba.)
     if (!isNativeApp()) return;
 
     return onAppUrlOpen(async (url) => {

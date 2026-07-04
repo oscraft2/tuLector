@@ -17,6 +17,13 @@ const config = {
   },
   plugins: {
     SplashScreen: { launchShowDuration: 800, backgroundColor: "#111827" },
+    // Solo bundlea el SDK nativo de Google (Credential Manager) del plugin
+    // SocialLogin; el resto (Facebook/Twitter) no se compila → APK mas liviano.
+    // El webClientId real se pasa en runtime via SocialLogin.initialize() en
+    // NativeBootstrap.tsx (docs/apk-plan.md).
+    SocialLogin: {
+      providers: { google: true, apple: false, facebook: false, twitter: false },
+    },
   },
 };
 

@@ -8,7 +8,7 @@ import { ZxcvbnFactory } from "@zxcvbn-ts/core";
 import { adjacencyGraphs, dictionary } from "@zxcvbn-ts/language-common";
 import { createClient } from "@/lib/supabase";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
-import { isNativeApp, openExternalUrl, OAUTH_DEEP_LINK } from "@/lib/native/capacitor";
+import { isNativeApp, openExternalUrl, googleNativeSignIn, OAUTH_DEEP_LINK } from "@/lib/native/capacitor";
 import { BiometricGate } from "@/components/native/BiometricGate";
 
 const passwordEstimator = new ZxcvbnFactory({
@@ -139,16 +139,30 @@ function AuthForm() {
     setOauthLoading(provider);
     setMessage("");
     try {
+      if (isNativeApp() && provider === "google") {
+        // APK: login nativo con Credential Manager (bottom-sheet del sistema con
+        // las cuentas Google del dispositivo). NO abre navegador. El idToken se
+        // canjea directo por sesión de Supabase.
+        const idToken = await googleNativeSignIn();
+        if (!idToken) {
+          setMessage("No se pudo iniciar sesion con Google.");
+          setOauthLoading(null);
+          return;
+        }
+        const { error } = await client.auth.signInWithIdToken({ provider: "google", token: idToken });
+        if (error) throw error;
+        router.replace(homeAfterAuth());
+        return;
+      }
+
       if (isNativeApp()) {
-        // APK: Google bloquea OAuth dentro de WebViews (403 disallowed_useragent).
-        // Abrimos el flujo en Chrome Custom Tabs y Supabase vuelve por deep link;
-        // NativeBootstrap intercambia el code por sesión y entra a /app.
+        // Apple en Android no tiene SDK nativo: sale a Chrome Custom Tabs y
+        // Supabase vuelve por deep link; NativeBootstrap canjea el code por sesión.
         const { data, error } = await client.auth.signInWithOAuth({
           provider,
           options: {
             redirectTo: OAUTH_DEEP_LINK,
             skipBrowserRedirect: true,
-            queryParams: provider === "google" ? { access_type: "offline", prompt: "consent" } : undefined,
           },
         });
         if (error) throw error;
