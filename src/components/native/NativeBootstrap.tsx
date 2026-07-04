@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
-import { applyNativeChrome, pushRegister, pushOnForeground, isNativeApp } from "@/lib/native/capacitor";
+import {
+  applyNativeChrome,
+  isNativeApp,
+  onAppUrlOpen,
+  closeExternalBrowser,
+  OAUTH_DEEP_LINK,
+} from "@/lib/native/capacitor";
+import { createClient } from "@/lib/supabase";
 import { setupOnlineListener, syncOfflineQueue } from "@/lib/offline_sync";
 import { getQueueSize } from "@/lib/offline_queue";
 import { UpdateBanner } from "./UpdateBanner";
@@ -26,28 +33,35 @@ export function NativeBootstrap() {
   }, []);
 
   useEffect(() => {
-    const doRegister = async () => {
-      const token = await pushRegister();
-      if (!token) return;
+    // OAuth nativo: el login con Google sale a Chrome Custom Tabs (Google bloquea
+    // WebViews) y Supabase vuelve al APK via deep link cl.tulector.app://auth-callback
+    // con el ?code= PKCE. Lo intercambiamos por sesión AQUÍ (mismo WebView que
+    // inició el flujo, donde vive el code_verifier) y entramos a /app.
+    if (!isNativeApp()) return;
+
+    return onAppUrlOpen(async (url) => {
+      if (!url.startsWith(OAUTH_DEEP_LINK)) return;
+      closeExternalBrowser();
+
+      let code: string | null = null;
+      let oauthError: string | null = null;
       try {
-        await fetch("/api/push/register", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
-        });
-      } catch { /* sin red */ }
+        const parsed = new URL(url);
+        code = parsed.searchParams.get("code");
+        oauthError = parsed.searchParams.get("error_description") || parsed.searchParams.get("error");
+      } catch {
+        oauthError = "No se pudo leer la respuesta de autenticacion.";
+      }
 
-      pushOnForeground(({ title, body }) => {
-        if (typeof window === "undefined") return;
-        if ("Notification" in window && Notification.permission === "granted") {
-          new Notification(title || "TuLector", { body });
-        }
-      });
-    };
+      if (!code) {
+        const msg = oauthError || "No se recibio codigo de autenticacion.";
+        window.location.assign(`/auth?error=${encodeURIComponent(msg)}`);
+        return;
+      }
 
-    const timeout = setTimeout(doRegister, 3000);
-    return () => clearTimeout(timeout);
+      const { error } = await createClient().auth.exchangeCodeForSession(code);
+      window.location.assign(error ? `/auth?error=${encodeURIComponent(error.message)}` : "/app");
+    });
   }, []);
 
   useEffect(() => {

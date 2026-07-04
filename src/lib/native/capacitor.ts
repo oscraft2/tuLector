@@ -144,66 +144,59 @@ export async function biometricVerify(reason: string): Promise<boolean> {
   }
 }
 
+// NOTA push: el plugin @capacitor/push-notifications se RETIRÓ del APK porque
+// sin proyecto Firebase (google-services.json) `register()` crashea la app con
+// IllegalStateException. Para reactivar push: crear proyecto Firebase, poner
+// google-services.json en android/app/, reinstalar el plugin y restaurar el
+// registro (historial git de este archivo). El endpoint /api/push/register y
+// push_server.ts quedan intactos (no-op sin FCM_SERVER_KEY).
+
+/** Deep link con el que Supabase vuelve al APK tras el OAuth externo. */
+export const OAUTH_DEEP_LINK = "cl.tulector.app://auth-callback";
+
 /**
- * Registra el dispositivo para notificaciones push (FCM). Retorna el token FCM
- * si se obtiene, o null si no está disponible (web o sin permiso).
+ * Abre una URL en el navegador del sistema (Chrome Custom Tabs). Necesario para
+ * OAuth: Google BLOQUEA el login dentro de WebViews (error 403
+ * disallowed_useragent), así que el flujo debe salir a un navegador real.
  */
-export async function pushRegister(): Promise<string | null> {
-  const Push = plugin<{
-    register: () => Promise<void>;
-    requestPermissions: () => Promise<{ receive: string }>;
-    addListener: (event: string, fn: (data: unknown) => void) => void;
-    removeAllListeners: () => Promise<void>;
-  }>("PushNotifications");
-  if (!Push) return null;
+export async function openExternalUrl(url: string): Promise<boolean> {
+  const Browser = plugin<{ open: (o: { url: string }) => Promise<void> }>("Browser");
+  if (!Browser) return false;
+  try {
+    await Browser.open({ url });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-  return new Promise((resolve) => {
-    let resolved = false;
-    const timeout = setTimeout(() => { if (!resolved) { resolved = true; resolve(null); } }, 8000);
-
-    Push.addListener("registration", (data: unknown) => {
-      if (resolved) return;
-      const token = (data as { value?: string })?.value ?? null;
-      resolved = true;
-      clearTimeout(timeout);
-      resolve(token);
-    });
-
-    Push.addListener("registrationError", () => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(timeout);
-      resolve(null);
-    });
-
-    Push.requestPermissions()
-      .then(() => Push.register())
-      .catch(() => {
-        if (resolved) return;
-        resolved = true;
-        clearTimeout(timeout);
-        resolve(null);
-      });
-  });
+/** Cierra el Custom Tab abierto por openExternalUrl (al volver por deep link). */
+export async function closeExternalBrowser(): Promise<void> {
+  const Browser = plugin<{ close: () => Promise<void> }>("Browser");
+  try {
+    await Browser?.close();
+  } catch {
+    // en Android el Custom Tab puede ya estar cerrado; ignorar
+  }
 }
 
 /**
- * Escucha notificaciones push entrantes mientras la app está en primer plano.
- * Retorna una función para cancelar la suscripción.
+ * Escucha deep links entrantes (appUrlOpen del plugin App). Retorna una función
+ * para cancelar la suscripción. En web es un no-op.
  */
-export function pushOnForeground(handler: (data: { title?: string; body?: string }) => void): () => void {
-  const Push = plugin<{
-    addListener: (event: string, fn: (data: unknown) => void) => void;
-    removeAllListeners: () => Promise<void>;
-  }>("PushNotifications");
-  if (!Push) return () => {};
+export function onAppUrlOpen(handler: (url: string) => void): () => void {
+  const App = plugin<{
+    addListener: (event: string, fn: (data: { url?: string }) => void) => Promise<{ remove: () => Promise<void> }>;
+  }>("App");
+  if (!App) return () => {};
 
-  Push.addListener("pushNotificationReceived", (data: unknown) => {
-    const n = data as { title?: string; body?: string };
-    handler(n);
+  const subscription = App.addListener("appUrlOpen", (data) => {
+    if (data?.url) handler(data.url);
   });
 
-  return () => { Push.removeAllListeners().catch(() => {}); };
+  return () => {
+    subscription.then((s) => s.remove()).catch(() => {});
+  };
 }
 
 /**

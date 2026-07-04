@@ -8,7 +8,7 @@ import { ZxcvbnFactory } from "@zxcvbn-ts/core";
 import { adjacencyGraphs, dictionary } from "@zxcvbn-ts/language-common";
 import { createClient } from "@/lib/supabase";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
-import { isNativeApp } from "@/lib/native/capacitor";
+import { isNativeApp, openExternalUrl, OAUTH_DEEP_LINK } from "@/lib/native/capacitor";
 import { BiometricGate } from "@/components/native/BiometricGate";
 
 const passwordEstimator = new ZxcvbnFactory({
@@ -139,10 +139,30 @@ function AuthForm() {
     setOauthLoading(provider);
     setMessage("");
     try {
+      if (isNativeApp()) {
+        // APK: Google bloquea OAuth dentro de WebViews (403 disallowed_useragent).
+        // Abrimos el flujo en Chrome Custom Tabs y Supabase vuelve por deep link;
+        // NativeBootstrap intercambia el code por sesión y entra a /app.
+        const { data, error } = await client.auth.signInWithOAuth({
+          provider,
+          options: {
+            redirectTo: OAUTH_DEEP_LINK,
+            skipBrowserRedirect: true,
+            queryParams: provider === "google" ? { access_type: "offline", prompt: "consent" } : undefined,
+          },
+        });
+        if (error) throw error;
+        if (!data?.url) throw new Error("No se pudo iniciar el flujo de autenticacion.");
+        const opened = await openExternalUrl(data.url);
+        if (!opened) window.location.assign(data.url);
+        setOauthLoading(null);
+        return;
+      }
+
       const { error } = await client.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: authCallbackUrl(isNativeApp() ? "/app" : undefined),
+          redirectTo: authCallbackUrl(),
           queryParams: provider === "google" ? { access_type: "offline", prompt: "consent" } : undefined,
         },
       });
@@ -174,7 +194,19 @@ function AuthForm() {
 
         <div className="cap-anim-sheet safe-pb relative rounded-t-[2rem] bg-white px-6 pt-7 pb-7 text-[#0b1220] shadow-[0_-10px_50px_rgba(0,0,0,0.3)]">
           <h2 className="text-center text-lg font-black">{mode === "login" ? "Inicia sesion" : "Crear cuenta"}</h2>
-          <p className="mt-1 mb-5 text-center text-xs text-gray-400">Accede con tu correo para escanear</p>
+          <p className="mt-1 mb-5 text-center text-xs text-gray-400">Accede con Google o tu correo para escanear</p>
+
+          <button
+            type="button"
+            onClick={() => handleOAuth("google")}
+            disabled={busy}
+            className="mb-4 flex min-h-12 w-full items-center justify-center gap-3 rounded-xl border border-[#cfd6df] bg-white px-4 py-3.5 text-sm font-bold text-[#111827] shadow-sm transition-all hover:bg-[#f8faf9] disabled:opacity-50 active:scale-[0.99]"
+          >
+            <GoogleIcon />
+            {oauthLoading === "google" ? "Conectando..." : "Continuar con Google"}
+          </button>
+
+          <div className="mb-4 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.14em] text-[#9aa3af]"><span className="h-px flex-1 bg-[#e5e9ee]" />o con correo<span className="h-px flex-1 bg-[#e5e9ee]" /></div>
 
           <form onSubmit={handleAuth} className="space-y-3">
             <input
