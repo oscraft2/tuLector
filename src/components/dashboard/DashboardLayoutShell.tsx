@@ -30,25 +30,38 @@ export function DashboardLayoutShell({
   children,
   userSchools,
   activeSchoolId,
-  notifCount = 0,
 }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const [isPending] = useTransition();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const desktopMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMoreRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
+  const mobilePrimaryNav = [
+    { href: "/dashboard", label: "Inicio" },
+    { href: "/dashboard/quizzes", label: "Ensayos" },
+    { href: "/scan", label: "Escanear", featured: true },
+    { href: "/dashboard/students", label: "Alumnos" },
+  ];
+  const mobileMoreNav = nav.filter((item) => !mobilePrimaryNav.some((primary) => primary.href === item.href));
+  const moreActive = mobileMoreNav.some((item) => isActive(item.href));
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       const target = event.target as Node;
       const clickedMobileMenu = mobileMenuRef.current?.contains(target);
       const clickedDesktopMenu = desktopMenuRef.current?.contains(target);
+      const clickedMobileMore = mobileMoreRef.current?.contains(target);
 
       if (!clickedMobileMenu && !clickedDesktopMenu) {
         setShowProfileMenu(false);
+      }
+      if (!clickedMobileMore) {
+        setShowMoreMenu(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -67,7 +80,7 @@ export function DashboardLayoutShell({
   }
 
   return (
-    <main className="min-h-screen bg-[#fafafa] text-[#0b1220]" style={{ fontFamily: '"Source Sans 3", "Noto Sans", "Segoe UI", Arial, sans-serif' }}>
+    <main className="min-h-screen bg-[#f5f7fb] text-[#0b1220] lg:bg-[#fafafa]" style={{ fontFamily: '"Source Sans 3", "Noto Sans", "Segoe UI", Arial, sans-serif' }}>
       <div className={`grid min-h-screen grid-cols-1 transition-all duration-300 ease-in-out ${isCollapsed ? "lg:grid-cols-[72px_minmax(0,1fr)]" : "lg:grid-cols-[244px_minmax(0,1fr)]"}`}>
         <aside className="hidden overflow-hidden border-r border-[#e1e5ea] bg-white transition-all duration-300 ease-in-out lg:sticky lg:top-0 lg:block lg:h-screen">
           <div className="flex h-full flex-col">
@@ -88,7 +101,7 @@ export function DashboardLayoutShell({
                       ? "flex items-center gap-3 rounded-md bg-[#eef4ff] px-3 py-3 text-sm font-semibold text-[#07305f] transition-all duration-150"
                       : "flex items-center gap-3 rounded-md px-3 py-3 text-sm font-medium text-[#1f2937] transition-all duration-150 hover:bg-[#f4f6f8] hover:text-[#07305f]"}
                   >
-                    <NavIcon active={active} />
+                    <NavIcon href={item.href} active={active} />
                     {!isCollapsed && <span className="truncate transition-opacity duration-300">{item.label}</span>}
                   </Link>
                 );
@@ -153,24 +166,65 @@ export function DashboardLayoutShell({
         </section>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d8dde3] bg-white/95 px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden" aria-label="Navegacion movil">
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {nav.map((item) => {
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d8dde3] bg-white/95 px-3 pb-[max(env(safe-area-inset-bottom),0.6rem)] pt-2 shadow-[0_-16px_35px_rgba(15,23,42,0.1)] backdrop-blur lg:hidden" aria-label="Navegacion movil">
+        <div className="mx-auto grid max-w-md grid-cols-5 items-end gap-1">
+          {mobilePrimaryNav.map((item) => {
             const active = isActive(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={active
-                  ? "flex min-w-[92px] flex-col items-center justify-center rounded-md bg-[#eef4ff] px-3 py-2 text-center text-[11px] font-bold text-[#07305f]"
-                  : "flex min-w-[92px] flex-col items-center justify-center rounded-md px-3 py-2 text-center text-[11px] font-semibold text-[#4b5563] hover:bg-[#f4f6f8]"}
+                className={item.featured
+                  ? "-mt-7 flex flex-col items-center justify-center gap-1 text-center text-[10px] font-black uppercase tracking-[0.08em] text-[#07305f]"
+                  : active
+                    ? "flex min-h-14 flex-col items-center justify-center rounded-2xl bg-[#eef4ff] px-1.5 py-2 text-center text-[11px] font-bold text-[#07305f]"
+                    : "flex min-h-14 flex-col items-center justify-center rounded-2xl px-1.5 py-2 text-center text-[11px] font-semibold text-[#64748b] hover:bg-[#f4f7fa] hover:text-[#07305f]"}
               >
-                <NavIcon active={active} />
-                <span className="mt-1 max-w-[76px] truncate">{item.label}</span>
+                <span className={item.featured ? "grid h-14 w-14 place-items-center rounded-2xl bg-[#07305f] text-white shadow-lg shadow-[#07305f]/25 ring-4 ring-white" : undefined}>
+                  <NavIcon href={item.href} active={item.featured ? false : active} />
+                </span>
+                <span className={item.featured ? "max-w-[64px] truncate text-[#07305f]" : "mt-1 max-w-[62px] truncate"}>{item.label}</span>
               </Link>
             );
           })}
+          <div className="relative" ref={mobileMoreRef}>
+            {showMoreMenu && (
+              <div className="absolute bottom-[calc(100%+0.8rem)] right-0 w-64 overflow-hidden rounded-3xl border border-[#d8dde3] bg-white p-2 shadow-2xl shadow-slate-900/15">
+                <p className="px-3 pb-2 pt-2 text-[11px] font-bold uppercase tracking-[0.16em] text-[#94a3b8]">Mas opciones</p>
+                <div className="grid gap-1">
+                  {mobileMoreNav.map((item) => {
+                    const active = isActive(item.href);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setShowMoreMenu(false)}
+                        aria-current={active ? "page" : undefined}
+                        className={active
+                          ? "flex min-h-11 items-center gap-3 rounded-2xl bg-[#eef4ff] px-3 text-sm font-bold text-[#07305f]"
+                          : "flex min-h-11 items-center gap-3 rounded-2xl px-3 text-sm font-semibold text-[#334155] hover:bg-[#f4f7fa] hover:text-[#07305f]"}
+                      >
+                        <NavIcon href={item.href} active={active} />
+                        <span className="truncate">{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowMoreMenu((value) => !value)}
+              aria-expanded={showMoreMenu}
+              className={moreActive || showMoreMenu
+                ? "flex min-h-14 w-full flex-col items-center justify-center rounded-2xl bg-[#eef4ff] px-1.5 py-2 text-center text-[11px] font-bold text-[#07305f]"
+                : "flex min-h-14 w-full flex-col items-center justify-center rounded-2xl px-1.5 py-2 text-center text-[11px] font-semibold text-[#64748b] hover:bg-[#f4f7fa] hover:text-[#07305f]"}
+            >
+              <NavIcon href="more" active={moreActive || showMoreMenu} />
+              <span className="mt-1 max-w-[62px] truncate">Mas</span>
+            </button>
+          </div>
         </div>
       </nav>
     </main>
@@ -238,8 +292,8 @@ function SchoolIdentity({ userSchools, activeSchoolId, organizationName }: { use
     : "Institución";
   const initial = name.trim().charAt(0).toUpperCase() || "T";
   return (
-    <div className="flex w-full items-center gap-3 rounded-md border border-[#e1e5ea] bg-white px-3 py-2 md:max-w-[345px]" aria-label={`Institución activa: ${name}`}>
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#07305f] text-sm font-bold text-white" aria-hidden="true">{initial}</span>
+    <div className="flex w-full items-center gap-3 rounded-2xl border border-[#e1e5ea] bg-white px-3 py-2 shadow-sm md:max-w-[345px] md:rounded-md md:shadow-none" aria-label={`Institución activa: ${name}`}>
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#07305f] text-sm font-bold text-white md:rounded-md" aria-hidden="true">{initial}</span>
       <span className="min-w-0">
         <span className="block truncate text-sm font-semibold leading-tight text-[#111827]">{name}</span>
         <span className="block text-[11px] leading-tight text-[#6b7280]">{roleLabel}</span>
@@ -248,10 +302,36 @@ function SchoolIdentity({ userSchools, activeSchoolId, organizationName }: { use
   );
 }
 
-function NavIcon({ active }: { active: boolean }) {
-  return (
-    <span className={active ? "grid h-5 w-5 shrink-0 place-items-center text-[#07305f]" : "grid h-5 w-5 shrink-0 place-items-center text-[#111827]"} aria-hidden="true">
-      <span className="h-3.5 w-3.5 rounded-sm border-2 border-current" />
-    </span>
-  );
+function NavIcon({ href, active }: { href: string; active: boolean }) {
+  const iconClass = active ? "h-5 w-5 shrink-0 text-[#07305f]" : "h-5 w-5 shrink-0 text-current";
+  const props = { className: iconClass, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+
+  if (href === "/dashboard") {
+    return <svg {...props}><path d="M3 10.5 12 3l9 7.5" /><path d="M5 10v10h14V10" /><path d="M9 20v-6h6v6" /></svg>;
+  }
+  if (href.includes("/quizzes")) {
+    return <svg {...props}><path d="M9 5h11" /><path d="M9 12h11" /><path d="M9 19h11" /><path d="m4 5 1 1 2-2" /><path d="m4 12 1 1 2-2" /><path d="m4 19 1 1 2-2" /></svg>;
+  }
+  if (href === "/scan") {
+    return <svg {...props}><path d="M4 7V5a2 2 0 0 1 2-2h2" /><path d="M16 3h2a2 2 0 0 1 2 2v2" /><path d="M20 17v2a2 2 0 0 1-2 2h-2" /><path d="M8 21H6a2 2 0 0 1-2-2v-2" /><path d="M7 12h10" /></svg>;
+  }
+  if (href.includes("/students")) {
+    return <svg {...props}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>;
+  }
+  if (href.includes("/courses")) {
+    return <svg {...props}><path d="M4 19.5V5a2 2 0 0 1 2-2h11" /><path d="M8 7h8" /><path d="M8 11h8" /><path d="M6 21h13a1 1 0 0 0 1-1V6" /></svg>;
+  }
+  if (href.includes("/papers")) {
+    return <svg {...props}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M8 13h8" /><path d="M8 17h5" /></svg>;
+  }
+  if (href.includes("/team")) {
+    return <svg {...props}><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="8.5" cy="7" r="4" /><path d="M20 8v6" /><path d="M23 11h-6" /></svg>;
+  }
+  if (href.includes("/billing")) {
+    return <svg {...props}><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20" /><path d="M6 15h4" /></svg>;
+  }
+  if (href.includes("/settings")) {
+    return <svg {...props}><circle cx="12" cy="12" r="3" /><path d="M12 2v3" /><path d="M12 19v3" /><path d="M2 12h3" /><path d="M19 12h3" /><path d="m4.93 4.93 2.12 2.12" /><path d="m16.95 16.95 2.12 2.12" /><path d="m4.93 19.07 2.12-2.12" /><path d="m16.95 7.05 2.12-2.12" /></svg>;
+  }
+  return <svg {...props}><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h16" /></svg>;
 }
