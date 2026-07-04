@@ -186,13 +186,15 @@ export function initGoogleSignIn(): Promise<boolean> {
  */
 export async function googleNativeSignIn(): Promise<string | null> {
   const SocialLogin = plugin<{
-    login: (o: { provider: "google"; options: { scopes: string[] } }) => Promise<{ result?: { idToken?: string | null } }>;
+    login: (o: { provider: "google"; options: Record<string, never> }) => Promise<{ result?: { idToken?: string | null } }>;
   }>("SocialLogin");
   if (!SocialLogin) return null;
 
   await initGoogleSignIn();
   try {
-    const res = await SocialLogin.login({ provider: "google", options: { scopes: ["email", "profile"] } });
+    // Sin `scopes`: el plugin ya pide email/profile/openid por defecto.
+    // Pasar scopes custom exige modificar MainActivity (no aplica aquí).
+    const res = await SocialLogin.login({ provider: "google", options: {} });
     return res?.result?.idToken ?? null;
   } catch {
     return null; // cancelado por el usuario o sin cuenta Google en el dispositivo
