@@ -8,19 +8,25 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // Read pathname from middleware header
   const headersList = await headers();
 
-  // App nativa (Capacitor): la mayoria del dashboard web no aplica → al menú
-  // /app. Se detecta por el token del User-Agent (appendUserAgent) en el
-  // SERVIDOR → sin flash ni cargar el dashboard. EXCEPCIONES explicitas:
-  //  - /dashboard/quizzes: paso intermedio de "Lector Prueba" (elegir ensayo →
-  //    boton Escanear → /scan). Sin esto el boton del menu nativo no lleva a
-  //    ningun lado (redirige de vuelta a /app).
-  //  - /dashboard/billing: se permite, pero la propia pagina renderiza una
-  //    vista de solo lectura en nativo (sin el checkout de Flow) — ver
-  //    docs/apk-plan.md sobre por que el pago NUNCA se hace dentro del APK
-  //    (reglas de Apple/Google sobre compras de contenido digital in-app).
+  // App nativa (Capacitor): el dashboard de escritorio (menu/tablas densas) no
+  // aplica → al menu propio /app (Escanear, Resultados, Alumnos, Mi plan; ver
+  // /app/scan, /app/results, /app/students). Se detecta por el token del
+  // User-Agent (appendUserAgent) en el SERVIDOR → sin flash. EXCEPCIONES
+  // explicitas — paginas de escritorio a las que SI se permite entrar como
+  // fallback de acciones avanzadas que las pantallas nativas no cubren:
+  //  - /dashboard/quizzes: editar/duplicar/archivar ensayos (no hay UI nativa
+  //    para eso todavia).
+  //  - /dashboard/students: crear/editar cursos e importar CSV (la pantalla
+  //    nativa /app/students solo busca y agrega un alumno rapido).
+  //  - /dashboard/settings: boton "Configuracion" del menu nativo — se deja la
+  //    pagina de escritorio tal cual, no vale la pena nativizarla.
+  //  - /dashboard/billing: la propia pagina renderiza una vista de solo
+  //    lectura en nativo (sin el checkout de Flow) — ver docs/apk-plan.md
+  //    sobre por que el pago NUNCA se hace dentro del APK (reglas de
+  //    Apple/Google sobre compras de contenido digital in-app).
   const ua = headersList.get("user-agent") ?? "";
   const pathname = headersList.get("x-pathname") ?? "";
-  const nativeAllowedPrefixes = ["/dashboard/quizzes", "/dashboard/billing"];
+  const nativeAllowedPrefixes = ["/dashboard/quizzes", "/dashboard/students", "/dashboard/settings", "/dashboard/billing"];
   if (/TuLectorApp/i.test(ua) && !nativeAllowedPrefixes.some((p) => pathname.startsWith(p))) {
     redirect("/app");
   }

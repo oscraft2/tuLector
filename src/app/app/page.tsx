@@ -1,58 +1,50 @@
-"use client";
-
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase";
+import { getDashboardContext } from "@/lib/supabase_server";
+import { SignOutButton } from "@/components/native/SignOutButton";
 import { APP_VERSION } from "@/lib/version";
 
+export const dynamic = "force-dynamic";
+
 /**
- * Menú de la app (pensado para Capacitor). Pantalla limpia tipo cards; hoy solo
- * "Lector Prueba" → /scan. Escalable: agregar tarjetas a futuro. Ver docs/apk-plan.md.
+ * Menú de la app (Capacitor). Server component: sin flash de "Cargando…" y
+ * puede consultar datos reales (hojas por revisar) en el mismo request.
+ * Cuatro tarjetas: Escanear, Resultados, Alumnos, Mi plan. Cada una tiene su
+ * propia pantalla nativa (no reusa las paginas de escritorio) — ver
+ * /app/scan, /app/results, /app/students. Ver docs/apk-plan.md.
  */
-export default function AppMenuPage() {
-  const router = useRouter();
-  const client = useMemo(() => createClient(), []);
-  const [ready, setReady] = useState(false);
-  const [email, setEmail] = useState<string>("");
+export default async function AppMenuPage() {
+  const { user, school, supabase } = await getDashboardContext();
 
-  useEffect(() => {
-    let active = true;
-    client.auth.getSession().then(({ data: { session } }) => {
-      if (!active) return;
-      if (!session) { router.replace("/auth"); return; }
-      setEmail(session.user.email ?? "");
-      setReady(true);
-    });
-    return () => { active = false; };
-  }, [client, router]);
-
-  const signOut = async () => { await client.auth.signOut(); router.replace("/auth"); };
-
-  if (!ready) {
-    return (
-      <main className="flex min-h-dvh items-center justify-center bg-[#111827] text-white/60 text-sm">Cargando…</main>
-    );
-  }
+  const { count: pendingReview } = await supabase
+    .from("papers")
+    .select("id", { count: "exact", head: true })
+    .eq("school_id", school.id)
+    .eq("status", "manual_review");
 
   return (
     <main className="flex min-h-dvh flex-col bg-[#f5f6f8] text-[#0b1220]">
-      {/* Header */}
       <header className="safe-pt bg-[#111827] px-6 pb-6 pt-5 text-white">
         <div className="flex items-center justify-between">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-lg font-black text-[#111827]">TL</div>
-          <button onClick={signOut} className="text-xs font-semibold text-white/60 active:text-white">Salir</button>
+          <div className="flex items-center gap-4">
+            <Link href="/dashboard/settings" aria-label="Configuración" className="text-white/60 active:text-white">
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+              </svg>
+            </Link>
+            <SignOutButton />
+          </div>
         </div>
         <h1 className="mt-5 text-2xl font-black tracking-tight">Hola 👋</h1>
-        <p className="mt-1 text-sm text-white/60">{email}</p>
+        <p className="mt-1 text-sm text-white/60">{user.email}</p>
       </header>
 
-      {/* Cards */}
       <section className="px-5 py-6">
         <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7280]">Herramientas</p>
         <div className="grid gap-4">
           <Link
-            href="/dashboard/quizzes"
+            href="/app/scan"
             className="group flex items-center gap-4 rounded-2xl border border-[#e6e8eb] bg-white p-5 shadow-sm transition-all active:scale-[0.98]"
           >
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#07305f] text-white">
@@ -62,11 +54,48 @@ export default function AppMenuPage() {
               </svg>
             </div>
             <div className="min-w-0">
-              <h2 className="text-base font-bold text-[#111827]">Lector Prueba</h2>
-              {/* Ojo: antes iba directo a /scan sin ensayo seleccionado, imposible
-               * asociar el escaneo. Ahora pasa por la lista para elegir el ensayo
-               * y usar su boton "Escanear" (fija tulector_active_quiz). */}
-              <p className="mt-0.5 text-sm text-[#5b6472]">Elige el ensayo y escanea la hoja de respuestas.</p>
+              <h2 className="text-base font-bold text-[#111827]">Escanear</h2>
+              <p className="mt-0.5 text-sm text-[#5b6472]">Sigue con tu ultimo ensayo o elige otro para leer.</p>
+            </div>
+            <svg className="ml-auto h-5 w-5 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+          </Link>
+
+          <Link
+            href="/app/results"
+            className="group flex items-center gap-4 rounded-2xl border border-[#e6e8eb] bg-white p-5 shadow-sm transition-all active:scale-[0.98]"
+          >
+            <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#1a8f52]/10 text-[#1a8f52]">
+              <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 3v18h18" /><path d="M18.7 8 13 13.7 9.5 10.2 3 16.7" />
+              </svg>
+              {pendingReview ? (
+                <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#c2410c] px-1 text-[11px] font-bold text-white">
+                  {pendingReview}
+                </span>
+              ) : null}
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-[#111827]">Resultados</h2>
+              <p className="mt-0.5 text-sm text-[#5b6472]">
+                {pendingReview ? `${pendingReview} hoja${pendingReview === 1 ? "" : "s"} por revisar.` : "Puntajes y logro por ensayo."}
+              </p>
+            </div>
+            <svg className="ml-auto h-5 w-5 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+          </Link>
+
+          <Link
+            href="/app/students"
+            className="group flex items-center gap-4 rounded-2xl border border-[#e6e8eb] bg-white p-5 shadow-sm transition-all active:scale-[0.98]"
+          >
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#e6e8eb] text-[#111827]">
+              <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-[#111827]">Alumnos</h2>
+              <p className="mt-0.5 text-sm text-[#5b6472]">Busca alumnos y agrega nuevos.</p>
             </div>
             <svg className="ml-auto h-5 w-5 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
           </Link>
@@ -82,23 +111,13 @@ export default function AppMenuPage() {
             </div>
             <div className="min-w-0">
               <h2 className="text-base font-bold text-[#111827]">Mi plan</h2>
-              <p className="mt-0.5 text-sm text-[#5b6472]">Cuota de lecturas y facturas. Para comprar, ingresa desde un navegador.</p>
+              <p className="mt-0.5 text-sm text-[#5b6472]">Plan {school.plan}. Para comprar, ingresa desde un navegador.</p>
             </div>
             <svg className="ml-auto h-5 w-5 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
           </Link>
-
-          {/* Placeholder de futuras opciones (deshabilitado) */}
-          <div className="flex items-center gap-4 rounded-2xl border border-dashed border-[#dfe3e8] bg-white/50 p-5 opacity-60">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#e6e8eb] text-[#9aa3af] text-2xl">＋</div>
-            <div>
-              <h2 className="text-base font-bold text-[#9aa3af]">Más opciones</h2>
-              <p className="mt-0.5 text-sm text-[#9aa3af]">Pronto: resultados, alumnos.</p>
-            </div>
-          </div>
         </div>
       </section>
 
-      {/* Footer con la versión (para saber siempre qué build corres) */}
       <footer className="safe-pb mt-auto px-5 pb-6 pt-2 text-center">
         <p className="text-xs font-semibold tracking-wide text-[#9aa3af]">TuLector · versión {APP_VERSION}</p>
       </footer>
