@@ -1274,7 +1274,9 @@ function darkAtCode(gray: Float32Array, w: number, h: number, dx: number, dy: nu
       if (py < 0 || py >= h) continue;
       for (let xx = -r; xx <= r; xx++) {
         const px = cx + xx;
-        if (px >= 0 && px < w && gray[py * w + px] < DARK_THRESH) darkSum++;
+        // Oscuridad CONTINUA (255-gris), no conteo <umbral fijo: así el registro de
+        // la franja se centra en la tinta incluso en warp lavado (papel gris ~185).
+        if (px >= 0 && px < w) darkSum += 255 - gray[py * w + px];
       }
     }
   }
@@ -1301,16 +1303,25 @@ export function readSheetCode(imageData: ImageData): SheetCodeData | null {
   }
 
   const r = L.CODE_R;
-  const bits: number[] = [];
+  // Gris promedio de cada celda del codigo.
+  const avgs: number[] = [];
   for (let i = 0; i < L.CODE_CELLS; i++) {
     const cx = L.codeCellX(i) + bestDx, cy = L.CODE_Y + bestDy;
-    let dark = 0, tot = 0;
+    let sum = 0, tot = 0;
     for (let yy = -r; yy <= r; yy++) for (let xx = -r; xx <= r; xx++) {
       const px = cx + xx, py = cy + yy;
-      if (px >= 0 && px < width && py >= 0 && py < height) { tot++; if (gray[py * width + px] < DARK_THRESH) dark++; }
+      if (px >= 0 && px < width && py >= 0 && py < height) { tot++; sum += gray[py * width + px]; }
     }
-    bits.push(tot > 0 && dark / tot > 0.45 ? 1 : 0);
+    avgs.push(tot > 0 ? sum / tot : 255);
   }
+  // Umbral RELATIVO al papel local (misma tecnica que readRut/gradeBubbles): la
+  // celda vacia mas clara = papel (que en warp lavado es gris ~185, no blanco); una
+  // celda LLENA es la que se oscurece respecto a ese papel. El umbral fijo <70 fallaba
+  // porque en un warp lavado NADA baja de 70 → todos los bits 0 → guias/CRC fallan →
+  // null (el bug del codigo de hoja en camara). En imagen limpia (llena ~0, papel ~255)
+  // el score es enorme → mismo resultado que antes, sin regresion.
+  const paper = Math.max(...avgs);
+  const bits = avgs.map((a) => ((paper - a) / (paper * 0.30) > 0.35 ? 1 : 0));
   return decodeSheetCode(bits);
 }
 

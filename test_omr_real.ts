@@ -286,6 +286,24 @@ async function main() {
   if (missFull > 1 || rFull.rut !== "12345678-5") fail(`pipeline-lavado: preg ${missFull} erradas, rut="${rFull.rut}"`);
   console.log(`Washed-pipeline guard passed: warp [90,185] → ${20 - missFull}/20 preg + RUT ${rFull.rut} (Warp-vacío relativo)`);
 
+  // ─── Guardia de CODIGO DE HOJA en warp LAVADO: readSheetCode usaba umbral
+  // ABSOLUTO (<70), el ULTIMO detector sin contraste relativo → en camara (warp
+  // lavado, tinta ~150/papel ~185) leia todos los bits 0 y devolvia null
+  // (codigo_hoja null en produccion). Ahora relativo al papel local debe leer el
+  // codigo tambien en [90,185]. Verifica id + pagina + total. ───
+  const sheetCode = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetCode.getContext("2d") as unknown as Ctx2D, { answers: Array.from({ length: 20 }, (_, i) => i % 5), rut: "12345678-5", filled: true, code: { version: 1, sheetId: 54321, page: 1, pagesTotal: 3 } });
+  const imgCode = await loadImage(sheetCode.toDataURL("image/png"));
+  const capCode = createCanvas(imgCode.width, imgCode.height);
+  capCode.getContext("2d").drawImage(imgCode, 0, 0);
+  const frameCode = capCode.getContext("2d").getImageData(0, 0, capCode.width, capCode.height) as unknown as globalThis.ImageData;
+  const warpedCode = warpImageData(frameCode, findCorners(frameCode) ?? fail("codigo-lavado: sin esquinas"));
+  const dCode = warpedCode.data;
+  for (let i = 0; i < dCode.length; i += 4) for (let k = 0; k < 3; k++) dCode[i + k] = Math.round(90 + dCode[i + k] * (185 - 90) / 255);
+  const codeLC = readSheetCode(warpedCode);
+  if (!codeLC || codeLC.sheetId !== 54321 || codeLC.page !== 1 || codeLC.pagesTotal !== 3) fail(`codigo-lavado: leyo ${JSON.stringify(codeLC)} (esperado sheetId=54321 p1/3)`);
+  console.log(`Low-contrast sheet-code guard passed: codigo id=${codeLC.sheetId} p${codeLC.page}/${codeLC.pagesTotal} en warp lavado [90,185]`);
+
   // ─── Guardia de CONFIANZA (#4): las banderas deben ser coherentes y NO dar
   // falsas alarmas en marcas limpias (marca sólida → "ok", RUT válido → "ok"). ───
   const sheetCf = createCanvas(SHEET_W, SHEET_H);
