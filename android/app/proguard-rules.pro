@@ -19,3 +19,17 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Capacitor core + plugins comunitarios: sus propios .aar ya publican
+# consumer-rules.pro (Capacitor, browser, camera, share, etc. via
+# capacitor.build.gradle consumerProguardFiles), pero los que usan reflection
+# o JNI (biometria, login social, storage seguro, RevenueCat) no siempre
+# garantizan cobertura completa — se refuerzan explicitamente aqui.
+# Ver SECURITY_PROMPT_APK.md Tarea F.
+-keep class com.getcapacitor.** { *; }
+-keep class ee.forgr.capacitor.social.login.** { *; }
+-keep class com.aparajita.capacitor.biometricauth.** { *; }
+-keep class com.whitestein.securestorage.** { *; }
+-keep class com.revenuecat.purchases.** { *; }
+-keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }
+-keepattributes SourceFile,LineNumberTable

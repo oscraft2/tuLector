@@ -17,9 +17,6 @@ project(':capacitor-camera').projectDir = new File('../node_modules/@capacitor/c
 include ':capacitor-network'
 project(':capacitor-network').projectDir = new File('../node_modules/@capacitor/network/android')
 
-include ':capacitor-preferences'
-project(':capacitor-preferences').projectDir = new File('../node_modules/@capacitor/preferences/android')
-
 include ':capacitor-share'
 project(':capacitor-share').projectDir = new File('../node_modules/@capacitor/share/android')
 
@@ -34,3 +31,6 @@ project(':capgo-capacitor-social-login').projectDir = new File('../node_modules/
 
 include ':revenuecat-purchases-capacitor'
 project(':revenuecat-purchases-capacitor').projectDir = new File('../node_modules/@revenuecat/purchases-capacitor/android')
+
+include ':capacitor-secure-storage-plugin'
+project(':capacitor-secure-storage-plugin').projectDir = new File('../node_modules/capacitor-secure-storage-plugin/android')

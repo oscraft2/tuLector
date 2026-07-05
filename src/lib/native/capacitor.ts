@@ -151,8 +151,16 @@ export async function biometricVerify(reason: string): Promise<boolean> {
 // registro (historial git de este archivo). El endpoint /api/push/register y
 // push_server.ts quedan intactos (no-op sin FCM_SERVER_KEY).
 
-/** Deep link con el que Supabase vuelve al APK tras el OAuth externo (Apple). */
-export const OAUTH_DEEP_LINK = "cl.tulector.app://auth-callback";
+/**
+ * Deep link con el que Supabase vuelve al APK tras el OAuth externo (Apple en
+ * Android). Android App Link HTTPS verificado (autoVerify en el manifest +
+ * public/.well-known/assetlinks.json), NO un scheme custom — un scheme
+ * custom no es exclusivo de esta app, cualquier otra puede registrar el mismo
+ * e interceptar el ?code=. Reusa /auth/callback (la misma ruta que ya usa el
+ * flujo web) como fallback: si la verificacion del App Link aun no propago,
+ * el SO abre esto en un navegador normal y esa ruta ya sabe manejarlo.
+ */
+export const OAUTH_DEEP_LINK = "https://tulector.vercel.app/auth/callback";
 
 /** Web Client ID de Google (mismo que usa el proveedor Google en Supabase Auth). */
 const GOOGLE_WEB_CLIENT_ID = "390355977468-k6fr90qikaor197g7rslrmo36ei1bur3.apps.googleusercontent.com";

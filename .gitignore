@@ -47,3 +47,8 @@ scratch/
 
 # logs del servidor de dev (codex)
 .codex-next-dev.*.log
+
+# prompts (no commitear)
+SECURITY_PROMPT.md
+SECURITY_PROMPT_APK.md
+SEO_PROMPT.md

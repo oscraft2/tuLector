@@ -1,13 +1,25 @@
 apply plugin: 'com.android.application'
 
-// Firma de release: credenciales en keystore.properties (gitignored, NUNCA se
-// sube). Si el archivo no existe (ej. CI sin secretos configurados todavia),
-// el build de release simplemente queda sin firmar en vez de fallar.
-def keystorePropertiesFile = rootProject.file("keystore.properties")
+// Firma de release: primero variables de entorno TULECTOR_STORE_* (asi las
+// inyecta Codemagic/CI, sin escribir ningun secreto en disco), y si no estan
+// presentes cae a keystore.properties (gitignored, solo para build local en
+// esta maquina). Si ninguna fuente esta disponible, el build de release
+// simplemente queda sin firmar en vez de fallar. Ver SECURITY_PROMPT_APK.md Tarea C.
 def keystoreProperties = new Properties()
-def hasSigningConfig = keystorePropertiesFile.exists()
-if (hasSigningConfig) {
-    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+def hasSigningConfig = false
+
+if (System.getenv("TULECTOR_STORE_FILE") != null) {
+    keystoreProperties.setProperty("storeFile", System.getenv("TULECTOR_STORE_FILE"))
+    keystoreProperties.setProperty("storePassword", System.getenv("TULECTOR_STORE_PASS") ?: "")
+    keystoreProperties.setProperty("keyAlias", System.getenv("TULECTOR_KEY_ALIAS") ?: "")
+    keystoreProperties.setProperty("keyPassword", System.getenv("TULECTOR_KEY_PASS") ?: "")
+    hasSigningConfig = true
+} else {
+    def keystorePropertiesFile = rootProject.file("keystore.properties")
+    if (keystorePropertiesFile.exists()) {
+        keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+        hasSigningConfig = true
+    }
 }
 
 android {
@@ -33,6 +45,11 @@ android {
                 storePassword keystoreProperties['storePassword']
                 keyAlias keystoreProperties['keyAlias']
                 keyPassword keystoreProperties['keyPassword']
+                // v1 (JAR signing) es obsoleto e innecesario para minSdk 24+;
+                // v2 es el minimo que exige Play Store desde AGP 8. Explicito
+                // para no depender del default de AGP. Ver Tarea D.
+                v1SigningEnabled false
+                v2SigningEnabled true
             }
         }
     }

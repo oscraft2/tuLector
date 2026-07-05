@@ -2,7 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -20,12 +22,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep link de vuelta del OAuth (Supabase → cl.tulector.app://auth-callback) -->
-            <intent-filter>
+            <!-- Deep link de vuelta del OAuth (Supabase → https://tulector.vercel.app/auth/callback).
+                 Android App Link verificado (autoVerify) en vez de un scheme custom:
+                 un scheme custom (cl.tulector.app://) no es exclusivo — cualquier otra
+                 app puede declarar el mismo scheme e interceptar el ?code= de OAuth.
+                 Con autoVerify + assetlinks.json (public/.well-known/), el sistema
+                 SOLO entrega el link a esta app si el dominio prueba ser dueño del
+                 paquete (firma con nuestro keystore). Ver SECURITY_PROMPT_APK.md Tarea A. -->
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="cl.tulector.app" android:host="auth-callback" />
+                <data android:scheme="https" android:host="tulector.vercel.app" android:pathPrefix="/auth/callback" />
             </intent-filter>
         </activity>
 
@@ -42,10 +50,13 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- Solo para Android <= 12: desde Android 13 el Photo Picker y la cámara no
-         requieren permisos de almacenamiento (y Play rechaza pedirlos sin razón). -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <!-- READ/WRITE_EXTERNAL_STORAGE removidos: @capacitor/camera (unico
+         consumidor de FileProvider en este proyecto) solo declara <queries>
+         de intents en su manifest, sin uses-permission de almacenamiento; y
+         captureNativePhoto()/shareNativeImage() en capacitor.ts trabajan con
+         dataUrl/base64 en memoria, nunca tocan el filesystem externo. Menos
+         permisos = menos friccion en revision de Play y mejor Data Safety.
+         Ver SECURITY_PROMPT_APK.md Tarea H. -->
 
     <!-- Publicidad DESACTIVADA: la app no usa ads. Google Play Services / Auth
          agregan este permiso por dependencias transitivas; lo removemos para no
