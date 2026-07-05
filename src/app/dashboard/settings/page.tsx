@@ -4,6 +4,7 @@ import { updateSchoolSettings } from "@/app/dashboard/actions";
 import { countryProfiles } from "@/lib/country_profiles";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { DisconnectButton } from "@/components/dashboard/DisconnectButton";
+import { DeleteAccountButton } from "@/components/dashboard/DeleteAccountButton";
 import { LanguageSwitcher } from "@/components/dashboard/LanguageSwitcher";
 
 export const dynamic = "force-dynamic";
@@ -70,6 +71,7 @@ export default async function SettingsPage() {
             </form>
           </section>
           <section className="rounded-md border border-red-200 bg-red-50/30 p-5"><h2 className="text-xl font-semibold text-red-950">Desvincular o cambiar colegio</h2><p className="mt-2 text-xs leading-relaxed text-red-800 font-medium">Si te desvinculas de esta institución, perderás el acceso inmediato a todos sus ensayos, alumnos y reportes. Podrás buscar otro colegio o crear uno nuevo inmediatamente.</p><DisconnectButton /></section>
+          <section className="rounded-md border border-red-200 bg-red-50/30 p-5"><h2 className="text-xl font-semibold text-red-950">Eliminar cuenta</h2><p className="mt-2 text-xs leading-relaxed text-red-800 font-medium">Elimina tu perfil y acceso a TuLector de forma permanente. Los datos del colegio (ensayos, alumnos, resultados) no se borran.</p><DeleteAccountButton /></section>
           <section className="rounded-md border border-[#d8dde3] bg-white p-5"><h2 className="text-xl font-semibold">Permisos</h2><div className="mt-4 space-y-4"><p>Rol principal <StatusPill>{member.role}</StatusPill></p><button className="w-full rounded-md border border-[#07305f] px-4 py-2 text-sm font-semibold text-[#07305f]">Gestionar roles y permisos</button></div></section>
           <section className="rounded-md border border-[#d8dde3] bg-white p-5"><h2 className="text-xl font-semibold">Sincronizacion movil</h2><div className="mt-4 flex gap-4"><span className="grid h-8 w-8 place-items-center rounded-full bg-[#22a05a] text-white">✓</span><div><p className="font-semibold text-[#087a36]">Conectado a la app TuLector</p><p className="mt-2 text-sm text-[#5b6472]">Ultima sincronizacion: pendiente de evento real</p></div></div><button className="mt-6 w-full rounded-md border border-[#ef4444] px-4 py-2 text-sm font-semibold text-[#dc2626]">Cerrar sesion en dispositivos</button></section>
         </div>

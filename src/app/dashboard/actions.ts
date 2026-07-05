@@ -827,5 +827,38 @@ export async function disconnectSchool() {
   redirect("/dashboard");
 }
 
+/**
+ * Elimina la CUENTA del usuario (no solo la membresia a un colegio): requisito
+ * de Apple (5.1.1(v)) y de Google Play para poder aprobar la app. Borra su
+ * perfil y sus membresias, y elimina el usuario de Supabase Auth via el
+ * cliente admin (service role). Los datos del colegio (ensayos, alumnos,
+ * resultados) NO se borran — son del colegio, no de este usuario; otros
+ * miembros del staff los siguen necesitando.
+ */
+export async function deleteMyAccount() {
+  const { createSupabaseServerClient } = await import("@/lib/supabase_server");
+  const { createSupabaseAdminClient } = await import("@/lib/supabaseAdmin");
+
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/auth");
+
+  const admin = createSupabaseAdminClient();
+
+  await admin.from("school_members").delete().eq("user_id", user.id);
+  await admin.from("profiles").delete().eq("user_id", user.id);
+
+  const { error } = await admin.auth.admin.deleteUser(user.id);
+  if (error) throw new Error(`No se pudo eliminar la cuenta: ${error.message}`);
+
+  await supabase.auth.signOut();
+
+  const cookieStore = await cookies();
+  cookieStore.delete("tulector_active_school_id");
+  cookieStore.delete("tulector_active_quiz");
+
+  redirect("/account-deleted");
+}
+
 
 
