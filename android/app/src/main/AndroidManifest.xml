@@ -22,7 +22,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep link de vuelta del OAuth (Supabase → https://tulector.vercel.app/auth/callback).
+            <!-- Deep link de vuelta del OAuth (Supabase → https://tulector.app/auth/callback).
                  Android App Link verificado (autoVerify) en vez de un scheme custom:
                  un scheme custom (cl.tulector.app://) no es exclusivo — cualquier otra
                  app puede declarar el mismo scheme e interceptar el ?code= de OAuth.
@@ -33,7 +33,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="tulector.vercel.app" android:pathPrefix="/auth/callback" />
+                <data android:scheme="https" android:host="tulector.app" android:pathPrefix="/auth/callback" />
             </intent-filter>
         </activity>
 
@@ -50,6 +50,13 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- BiometricPrompt (login con huella): el plugin
+         @aparajita/capacitor-biometric-auth NO declara este permiso en su propio
+         manifest, asi que lo agregamos aca. Sin USE_BIOMETRIC, authenticate() falla
+         con "BiometricPrompt is not available". USE_FINGERPRINT es legacy (API <28)
+         pero se mantiene por compatibilidad con Android 8. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
     <!-- READ/WRITE_EXTERNAL_STORAGE removidos: @capacitor/camera (unico
          consumidor de FileProvider en este proyecto) solo declara <queries>
          de intents en su manifest, sin uses-permission de almacenamiento; y

@@ -107,19 +107,29 @@ export async function toggleTorch(stream: MediaStream | null, current: boolean):
 /**
  * Verifica si el dispositivo soporta autenticación biométrica (huella, FaceID).
  * Retorna el tipo de biometría disponible o null si no hay.
+ *
+ * IMPORTANTE: el plugin @aparajita/capacitor-biometric-auth se registra en
+ * Capacitor como "BiometricAuthNative" (NO "BiometricAuth") — ver
+ * node_modules/.../dist/esm/index.js registerPlugin('BiometricAuthNative').
+ * Usar "BiometricAuth" aqui retorna undefined y el gate cae al fallback
+ * silenciosamente (sintoma: "la huella aparece pero no funciona").
  */
 export async function biometricAvailable(): Promise<"fingerprint" | "face" | "iris" | null> {
   const Bio = plugin<{
     checkBiometry: () => Promise<{ isAvailable: boolean; biometryType: number; biometryTypes: number[]; strongBiometryTypes: number[]; reason: string; code: string }>;
-  }>("BiometricAuth");
+  }>("BiometricAuthNative");
   if (!Bio) return null;
   try {
     const result = await Bio.checkBiometry();
     if (!result.isAvailable) return null;
+    // BiometryType enum del plugin: 0=none, 1=touchId, 2=faceId,
+    // 3=fingerprintAuthentication, 4=faceAuthentication, 5=irisAuthentication.
     const map: Record<number, "fingerprint" | "face" | "iris"> = {
-      1: "fingerprint",
-      2: "face",
-      3: "iris",
+      1: "fingerprint", // touchId (iOS)
+      2: "face",         // faceId (iOS)
+      3: "fingerprint", // fingerprintAuthentication (Android)
+      4: "face",          // faceAuthentication (Android)
+      5: "iris",          // irisAuthentication (Android)
     };
     return map[result.biometryType] ?? "fingerprint";
   } catch {
@@ -130,17 +140,31 @@ export async function biometricAvailable(): Promise<"fingerprint" | "face" | "ir
 /**
  * Solicita verificación biométrica. Retorna true si el usuario se autentica,
  * false si cancela o falla.
+ *
+ * El metodo del plugin es `authenticate` (NO `verifyIdentity` — ese no existe
+ * y la llamada lanza, por lo que el gate siempre cae al fallback). Resuelve
+ * con void; cualquier fallo se reporta via excepción.
  */
 export async function biometricVerify(reason: string): Promise<boolean> {
   const Bio = plugin<{
-    verifyIdentity: (o: { reason: string }) => Promise<{ verified: boolean }>;
-  }>("BiometricAuth");
+    authenticate: (o: {
+      reason: string;
+      cancelTitle: string;
+      allowDeviceCredential: boolean;
+      androidConfirmationRequired: boolean;
+    }) => Promise<void>;
+  }>("BiometricAuthNative");
   if (!Bio) return false;
   try {
-    const result = await Bio.verifyIdentity({ reason });
-    return result.verified === true;
+    await Bio.authenticate({
+      reason,
+      cancelTitle: "Cancelar",
+      allowDeviceCredential: false,
+      androidConfirmationRequired: false,
+    });
+    return true;
   } catch {
-    return false;
+    return false; // cancelado por el usuario, falla o lockout
   }
 }
 
@@ -160,7 +184,7 @@ export async function biometricVerify(reason: string): Promise<boolean> {
  * flujo web) como fallback: si la verificacion del App Link aun no propago,
  * el SO abre esto en un navegador normal y esa ruta ya sabe manejarlo.
  */
-export const OAUTH_DEEP_LINK = "https://tulector.vercel.app/auth/callback";
+export const OAUTH_DEEP_LINK = "https://tulector.app/auth/callback";
 
 /** Web Client ID de Google (mismo que usa el proveedor Google en Supabase Auth). */
 const GOOGLE_WEB_CLIENT_ID = "390355977468-k6fr90qikaor197g7rslrmo36ei1bur3.apps.googleusercontent.com";
