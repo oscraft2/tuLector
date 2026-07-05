@@ -14,6 +14,13 @@ const config = {
     // El APK abre DIRECTO en /auth (login), sin la landing de marketing.
     url: "https://tulector.vercel.app/auth",
     androidScheme: "https",
+    iosScheme: "https",
+  },
+  ios: {
+    // El CSS propio ya maneja el safe-area con env(safe-area-inset-*)
+    // (.safe-pt/.safe-pb en globals.css) → "never" evita que el WebView
+    // sume SU PROPIO padding automatico encima (doble espacio arriba/abajo).
+    contentInset: "never",
   },
   plugins: {
     SplashScreen: { launchShowDuration: 800, backgroundColor: "#111827" },
