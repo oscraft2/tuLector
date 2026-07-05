@@ -8,7 +8,7 @@ import { ZxcvbnFactory } from "@zxcvbn-ts/core";
 import { adjacencyGraphs, dictionary } from "@zxcvbn-ts/language-common";
 import { createClient } from "@/lib/supabase";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
-import { isNativeApp, openExternalUrl, googleNativeSignIn, OAUTH_DEEP_LINK } from "@/lib/native/capacitor";
+import { isNativeApp, nativePlatform, openExternalUrl, googleNativeSignIn, appleNativeSignIn, OAUTH_DEEP_LINK } from "@/lib/native/capacitor";
 import { BiometricGate } from "@/components/native/BiometricGate";
 
 const passwordEstimator = new ZxcvbnFactory({
@@ -155,6 +155,22 @@ function AuthForm() {
         return;
       }
 
+      if (isNativeApp() && provider === "apple" && nativePlatform() === "ios") {
+        // iOS: Sign in with Apple nativo (AuthenticationServices), sin salir
+        // de la app. Requiere la capability habilitada en el proyecto Xcode
+        // (ios/App/App/App.entitlements) — ver docs/apk-plan.md.
+        const idToken = await appleNativeSignIn();
+        if (!idToken) {
+          setMessage("No se pudo iniciar sesion con Apple.");
+          setOauthLoading(null);
+          return;
+        }
+        const { error } = await client.auth.signInWithIdToken({ provider: "apple", token: idToken });
+        if (error) throw error;
+        router.replace(homeAfterAuth());
+        return;
+      }
+
       if (isNativeApp()) {
         // Apple en Android no tiene SDK nativo: sale a Chrome Custom Tabs y
         // Supabase vuelve por deep link; NativeBootstrap canjea el code por sesión.
@@ -208,16 +224,29 @@ function AuthForm() {
 
         <div className="cap-anim-sheet safe-pb relative rounded-t-[2rem] bg-white px-6 pt-7 pb-7 text-[#0b1220] shadow-[0_-10px_50px_rgba(0,0,0,0.3)]">
           <h2 className="text-center text-lg font-black">{mode === "login" ? "Inicia sesion" : "Crear cuenta"}</h2>
-          <p className="mt-1 mb-5 text-center text-xs text-gray-400">Accede con Google o tu correo para escanear</p>
+          <p className="mt-1 mb-5 text-center text-xs text-gray-400">Accede con Google, Apple o tu correo para escanear</p>
 
           <button
             type="button"
             onClick={() => handleOAuth("google")}
             disabled={busy}
-            className="mb-4 flex min-h-12 w-full items-center justify-center gap-3 rounded-xl border border-[#cfd6df] bg-white px-4 py-3.5 text-sm font-bold text-[#111827] shadow-sm transition-all hover:bg-[#f8faf9] disabled:opacity-50 active:scale-[0.99]"
+            className="mb-3 flex min-h-12 w-full items-center justify-center gap-3 rounded-xl border border-[#cfd6df] bg-white px-4 py-3.5 text-sm font-bold text-[#111827] shadow-sm transition-all hover:bg-[#f8faf9] disabled:opacity-50 active:scale-[0.99]"
           >
             <GoogleIcon />
             {oauthLoading === "google" ? "Conectando..." : "Continuar con Google"}
+          </button>
+
+          {/* Apple 4.8: si se ofrece un login de terceros (Google), Sign in with
+           * Apple debe estar con igual prominencia — visible en iOS y Android
+           * (Android sale a Custom Tabs, iOS usa AuthenticationServices nativo). */}
+          <button
+            type="button"
+            onClick={() => handleOAuth("apple")}
+            disabled={busy}
+            className="mb-4 flex min-h-12 w-full items-center justify-center gap-3 rounded-xl bg-[#111827] px-4 py-3.5 text-sm font-bold text-white shadow-sm transition-all hover:bg-black disabled:opacity-50 active:scale-[0.99]"
+          >
+            <AppleIcon />
+            {oauthLoading === "apple" ? "Conectando..." : "Continuar con Apple"}
           </button>
 
           <div className="mb-4 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.14em] text-[#9aa3af]"><span className="h-px flex-1 bg-[#e5e9ee]" />o con correo<span className="h-px flex-1 bg-[#e5e9ee]" /></div>

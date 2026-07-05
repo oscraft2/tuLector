@@ -157,11 +157,20 @@ export const OAUTH_DEEP_LINK = "cl.tulector.app://auth-callback";
 /** Web Client ID de Google (mismo que usa el proveedor Google en Supabase Auth). */
 const GOOGLE_WEB_CLIENT_ID = "390355977468-k6fr90qikaor197g7rslrmo36ei1bur3.apps.googleusercontent.com";
 
+// Client ID tipo "iOS" (distinto del Android/Web): se crea en el MISMO
+// proyecto de Google Cloud (docentelab-12b2b) que el Web Client ID de arriba,
+// como "ID de cliente de OAuth" -> tipo iOS -> Bundle ID cl.tulector.app.
+// Sin API para crearlo por CLI, es un paso manual en Google Cloud Console.
+// Hasta que exista, el login con Google en iOS queda deshabilitado (Android
+// no se ve afectado, sigue usando solo GOOGLE_WEB_CLIENT_ID).
+const GOOGLE_IOS_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID || "";
+
 let googleSignInReady: Promise<boolean> | null = null;
 
 /**
- * Inicializa Credential Manager para Google (una vez). Idempotente: llamadas
- * repetidas reutilizan la misma promesa. Debe llamarse antes de googleNativeSignIn().
+ * Inicializa Credential Manager (Android) / GoogleSignIn nativo (iOS) una vez.
+ * Idempotente: llamadas repetidas reutilizan la misma promesa. Debe llamarse
+ * antes de googleNativeSignIn().
  */
 export function initGoogleSignIn(): Promise<boolean> {
   if (googleSignInReady) return googleSignInReady;
@@ -169,7 +178,13 @@ export function initGoogleSignIn(): Promise<boolean> {
     const SocialLogin = plugin<{ initialize: (o: unknown) => Promise<void> }>("SocialLogin");
     if (!SocialLogin) return false;
     try {
-      await SocialLogin.initialize({ google: { webClientId: GOOGLE_WEB_CLIENT_ID } });
+      const isIOS = nativePlatform() === "ios";
+      if (isIOS && !GOOGLE_IOS_CLIENT_ID) return false; // falta crear el cliente iOS en Google Cloud
+      await SocialLogin.initialize({
+        google: isIOS
+          ? { iOSClientId: GOOGLE_IOS_CLIENT_ID, iOSServerClientId: GOOGLE_WEB_CLIENT_ID }
+          : { webClientId: GOOGLE_WEB_CLIENT_ID },
+      });
       return true;
     } catch {
       return false;
@@ -198,6 +213,28 @@ export async function googleNativeSignIn(): Promise<string | null> {
     return res?.result?.idToken ?? null;
   } catch {
     return null; // cancelado por el usuario o sin cuenta Google en el dispositivo
+  }
+}
+
+/**
+ * Login nativo con "Sign in with Apple" — SOLO iOS (usa AuthenticationServices
+ * del sistema, sin SDK externo). Android NO tiene este SDK nativo; ese caso
+ * sigue usando openExternalUrl()+deep link (ver auth/page.tsx), sin tocar.
+ * Retorna el idToken para canjear con supabase.auth.signInWithIdToken, o null
+ * si el usuario cancela o falta la capability "Sign in with Apple" en el
+ * proyecto Xcode (ver ios/App/App/App.entitlements).
+ */
+export async function appleNativeSignIn(): Promise<string | null> {
+  if (nativePlatform() !== "ios") return null;
+  const SocialLogin = plugin<{
+    login: (o: { provider: "apple"; options: Record<string, never> }) => Promise<{ result?: { idToken?: string | null } }>;
+  }>("SocialLogin");
+  if (!SocialLogin) return null;
+  try {
+    const res = await SocialLogin.login({ provider: "apple", options: {} });
+    return res?.result?.idToken ?? null;
+  } catch {
+    return null; // cancelado por el usuario
   }
 }
 
