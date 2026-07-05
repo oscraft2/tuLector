@@ -16,14 +16,14 @@ const config = {
   appendUserAgent: "TuLectorApp",
   server: {
     // El APK abre DIRECTO en /auth (login), sin la landing de marketing.
-    url: "https://tulector.app/auth",
+    url: "https://tulector.vercel.app/auth",
     androidScheme: "https",
     iosScheme: "https",
     // Sin esto, Capacitor genera config.xml/network config con acceso "*"
     // (cualquier origen) — acotado a los dominios que la app realmente llama.
     // Ver SECURITY_PROMPT_APK.md Tarea E.
     allowNavigation: [
-      "tulector.app",
+      "tulector.vercel.app",
       "*.supabase.co",
       "api.mercadopago.com",
       "www.flow.cl",

@@ -10,7 +10,6 @@ import { createClient } from "@/lib/supabase";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
 import { isNativeApp, nativePlatform, openExternalUrl, googleNativeSignIn, appleNativeSignIn, OAUTH_DEEP_LINK } from "@/lib/native/capacitor";
 import { BiometricGate } from "@/components/native/BiometricGate";
-import { BiometricToggle } from "@/components/native/BiometricToggle";
 
 const passwordEstimator = new ZxcvbnFactory({
   dictionary,
@@ -285,12 +284,6 @@ function AuthForm() {
               {mode === "login" ? "Crear cuenta" : "Iniciar sesion"}
             </button>
           </p>
-
-          {mode === "login" ? (
-            <div className="mt-4 rounded-xl border border-[#e5e9ee] bg-[#f8faf9] p-3 text-[#0b1220]">
-              <BiometricToggle />
-            </div>
-          ) : null}
         </div>
       </main>
       </>
