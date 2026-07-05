@@ -14,17 +14,24 @@ export interface OfflineScanEntry {
 
 const PREF_KEY = "tulector_offline_queue";
 
-function prefs() {
+// La cola guarda RUT y respuestas de ALUMNOS (menores) mientras no hay red.
+// @capacitor/preferences en Android es SharedPreferences SIN cifrar (legible
+// con acceso root/fisico al dispositivo) — se usa SecureStoragePlugin en su
+// lugar, que cifra con Android Keystore (hardware-backed) / iOS Keychain.
+// Ver SECURITY_PROMPT_APK.md Tarea J.
+function secureStorage() {
   return plugin<{
-    get: (o: { key: string }) => Promise<{ value: string | null }>;
-    set: (o: { key: string; value: string }) => Promise<void>;
-    remove: (o: { key: string }) => Promise<void>;
-  }>("Preferences");
+    get: (o: { key: string }) => Promise<{ value: string }>;
+    set: (o: { key: string; value: string }) => Promise<{ value: boolean }>;
+    remove: (o: { key: string }) => Promise<{ value: boolean }>;
+  }>("SecureStoragePlugin");
 }
 
 async function readQueue(): Promise<OfflineScanEntry[]> {
-  const p = prefs();
+  const p = secureStorage();
   if (!p) {
+    // Web (sin Capacitor): no hay alumnos reales en juego en un navegador de
+    // escritorio para este flujo, pero igual evitamos texto plano innecesario.
     try {
       const raw = localStorage.getItem(PREF_KEY);
       return raw ? JSON.parse(raw) : [];
@@ -36,13 +43,13 @@ async function readQueue(): Promise<OfflineScanEntry[]> {
     const { value } = await p.get({ key: PREF_KEY });
     return value ? JSON.parse(value) : [];
   } catch {
-    return [];
+    return []; // clave inexistente (cola vacia) u otro error de lectura
   }
 }
 
 async function writeQueue(entries: OfflineScanEntry[]): Promise<void> {
   const json = JSON.stringify(entries);
-  const p = prefs();
+  const p = secureStorage();
   if (!p) {
     try { localStorage.setItem(PREF_KEY, json); } catch { /* sin storage */ }
     return;

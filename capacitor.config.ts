@@ -6,7 +6,11 @@
 const config = {
   appId: "cl.tulector.app",
   appName: "TuLector",
-  webDir: "public", // requerido por el CLI; no se usa porque cargamos server.url
+  // Requerido por el CLI, pero NUNCA se sirve (server.url abajo carga la web
+  // remota). Antes apuntaba a "public" (el proyecto web completo — imagenes
+  // de marketing, ~2MB) y ese peso se bundleaba sin uso real en cada
+  // `cap sync`. capacitor-www/ es un placeholder minimo dedicado a esto.
+  webDir: "capacitor-www",
   // Token en el User-Agent → la web detecta que corre en el APK de forma fiable
   // (window.Capacitor puede no inyectarse a tiempo con server.url remota).
   appendUserAgent: "TuLectorApp",
@@ -15,6 +19,17 @@ const config = {
     url: "https://tulector.vercel.app/auth",
     androidScheme: "https",
     iosScheme: "https",
+    // Sin esto, Capacitor genera config.xml/network config con acceso "*"
+    // (cualquier origen) — acotado a los dominios que la app realmente llama.
+    // Ver SECURITY_PROMPT_APK.md Tarea E.
+    allowNavigation: [
+      "tulector.vercel.app",
+      "*.supabase.co",
+      "api.mercadopago.com",
+      "www.flow.cl",
+      "sandbox.flow.cl",
+      "api.resend.com",
+    ],
   },
   ios: {
     // El CSS propio ya maneja el safe-area con env(safe-area-inset-*)
