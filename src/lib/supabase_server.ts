@@ -70,25 +70,20 @@ export async function getDashboardContext() {
 
   let membership: any = null;
 
-  // Check if user is platform staff (allows impersonation)
-  const { data: staffMember } = await supabase
-    .from("platform_users")
-    .select("role")
-    .eq("user_id", user.id)
-    .is("revoked_at", null)
-    .maybeSingle();
+  // Staff check y membresia-activa son independientes → en paralelo. La
+  // membresia-activa solo se pide si hay cookie de colegio activo.
+  const [{ data: staffMember }, activeMembershipResult] = await Promise.all([
+    supabase.from("platform_users").select("role").eq("user_id", user.id).is("revoked_at", null).maybeSingle(),
+    activeSchoolId
+      ? supabase.from("school_members").select("id, school_id, user_id, role, created_at").eq("user_id", user.id).eq("school_id", activeSchoolId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
 
   const isStaff = staffMember !== null;
 
   // Try to use school ID from cookie if it's valid for this user
   if (activeSchoolId) {
-    const { data } = await supabase
-      .from("school_members")
-      .select("id, school_id, user_id, role, created_at")
-      .eq("user_id", user.id)
-      .eq("school_id", activeSchoolId)
-      .maybeSingle();
-    membership = data;
+    membership = activeMembershipResult.data;
 
     // Staff impersonation override: if user is staff and has school ID cookie, grant session
     if (!membership && isStaff) {
@@ -144,23 +139,19 @@ export async function getDashboardContext() {
     redirect("/dashboard/onboarding");
   }
 
-  // Fetch all school memberships for this user (for the switcher)
-  const { data: allMemberships } = await supabase
-    .from("school_members")
-    .select("id, school_id, role, schools(name)")
-    .eq("user_id", user.id);
+  // Estas dos son independientes entre si → en paralelo (ahorra un round-trip
+  // Vercel↔Supabase, que a Chile pesa). allMemberships alimenta el switcher;
+  // profile trae el idioma.
+  const [{ data: allMemberships }, { data: profile }] = await Promise.all([
+    supabase.from("school_members").select("id, school_id, role, schools(name)").eq("user_id", user.id),
+    supabase.from("profiles").select("locale").eq("user_id", user.id).maybeSingle(),
+  ]);
 
   const userSchools = (allMemberships ?? []).map((m: any) => ({
     id: m.school_id,
     name: m.schools?.name || "Colegio sin nombre",
     role: m.role,
   }));
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("locale")
-    .eq("user_id", user.id)
-    .maybeSingle();
 
   return {
     supabase,

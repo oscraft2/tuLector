@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { calculateGrade } from "@/lib/latam";
-import { NativeBottomNav } from "@/components/native/NativeBottomNav";
 
 type PageProps = { params: Promise<{ quizId: string }> };
 
@@ -96,7 +95,6 @@ export default async function NativeQuizResultsPage({ params }: PageProps) {
           </div>
         )}
       </section>
-      <NativeBottomNav />
     </main>
   );
 }

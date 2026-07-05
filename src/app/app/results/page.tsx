@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { getDashboardContext } from "@/lib/supabase_server";
-import { NativeBottomNav } from "@/components/native/NativeBottomNav";
 
 type QuizRow = { id: string; title: string; subject: string | null; grade: string | null; num_questions: number | null };
 type PaperCount = { quiz_id: string; status: string | null };
@@ -75,7 +74,6 @@ export default async function NativeResultsPage() {
           </div>
         )}
       </section>
-      <NativeBottomNav />
     </main>
   );
 }

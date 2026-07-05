@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { SignOutButton } from "@/components/native/SignOutButton";
-import { NativeBottomNav } from "@/components/native/NativeBottomNav";
 import { APP_VERSION } from "@/lib/version";
 
 /**
@@ -120,7 +119,6 @@ export default async function AppMenuPage() {
       <footer className="mt-auto px-5 pb-24 pt-2 text-center">
         <p className="text-xs font-semibold tracking-wide text-[#9aa3af]">TuLector · versión {APP_VERSION}</p>
       </footer>
-      <NativeBottomNav />
     </main>
   );
 }

@@ -3,7 +3,6 @@ import { getDashboardContext } from "@/lib/supabase_server";
 import { createStudent } from "@/app/dashboard/actions";
 import { StudentForm } from "@/components/dashboard/StudentForm";
 import { StudentSearchList } from "@/components/native/StudentSearchList";
-import { NativeBottomNav } from "@/components/native/NativeBottomNav";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 
 type StudentRow = { id: string; rut: string | null; student_id: string | null; name: string; course: string | null };
@@ -54,7 +53,6 @@ export default async function NativeStudentsPage() {
           )}
         </div>
       </section>
-      <NativeBottomNav />
     </main>
   );
 }
