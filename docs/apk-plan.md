@@ -104,3 +104,60 @@ npx cap open android
 ## Estado de Flutter
 **DEPRECADO.** `mobile/` (Flutter + `omr_engine.cpp`) ya no se mantiene. El motor C++ quedó
 atrás (sin 12 anclas, sin las mejoras del RUT). Se eliminará/archivará. No invertir ahí.
+
+## Estado actual (04-05 jul 2026) — login nativo, UI propia, tiendas
+
+**Login nativo:**
+- Google: `@capgo/capacitor-social-login` con Credential Manager (bottom-sheet
+  del sistema, SIN abrir navegador). Requiere un cliente OAuth "Android" en
+  Google Cloud (proyecto `docentelab-12b2b`) por cada SHA-1 (debug ya
+  registrado; release pendiente — ver keystore abajo). El `webClientId` en
+  `initGoogleSignIn()` es el Web Client ID que ya usa Supabase, NO el del
+  cliente Android.
+- Apple: Android no tiene SDK nativo → sale a Chrome Custom Tabs
+  (`@capacitor/browser`) y vuelve por deep link `cl.tulector.app://auth-callback`
+  (`onAppUrlOpen` en `NativeBootstrap.tsx`).
+- Push notifications: **removido** (`@capacitor/push-notifications` crasheaba
+  sin `google-services.json`). Reactivar requiere crear proyecto Firebase.
+
+**UI nativa propia (no replica la web):**
+- `/app` (menú), `/app/scan`, `/app/results(+[quizId])`, `/app/students` —
+  pantallas mobile-first reales, reusan las mismas queries/acciones de
+  `dashboard/actions.ts` pero con su propio diseño de tarjetas.
+- `dashboard/layout.tsx` redirige TODO `/dashboard/*` a `/app` para el
+  User-Agent nativo, EXCEPTO `/dashboard/quizzes`, `/dashboard/students`,
+  `/dashboard/settings` y `/dashboard/billing` (fallbacks a acciones
+  avanzadas que las pantallas nativas no cubren todavía).
+- `/dashboard/billing` en nativo es de **solo lectura** (sin el checkout de
+  Flow) — Apple/Google prohíben vender contenido digital dentro del APK sin
+  su IAP; el pago sigue siendo 100% externo (web).
+- Layout persistente (`src/app/app/layout.tsx`) + `loading.tsx` por ruta +
+  queries paralelas en `getDashboardContext()` → navegación fluida (antes se
+  sentía "pegada" por falta de skeletons y queries en serie).
+
+**Release Android:**
+- Keystore de producción en `android/app/tulector-release.keystore`
+  (gitignored) + `android/keystore.properties` (gitignored) con las
+  credenciales. **SHA-1 de release necesita su PROPIO cliente OAuth Android**
+  en Google Cloud (distinto al de debug) — sin esto el login con Google falla
+  en el build de producción con `UNREGISTERED_ON_API_CONSOLE`.
+- `minifyEnabled true` + `shrinkResources true` verificados sin crashes.
+- Permiso `AD_ID` removido (`tools:node="remove"`) — la app no usa publicidad.
+- "Eliminar cuenta" implementado (`deleteMyAccount` en `dashboard/actions.ts`,
+  botón en `/dashboard/settings`) — requisito de Apple 5.1.1(v) y Google Play.
+
+**iOS (recien agregado, sin probar — requiere Mac/Codemagic):**
+- `npx cap add ios` ya corrido (usa SPM, no CocoaPods). `Info.plist` con los
+  usage descriptions obligatorios (cámara, Face ID, fotos) y el URL scheme
+  del deep link.
+- Pendiente (requiere Apple Developer Portal, manual): habilitar "Sign in
+  with Apple" capability, crear cliente OAuth **iOS** en Google Cloud, y
+  cablear `SocialLogin.initialize({ apple: {...} })` para el login nativo con
+  Apple en iOS (Android usa su propio flujo via Browser, no este).
+- `codemagic.yaml` en la raíz: pipeline de CI para compilar Android (AAB
+  firmado) e iOS (.ipa + TestFlight) en la nube sin Mac local. Secretos se
+  configuran en codemagic.io, nunca en el repo.
+
+**Ficha de tienda:** ver `store-assets/` (ícono 512, feature graphic,
+capturas, y `ficha-play-store.md` con todos los textos y el checklist de
+Data Safety / política de privacidad).
