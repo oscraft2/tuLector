@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -45,4 +46,9 @@
          requieren permisos de almacenamiento (y Play rechaza pedirlos sin razón). -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+
+    <!-- Publicidad DESACTIVADA: la app no usa ads. Google Play Services / Auth
+         agregan este permiso por dependencias transitivas; lo removemos para no
+         tener que declarar "Advertising ID" en Data Safety (y evitar rechazos). -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />
 </manifest>
