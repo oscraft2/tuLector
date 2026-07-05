@@ -1,0 +1,94 @@
+## Codemagic CI — compila TuLector para iOS (y Android) en la nube, sin Mac
+## local. Ver docs/apk-plan.md para el resto del plan de publicacion.
+##
+## ANTES DE CORRER ESTO, configura en codemagic.io (Team > Code signing /
+## Environment variables) — NUNCA pongas secretos directo en este archivo:
+##
+## Grupo "google_play" (variables de entorno):
+##   - keystore.properties (archivo, subir el .keystore + storePassword/
+##     keyAlias/keyPassword tal como usa android/app/build.gradle)
+##   - GCLOUD_SERVICE_ACCOUNT_CREDENTIALS (JSON de una cuenta de servicio con
+##     permiso de "Release Manager" en Play Console, para subir el AAB)
+##
+## Grupo "app_store" (variables de entorno):
+##   - App Store Connect API Key (Codemagic tiene integracion nativa: Team
+##     Settings > Integrations > App Store Connect)
+##   - Certificado de distribucion + provisioning profile: Codemagic puede
+##     generarlos automaticamente con "automatic code signing" si conectas
+##     esa API key (recomendado, evita manejar .p12/.mobileprovision a mano)
+
+workflows:
+  android-release:
+    name: TuLector Android (AAB firmado)
+    max_build_duration: 30
+    instance_type: linux_x2
+    environment:
+      groups:
+        - google_play
+      node: 20
+      java: 17
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: "android-v*"
+    scripts:
+      - name: Instalar dependencias
+        script: npm ci
+      - name: Sync Capacitor Android
+        script: npx cap sync android
+      - name: Build AAB firmado
+        script: |
+          cd android
+          ./gradlew bundleRelease
+    artifacts:
+      - android/app/build/outputs/bundle/release/*.aab
+      - android/app/build/outputs/apk/release/*.apk
+    publishing:
+      email:
+        recipients:
+          - profe.oscarvidal@gmail.com
+      # Descomenta cuando tengas la cuenta de servicio de Play configurada:
+      # google_play:
+      #   credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+      #   track: internal   # luego closed testing (12 testers x 14 dias) -> production
+
+  ios-release:
+    name: TuLector iOS (TestFlight)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      groups:
+        - app_store
+      node: 20
+      xcode: latest
+      cocoapods: default
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: "ios-v*"
+    scripts:
+      - name: Instalar dependencias
+        script: npm ci
+      - name: Sync Capacitor iOS
+        script: npx cap sync ios
+      - name: Configurar firma automatica
+        script: |
+          xcode-project use-profiles
+      - name: Build .ipa
+        script: |
+          xcode-project build-ipa \
+            --workspace ios/App/App.xcworkspace \
+            --scheme App
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      email:
+        recipients:
+          - profe.oscarvidal@gmail.com
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        # submit_to_app_store: false  # activar recien cuando este todo probado
