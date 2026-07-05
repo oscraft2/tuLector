@@ -264,6 +264,38 @@ export async function closeExternalBrowser(): Promise<void> {
   }
 }
 
+// NOTA compras iOS (RevenueCat): Apple exige compra integrada (StoreKit) para
+// suscripciones — por eso Android sigue 100% externo (Flow, sin comision) y
+// SOLO iOS usara @revenuecat/purchases-capacitor (ver docs/apk-plan.md, plan
+// de tiendas). Falta, antes de poder construir el paywall real:
+//   1. Crear cuenta en RevenueCat y el proyecto para cl.tulector.app.
+//   2. Crear los productos IAP en App Store Connect (mismos planes/packs que
+//      ya existen en src/lib/billing_catalog.ts) y mapearlos en RevenueCat.
+//   3. Pegar la Public API Key de RevenueCat (iOS) en
+//      NEXT_PUBLIC_REVENUECAT_IOS_API_KEY.
+// Sin eso, initRevenueCat() no hace nada (no hay API key) y no se muestra
+// ningun paywall — /dashboard/billing sigue con la vista de solo lectura.
+const REVENUECAT_IOS_API_KEY = process.env.NEXT_PUBLIC_REVENUECAT_IOS_API_KEY || "";
+
+let revenueCatReady: Promise<boolean> | null = null;
+
+/** Inicializa RevenueCat (una vez, solo iOS). Debe llamarse antes de comprar. */
+export function initRevenueCat(): Promise<boolean> {
+  if (revenueCatReady) return revenueCatReady;
+  revenueCatReady = (async () => {
+    if (nativePlatform() !== "ios" || !REVENUECAT_IOS_API_KEY) return false;
+    const Purchases = plugin<{ configure: (o: { apiKey: string }) => Promise<void> }>("Purchases");
+    if (!Purchases) return false;
+    try {
+      await Purchases.configure({ apiKey: REVENUECAT_IOS_API_KEY });
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  return revenueCatReady;
+}
+
 /**
  * Escucha deep links entrantes (appUrlOpen del plugin App). Retorna una función
  * para cancelar la suscripción. En web es un no-op.
