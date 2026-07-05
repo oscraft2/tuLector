@@ -24,12 +24,13 @@ const config = {
   },
   plugins: {
     SplashScreen: { launchShowDuration: 800, backgroundColor: "#111827" },
-    // Solo bundlea el SDK nativo de Google (Credential Manager) del plugin
-    // SocialLogin; el resto (Facebook/Twitter) no se compila → APK mas liviano.
-    // El webClientId real se pasa en runtime via SocialLogin.initialize() en
-    // NativeBootstrap.tsx (docs/apk-plan.md).
+    // Google (Credential Manager en Android, GoogleSignIn nativo en iOS) y
+    // Apple (Sign in with Apple nativo en iOS; en Android no aplica — usa
+    // Custom Tabs via openExternalUrl, no este plugin) bundleados. Facebook y
+    // Twitter no se compilan → app mas liviana. Los client IDs reales se pasan
+    // en runtime via SocialLogin.initialize() (ver src/lib/native/capacitor.ts).
     SocialLogin: {
-      providers: { google: true, apple: false, facebook: false, twitter: false },
+      providers: { google: true, apple: true, facebook: false, twitter: false },
     },
   },
 };
