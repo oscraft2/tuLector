@@ -7,6 +7,7 @@ import {
   onAppUrlOpen,
   closeExternalBrowser,
   initGoogleSignIn,
+  initRevenueCat,
   OAUTH_DEEP_LINK,
 } from "@/lib/native/capacitor";
 import { createClient } from "@/lib/supabase";
@@ -22,7 +23,10 @@ import { UpdateBanner } from "./UpdateBanner";
 export function NativeBootstrap() {
   useEffect(() => {
     applyNativeChrome();
-    if (isNativeApp()) initGoogleSignIn();
+    if (isNativeApp()) {
+      initGoogleSignIn();
+      initRevenueCat(); // no-op sin API key / fuera de iOS, ver capacitor.ts
+    }
   }, []);
 
   useEffect(() => {
