@@ -57,6 +57,13 @@
          dataUrl/base64 en memoria, nunca tocan el filesystem externo. Menos
          permisos = menos friccion en revision de Play y mejor Data Safety.
          Ver SECURITY_PROMPT_APK.md Tarea H. -->
+    <!-- BiometricPrompt (login con huella): el plugin
+         @aparajita/capacitor-biometric-auth NO declara este permiso en su propio
+         manifest, asi que lo agregamos aca. Sin USE_BIOMETRIC, authenticate() falla
+         con "BiometricPrompt is not available". USE_FINGERPRINT es legacy (API <28)
+         pero se mantiene por compatibilidad con Android 8. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
 
     <!-- Publicidad DESACTIVADA: la app no usa ads. Google Play Services / Auth
          agregan este permiso por dependencias transitivas; lo removemos para no

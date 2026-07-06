@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { isNativeApp, biometricAvailable, biometricVerify } from "@/lib/native/capacitor";
+import { isBiometricLoginEnabled } from "@/lib/native/biometric_pref";
 import { createClient } from "@/lib/supabase";
 
 interface Props {
@@ -19,6 +20,13 @@ export function BiometricGate({ onFallback, onSuccess, homePath }: Props) {
 
     const run = async () => {
       if (!isNativeApp()) {
+        if (!cancelled) { setChecking(false); onFallback(); }
+        return;
+      }
+
+      // Si el usuario desactivo el login con huella, no mostramos el gate:
+      // fallback directo al formulario de auth.
+      if (!isBiometricLoginEnabled()) {
         if (!cancelled) { setChecking(false); onFallback(); }
         return;
       }
