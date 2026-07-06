@@ -38,7 +38,14 @@ const config = {
     contentInset: "never",
   },
   plugins: {
-    SplashScreen: { launchShowDuration: 800, backgroundColor: "#111827" },
+    // autoHide:false + hide() manual (NativeBootstrap -> applyNativeChrome(),
+    // src/lib/native/capacitor.ts) en vez de un timer fijo. Con
+    // launchShowDuration:800 el splash se ocultaba solo a los 800ms sin
+    // importar si la pagina remota (server.url) ya cargo — en redes lentas
+    // eso destapaba una pantalla en blanco mientras el WebView seguia
+    // descargando/hidratando. El hide() manual ya corria desde antes, pero
+    // el timer automatico competia y solia ganar.
+    SplashScreen: { launchAutoHide: false, backgroundColor: "#111827" },
     // Google (Credential Manager en Android, GoogleSignIn nativo en iOS) y
     // Apple (Sign in with Apple nativo en iOS; en Android no aplica — usa
     // Custom Tabs via openExternalUrl, no este plugin) bundleados. Facebook y
