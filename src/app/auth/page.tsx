@@ -8,7 +8,8 @@ import { ZxcvbnFactory } from "@zxcvbn-ts/core";
 import { adjacencyGraphs, dictionary } from "@zxcvbn-ts/language-common";
 import { createClient } from "@/lib/supabase";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
-import { isNativeApp, nativePlatform, openExternalUrl, googleNativeSignIn, appleNativeSignIn, OAUTH_DEEP_LINK } from "@/lib/native/capacitor";
+import { isNativeApp, nativePlatform, openExternalUrl, googleNativeSignIn, appleNativeSignIn, biometricAvailable, biometricVerify, OAUTH_DEEP_LINK } from "@/lib/native/capacitor";
+import { isBiometricLoginEnabled } from "@/lib/native/biometric_pref";
 import { BiometricGate } from "@/components/native/BiometricGate";
 import { BiometricToggle } from "@/components/native/BiometricToggle";
 
@@ -55,6 +56,8 @@ function AuthForm() {
   const [mode, setMode] = useState<"login" | "register">(initialMode);
   const [native, setNative] = useState(false);
   const [bioDone, setBioDone] = useState(false);
+  const [bioButtonReady, setBioButtonReady] = useState(false);
+  const [bioRetrying, setBioRetrying] = useState(false);
   const router = useRouter();
   const client = useMemo(() => createClient(), []);
 
@@ -91,6 +94,34 @@ function AuthForm() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client]);
+
+  // Boton visible "Iniciar sesion con huella": el BiometricGate ya lo pide
+  // automaticamente al abrir la app, pero si el usuario lo cancela (o
+  // cierra el prompt del sistema sin querer) antes no habia forma de
+  // reintentar salvo cerrar y volver a abrir la app entera.
+  useEffect(() => {
+    if (!native) return;
+    let active = true;
+    (async () => {
+      if (!isBiometricLoginEnabled()) return;
+      const { data: { session } } = await client.auth.getSession();
+      if (!session) return;
+      const bioType = await biometricAvailable();
+      if (active && bioType) setBioButtonReady(true);
+    })();
+    return () => { active = false; };
+  }, [native, client]);
+
+  const handleBiometricLogin = async () => {
+    setBioRetrying(true);
+    setMessage("");
+    const verified = await biometricVerify("Accede a TuLector con tu huella o Face ID");
+    if (verified) {
+      router.replace(homeAfterAuth());
+      return;
+    }
+    setBioRetrying(false);
+  };
 
   const switchMode = (nextMode: "login" | "register") => {
     setMode(nextMode);
@@ -233,6 +264,20 @@ function AuthForm() {
         <div className="cap-anim-sheet safe-pb relative rounded-t-[2rem] bg-white px-6 pt-7 pb-7 text-[#0b1220] shadow-[0_-10px_50px_rgba(0,0,0,0.3)]">
           <h2 className="text-center text-lg font-black">{mode === "login" ? "Inicia sesion" : "Crear cuenta"}</h2>
           <p className="mt-1 mb-5 text-center text-xs text-gray-400">Accede con Google, Apple o tu correo para escanear</p>
+
+          {mode === "login" && bioButtonReady ? (
+            <button
+              type="button"
+              onClick={handleBiometricLogin}
+              disabled={bioRetrying}
+              className="mb-3 flex min-h-12 w-full items-center justify-center gap-3 rounded-xl bg-[#07305f] px-4 py-3.5 text-sm font-bold text-white shadow-sm transition-all hover:bg-[#0b3f78] disabled:opacity-50 active:scale-[0.99]"
+            >
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75m6.633-4.596a18.666 18.666 0 01-2.485 5.33" />
+              </svg>
+              {bioRetrying ? "Verificando..." : "Iniciar sesion con huella"}
+            </button>
+          ) : null}
 
           <button
             type="button"
