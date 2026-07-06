@@ -18,15 +18,20 @@ export default async function DashboardLayout({ children }: { children: React.Re
   //    para eso todavia).
   //  - /dashboard/students: crear/editar cursos e importar CSV (la pantalla
   //    nativa /app/students solo busca y agrega un alumno rapido).
-  //  - /dashboard/settings: boton "Configuracion" del menu nativo — se deja la
-  //    pagina de escritorio tal cual, no vale la pena nativizarla.
+  //  - /dashboard/settings: configuracion avanzada, enlazada desde
+  //    /app/configuracion cuando el usuario necesita editar datos completos.
   //  - /dashboard/billing: la propia pagina renderiza una vista de solo
   //    lectura en nativo (sin el checkout de Flow) — ver docs/apk-plan.md
   //    sobre por que el pago NUNCA se hace dentro del APK (reglas de
   //    Apple/Google sobre compras de contenido digital in-app).
+  //  - /dashboard/onboarding: usuario nativo sin colegio aun (recien
+  //    registrado desde el APK). getDashboardContext() SIEMPRE redirige aca
+  //    cuando falta membership; si esta ruta no esta permitida, el usuario
+  //    rebota /app -> onboarding -> /app en loop infinito y ve pantalla en
+  //    blanco para siempre (no hay forma de completar el registro nativo).
   const ua = headersList.get("user-agent") ?? "";
   const pathname = headersList.get("x-pathname") ?? "";
-  const nativeAllowedPrefixes = ["/dashboard/quizzes", "/dashboard/students", "/dashboard/settings", "/dashboard/billing"];
+  const nativeAllowedPrefixes = ["/dashboard/quizzes", "/dashboard/students", "/dashboard/settings", "/dashboard/billing", "/dashboard/onboarding"];
   if (/TuLectorApp/i.test(ua) && !nativeAllowedPrefixes.some((p) => pathname.startsWith(p))) {
     redirect("/app");
   }
@@ -58,7 +63,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     { href: "/dashboard/courses", label: "Cursos" },
     { href: "/dashboard/quizzes", label: "Ensayos" },
     { href: "/dashboard/papers", label: t.papers },
-    { href: "/dashboard/team", label: t.team },
+    ...(school.plan === "school" ? [{ href: "/dashboard/team", label: t.team }] : []),
     { href: "/dashboard/billing", label: t.billing },
     { href: "/dashboard/settings", label: t.settings },
   ];
