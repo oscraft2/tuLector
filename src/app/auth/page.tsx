@@ -8,7 +8,7 @@ import { ZxcvbnFactory } from "@zxcvbn-ts/core";
 import { adjacencyGraphs, dictionary } from "@zxcvbn-ts/language-common";
 import { createClient } from "@/lib/supabase";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
-import { isNativeApp, nativePlatform, openExternalUrl, googleNativeSignIn, appleNativeSignIn, biometricAvailable, biometricVerify, OAUTH_DEEP_LINK } from "@/lib/native/capacitor";
+import { isNativeApp, nativePlatform, openExternalUrl, googleNativeSignIn, appleNativeSignIn, biometricAvailable, plugin, OAUTH_DEEP_LINK } from "@/lib/native/capacitor";
 import { isBiometricLoginEnabled } from "@/lib/native/biometric_pref";
 import { BiometricGate } from "@/components/native/BiometricGate";
 import { BiometricToggle } from "@/components/native/BiometricToggle";
@@ -115,10 +115,32 @@ function AuthForm() {
   const handleBiometricLogin = async () => {
     setBioRetrying(true);
     setMessage("");
-    const verified = await biometricVerify("Accede a TuLector con tu huella o Face ID");
-    if (verified) {
+    try {
+      const Bio = plugin<{
+        authenticate: (o: {
+          reason: string;
+          cancelTitle: string;
+          allowDeviceCredential: boolean;
+          androidConfirmationRequired: boolean;
+        }) => Promise<void>;
+      }>("BiometricAuthNative");
+      if (!Bio) throw new Error("Plugin de biometria no disponible en este build.");
+      await Bio.authenticate({
+        reason: "Accede a TuLector con tu huella o Face ID",
+        cancelTitle: "Cancelar",
+        allowDeviceCredential: false,
+        androidConfirmationRequired: false,
+      });
       router.replace(homeAfterAuth());
       return;
+    } catch (err) {
+      const code = (err as { code?: string } | undefined)?.code;
+      const errMsg = (err as Error | undefined)?.message;
+      // eslint-disable-next-line no-console
+      console.error("[biometric] authenticate() fallo:", code, errMsg);
+      if (code && code !== "userCancel" && code !== "appCancel") {
+        setMessage(`No se pudo verificar tu huella (${code}). Usa tu correo o vuelve a intentar.`);
+      }
     }
     setBioRetrying(false);
   };
@@ -265,20 +287,6 @@ function AuthForm() {
           <h2 className="text-center text-lg font-black">{mode === "login" ? "Inicia sesion" : "Crear cuenta"}</h2>
           <p className="mt-1 mb-5 text-center text-xs text-gray-400">Accede con Google, Apple o tu correo para escanear</p>
 
-          {mode === "login" && bioButtonReady ? (
-            <button
-              type="button"
-              onClick={handleBiometricLogin}
-              disabled={bioRetrying}
-              className="mb-3 flex min-h-12 w-full items-center justify-center gap-3 rounded-xl bg-[#07305f] px-4 py-3.5 text-sm font-bold text-white shadow-sm transition-all hover:bg-[#0b3f78] disabled:opacity-50 active:scale-[0.99]"
-            >
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75m6.633-4.596a18.666 18.666 0 01-2.485 5.33" />
-              </svg>
-              {bioRetrying ? "Verificando..." : "Iniciar sesion con huella"}
-            </button>
-          ) : null}
-
           <button
             type="button"
             onClick={() => handleOAuth("google")}
@@ -337,6 +345,20 @@ function AuthForm() {
               {mode === "login" ? "Crear cuenta" : "Iniciar sesion"}
             </button>
           </p>
+
+          {mode === "login" && bioButtonReady ? (
+            <button
+              type="button"
+              onClick={handleBiometricLogin}
+              disabled={bioRetrying}
+              className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#cfd6df] bg-white px-4 py-3 text-sm font-bold text-[#07305f] transition-all hover:bg-[#f8faf9] disabled:opacity-50 active:scale-[0.99]"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75m6.633-4.596a18.666 18.666 0 01-2.485 5.33" />
+              </svg>
+              {bioRetrying ? "Verificando..." : "Iniciar sesion con huella"}
+            </button>
+          ) : null}
 
           {mode === "login" ? (
             <div className="mt-4 rounded-xl border border-[#e5e9ee] bg-[#f8faf9] p-3 text-[#0b1220]">
