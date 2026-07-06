@@ -124,6 +124,8 @@ function AuthForm() {
           cancelTitle: string;
           allowDeviceCredential: boolean;
           androidConfirmationRequired: boolean;
+          androidTitle: string;
+          androidSubtitle: string;
         }) => Promise<void>;
       }>("BiometricAuthNative");
       if (!Bio) throw new Error("Plugin de biometria no disponible en este build.");
@@ -132,6 +134,8 @@ function AuthForm() {
         cancelTitle: "Cancelar",
         allowDeviceCredential: false,
         androidConfirmationRequired: false,
+        androidTitle: "TuLector",
+        androidSubtitle: "Inicia sesion mas rapido",
       });
       router.replace(homeAfterAuth());
       return;

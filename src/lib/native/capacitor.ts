@@ -158,6 +158,8 @@ export async function biometricVerify(reason: string): Promise<boolean> {
       cancelTitle: string;
       allowDeviceCredential: boolean;
       androidConfirmationRequired: boolean;
+      androidTitle: string;
+      androidSubtitle: string;
     }) => Promise<void>;
   }>("BiometricAuthNative");
   if (!Bio) return false;
@@ -167,6 +169,12 @@ export async function biometricVerify(reason: string): Promise<boolean> {
       cancelTitle: "Cancelar",
       allowDeviceCredential: false,
       androidConfirmationRequired: false,
+      // Sin esto, Android arma el dialogo con titulo/subtitulo vacios (solo
+      // queda "reason" como descripcion) — se ve gris y generico. El plugin
+      // mapea title->setTitle, androidSubtitle->setSubtitle, reason->
+      // setDescription en el BiometricPrompt.Builder nativo (AuthActivity.java).
+      androidTitle: "TuLector",
+      androidSubtitle: "Inicia sesion mas rapido",
     });
     return true;
   } catch {
