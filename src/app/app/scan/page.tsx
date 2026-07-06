@@ -2,7 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { startScanForQuiz } from "@/app/dashboard/actions";
-import { QuizCreateForm } from "@/components/dashboard/QuizCreateForm";
+import { CreateQuizFab } from "@/components/native/CreateQuizFab";
 
 type QuizRow = {
   id: string;
@@ -65,7 +65,7 @@ export default async function NativeScanPage() {
           </p>
           {otherQuizzes.length === 0 && !activeQuiz ? (
             <div className="rounded-2xl border border-dashed border-[#dfe3e8] bg-white/50 p-5 text-center text-sm text-[#5b6472]">
-              Todavia no tienes ensayos. Crea el primero abajo.
+              Todavia no tienes ensayos. Crea el primero con el boton + de abajo.
             </div>
           ) : (
             <div className="grid gap-3">
@@ -85,11 +85,9 @@ export default async function NativeScanPage() {
           )}
         </div>
 
-        <div>
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7280]">Crear ensayo nuevo</p>
-          <QuizCreateForm courses={(courses ?? []) as { id: string; name: string; grade: string | null }[]} />
-        </div>
       </section>
+
+      <CreateQuizFab courses={(courses ?? []) as { id: string; name: string; grade: string | null }[]} />
     </main>
   );
 }

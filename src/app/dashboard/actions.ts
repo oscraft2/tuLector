@@ -27,6 +27,8 @@ export async function updateLocale(formData: FormData) {
   if (!["es-CL", "en", "pt-BR"].includes(locale)) return;
   await supabase.from("profiles").upsert({ user_id: user.id, locale, updated_at: new Date().toISOString() });
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/settings");
+  revalidatePath("/app/configuracion");
 }
 
 /** Siguiente sheet_code correlativo del colegio (1,2,3…). Cabe en los 20 bits del
@@ -103,6 +105,7 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     }
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/quizzes");
+    revalidatePath("/app/scan");
     return actionSuccess("Ensayo creado", `"${title}" quedo listo para generar su hoja.`, "✓");
   } catch (error) {
     return actionError(error, "No se pudo crear el ensayo");
@@ -465,6 +468,7 @@ export async function updateSchoolSettings(formData: FormData) {
     updated_at: new Date().toISOString(),
   }).eq("id", school.id);
   revalidatePath("/dashboard/settings");
+  revalidatePath("/app/configuracion");
   revalidatePath("/dashboard");
 }
 
@@ -543,6 +547,7 @@ export async function createCourse(_prevState: DashboardActionState, formData: F
 
     revalidatePath("/dashboard/students");
     revalidatePath("/dashboard/quizzes");
+    revalidatePath("/app/students");
     return actionSuccess("Curso creado", `${name} quedo disponible para asociar alumnos.`, "✓");
   } catch (error) {
     return actionError(error, "No se pudo crear el curso");
@@ -676,6 +681,7 @@ export async function createStudent(_prevState: DashboardActionState, formData: 
 
     revalidatePath("/dashboard/students");
     revalidatePath("/dashboard/quizzes");
+    revalidatePath("/app/students");
     return actionSuccess("Alumno agregado", `${name} quedo registrado en ${course}.`, "✓");
   } catch (error) {
     return actionError(error, "No se pudo agregar el alumno");

@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { getDashboardContext } from "@/lib/supabase_server";
-import { createStudent } from "@/app/dashboard/actions";
-import { StudentForm } from "@/components/dashboard/StudentForm";
 import { StudentSearchList } from "@/components/native/StudentSearchList";
+import { StudentsFab } from "@/components/native/StudentsFab";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 
 type StudentRow = { id: string; rut: string | null; student_id: string | null; name: string; course: string | null };
@@ -41,18 +40,9 @@ export default async function NativeStudentsPage() {
 
       <section className="space-y-5 px-5 py-6 pb-24">
         <StudentSearchList students={students} />
-
-        <div className="rounded-2xl border border-[#e6e8eb] bg-white p-5">
-          <h2 className="mb-3 text-base font-bold text-[#111827]">Agregar alumno</h2>
-          {courseList.length === 0 ? (
-            <p className="text-sm text-[#5b6472]">
-              Primero crea un curso desde <Link href="/dashboard/students" className="font-bold text-[#07305f] underline">el navegador</Link>.
-            </p>
-          ) : (
-            <StudentForm action={createStudent} courses={courseList} />
-          )}
-        </div>
       </section>
+
+      <StudentsFab courses={courseList} />
     </main>
   );
 }
