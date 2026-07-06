@@ -116,8 +116,10 @@ function AuthForm() {
     setBioRetrying(true);
     setMessage("");
     try {
+      // internalAuthenticate, no authenticate: ver comentario en
+      // src/lib/native/capacitor.ts biometricVerify().
       const Bio = plugin<{
-        authenticate: (o: {
+        internalAuthenticate: (o: {
           reason: string;
           cancelTitle: string;
           allowDeviceCredential: boolean;
@@ -125,7 +127,7 @@ function AuthForm() {
         }) => Promise<void>;
       }>("BiometricAuthNative");
       if (!Bio) throw new Error("Plugin de biometria no disponible en este build.");
-      await Bio.authenticate({
+      await Bio.internalAuthenticate({
         reason: "Accede a TuLector con tu huella o Face ID",
         cancelTitle: "Cancelar",
         allowDeviceCredential: false,
@@ -137,7 +139,7 @@ function AuthForm() {
       const code = (err as { code?: string } | undefined)?.code;
       const errMsg = (err as Error | undefined)?.message;
       // eslint-disable-next-line no-console
-      console.error("[biometric] authenticate() fallo:", code, errMsg);
+      console.error("[biometric] internalAuthenticate() fallo:", code, errMsg);
       if (code && code !== "userCancel" && code !== "appCancel") {
         setMessage(`No se pudo verificar tu huella (${code}). Usa tu correo o vuelve a intentar.`);
       }

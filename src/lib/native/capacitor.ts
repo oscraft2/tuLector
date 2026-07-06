@@ -141,13 +141,19 @@ export async function biometricAvailable(): Promise<"fingerprint" | "face" | "ir
  * Solicita verificación biométrica. Retorna true si el usuario se autentica,
  * false si cancela o falla.
  *
- * El metodo del plugin es `authenticate` (NO `verifyIdentity` — ese no existe
- * y la llamada lanza, por lo que el gate siempre cae al fallback). Resuelve
- * con void; cualquier fallo se reporta via excepción.
+ * El metodo del bridge nativo es `internalAuthenticate` (NO `authenticate`):
+ * `authenticate()` solo existe como wrapper JS en la clase exportada por el
+ * paquete (@aparajita/capacitor-biometric-auth/dist/esm/base.js), que llama a
+ * `this.internalAuthenticate()` — la clase nativa (native.js) SOLO expone
+ * `checkBiometry` e `internalAuthenticate` via @PluginMethod en Android.
+ * Acceder a `.authenticate` en el proxy crudo de `window.Capacitor.Plugins`
+ * es `undefined` (TypeError silencioso, atrapado por el catch de abajo) —
+ * por eso el boton/gate "no pedia" la huella pese a que checkBiometry()
+ * (que si coincide en ambos) funcionaba bien.
  */
 export async function biometricVerify(reason: string): Promise<boolean> {
   const Bio = plugin<{
-    authenticate: (o: {
+    internalAuthenticate: (o: {
       reason: string;
       cancelTitle: string;
       allowDeviceCredential: boolean;
@@ -156,7 +162,7 @@ export async function biometricVerify(reason: string): Promise<boolean> {
   }>("BiometricAuthNative");
   if (!Bio) return false;
   try {
-    await Bio.authenticate({
+    await Bio.internalAuthenticate({
       reason,
       cancelTitle: "Cancelar",
       allowDeviceCredential: false,
