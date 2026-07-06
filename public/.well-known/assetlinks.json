@@ -5,7 +5,8 @@
       "namespace": "android_app",
       "package_name": "cl.tulector.app",
       "sha256_cert_fingerprints": [
-        "00:39:93:66:4E:B7:9F:9B:89:50:85:7A:F9:9A:34:D1:69:C0:DB:00:F7:96:D7:75:8F:A7:59:FC:09:85:FE:DD"
+        "00:39:93:66:4E:B7:9F:9B:89:50:85:7A:F9:9A:34:D1:69:C0:DB:00:F7:96:D7:75:8F:A7:59:FC:09:85:FE:DD",
+        "79:D4:A3:08:45:53:04:C4:84:78:D2:18:D7:80:79:F0:60:F2:73:A1:F2:BC:34:00:8A:BE:B8:70:9F:3E:11:EF"
       ]
     }
   }
