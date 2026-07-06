@@ -79,6 +79,13 @@ function AuthForm() {
   const homeAfterAuth = () => (isNativeApp() ? "/app" : "/dashboard");
 
   useEffect(() => {
+    // En el APK el BiometricGate es quien decide si hay sesion y si
+    // corresponde redirigir (pidiendo huella antes, si esta activada). Este
+    // efecto genérico corria SIEMPRE, sin importar `native`, y como
+    // getSession() suele resolver antes que el chequeo async de isNativeApp()
+    // de arriba, redirigia primero y el gate nunca alcanzaba a montarse ni
+    // a pedir la huella (sintoma: activo el toggle pero nunca la pide).
+    if (isNativeApp() || searchParams.get("app") === "1") return;
     client.auth.getSession().then(({ data: { session } }) => {
       if (session) router.replace(homeAfterAuth());
     });
