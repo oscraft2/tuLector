@@ -330,9 +330,23 @@ function AuthForm() {
                 placeholder="Confirmar contrasena" autoComplete="new-password" required minLength={6}
               />
             )}
+            {mode === "register" && (
+              <label className="flex items-start gap-3 rounded-xl border border-[#e5e9ee] bg-[#f8faf9] p-3 text-xs leading-5 text-[#5b6472]">
+                <input
+                  type="checkbox"
+                  checked={acceptedTerms}
+                  onChange={(event) => setAcceptedTerms(event.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-[#cfd8d4] accent-[#07305f]"
+                  required
+                />
+                <span>
+                  Acepto los <Link href="/terms" className="font-bold text-[#07305f] hover:underline">Terminos</Link> y la <Link href="/privacy" className="font-bold text-[#07305f] hover:underline">Politica de Privacidad</Link>.
+                </span>
+              </label>
+            )}
             {message ? <AuthMessage message={message} /> : null}
             <button
-              type="submit" disabled={busy}
+              type="submit" disabled={busy || (mode === "register" && !acceptedTerms)}
               className="w-full rounded-xl bg-[#07305f] px-4 py-3.5 text-sm font-bold text-white shadow-sm transition-all hover:bg-[#0b3f78] disabled:opacity-50 active:scale-[0.99]"
             >
               {loading ? "Procesando..." : mode === "login" ? "Entrar" : "Crear cuenta"}
