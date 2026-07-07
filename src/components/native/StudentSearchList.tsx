@@ -1,12 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { StudentEditSheet } from "./StudentEditSheet";
 
 type StudentRow = { id: string; rut: string | null; student_id: string | null; name: string; course: string | null };
+type CourseOption = { id: string; name: string; grade: string | null };
 
-/** Lista de alumnos con filtro instantaneo por nombre/RUT (sin recargar la pagina). */
-export function StudentSearchList({ students }: { students: StudentRow[] }) {
+/** Lista de alumnos con filtro instantaneo por nombre/RUT (sin recargar la
+ * pagina). Tocar una tarjeta abre el sheet de edicion (antes solo se podia
+ * ver, no corregir un nombre/RUT con typo ni eliminar desde el APK). */
+export function StudentSearchList({ students, courses }: { students: StudentRow[]; courses: readonly CourseOption[] }) {
   const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState<StudentRow | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -33,7 +38,12 @@ export function StudentSearchList({ students }: { students: StudentRow[] }) {
       ) : (
         <div className="grid gap-2">
           {filtered.map((student) => (
-            <div key={student.id} className="flex items-center gap-3 rounded-2xl border border-[#e6e8eb] bg-white p-4 shadow-sm">
+            <button
+              key={student.id}
+              type="button"
+              onClick={() => setEditing(student)}
+              className="flex items-center gap-3 rounded-2xl border border-[#e6e8eb] bg-white p-4 text-left shadow-sm active:scale-[0.98]"
+            >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-bold text-[#111827]">{student.name}</p>
                 <p className="mt-0.5 font-mono text-xs text-[#5b6472]">{student.rut ?? student.student_id ?? "-"}</p>
@@ -41,10 +51,15 @@ export function StudentSearchList({ students }: { students: StudentRow[] }) {
               {student.course ? (
                 <span className="shrink-0 rounded bg-[#f4f6f8] px-2 py-1 text-xs font-semibold text-[#1e293b]">{student.course}</span>
               ) : null}
-            </div>
+              <svg className="h-4 w-4 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+            </button>
           ))}
         </div>
       )}
+
+      {editing ? (
+        <StudentEditSheet student={editing} courses={courses} onClose={() => setEditing(null)} />
+      ) : null}
     </div>
   );
 }

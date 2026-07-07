@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { getDashboardContext } from "@/lib/supabase_server";
+import { ResultsList } from "@/components/native/ResultsList";
+import { PullToRefresh } from "@/components/native/PullToRefresh";
 
 type QuizRow = { id: string; title: string; subject: string | null; grade: string | null; num_questions: number | null };
 type PaperCount = { quiz_id: string; status: string | null };
@@ -39,41 +41,22 @@ export default async function NativeResultsPage() {
         <h1 className="text-lg font-black tracking-tight">Resultados</h1>
       </header>
 
-      <section className="space-y-5 px-5 py-6 pb-24">
-        {totalPending > 0 ? (
-          <div className="rounded-2xl border border-[#fbceb1] bg-[#fdf3ec] p-4 text-sm text-[#9a3412]">
-            <span className="font-bold">{totalPending} hoja{totalPending === 1 ? "" : "s"}</span> quedaron para revision manual (respuestas dudosas). Revisalas desde el navegador en tulector.cl.
-          </div>
-        ) : null}
+      <PullToRefresh>
+        <section className="space-y-5 px-5 py-6 pb-24">
+          {totalPending > 0 ? (
+            <div className="rounded-2xl border border-[#fbceb1] bg-[#fdf3ec] p-4 text-sm text-[#9a3412]">
+              <span className="font-bold">{totalPending} hoja{totalPending === 1 ? "" : "s"}</span> quedaron para revision manual (respuestas dudosas). Revisalas desde el navegador en tulector.vercel.app.
+            </div>
+          ) : null}
 
-        {quizList.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[#dfe3e8] bg-white/50 p-5 text-center text-sm text-[#5b6472]">
-            Todavia no hay ensayos con resultados.
-          </div>
-        ) : (
-          <div className="grid gap-3">
-            {quizList.map((quiz) => {
-              const counts = countByQuiz.get(quiz.id) ?? { total: 0, pending: 0 };
-              return (
-                <Link
-                  key={quiz.id}
-                  href={`/app/results/${quiz.id}`}
-                  className="flex items-center gap-3 rounded-2xl border border-[#e6e8eb] bg-white p-4 shadow-sm active:scale-[0.98]"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold text-[#111827]">{quiz.title}</p>
-                    <p className="mt-0.5 text-xs text-[#5b6472]">
-                      {counts.total} escaneo{counts.total === 1 ? "" : "s"}
-                      {counts.pending > 0 ? ` · ${counts.pending} por revisar` : ""}
-                    </p>
-                  </div>
-                  <svg className="h-5 w-5 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
-                </Link>
-              );
-            })}
-          </div>
-        )}
-      </section>
+          <ResultsList
+            quizzes={quizList.map((quiz) => ({
+              ...quiz,
+              ...(countByQuiz.get(quiz.id) ?? { total: 0, pending: 0 }),
+            }))}
+          />
+        </section>
+      </PullToRefresh>
     </main>
   );
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { StudentSearchList } from "@/components/native/StudentSearchList";
 import { StudentsFab } from "@/components/native/StudentsFab";
+import { PullToRefresh } from "@/components/native/PullToRefresh";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 
 type StudentRow = { id: string; rut: string | null; student_id: string | null; name: string; course: string | null };
@@ -38,9 +39,11 @@ export default async function NativeStudentsPage() {
         <h1 className="text-lg font-black tracking-tight">Alumnos</h1>
       </header>
 
-      <section className="space-y-5 px-5 py-6 pb-24">
-        <StudentSearchList students={students} />
-      </section>
+      <PullToRefresh>
+        <section className="space-y-5 px-5 py-6 pb-24">
+          <StudentSearchList students={students} courses={courseList} />
+        </section>
+      </PullToRefresh>
 
       <StudentsFab courses={courseList} />
     </main>

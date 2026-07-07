@@ -597,6 +597,7 @@ export async function deleteStudent(_prevState: DashboardActionState, formData: 
     if (error) throw new Error(error.message);
 
     revalidatePath("/dashboard/students");
+    revalidatePath("/app/students");
     return actionSuccess("Alumno eliminado", `${student?.name ?? "El alumno"} fue eliminado del establecimiento.`, "🗑");
   } catch (error) {
     return actionError(error, "No se pudo eliminar el alumno");
@@ -685,6 +686,64 @@ export async function createStudent(_prevState: DashboardActionState, formData: 
     return actionSuccess("Alumno agregado", `${name} quedo registrado en ${course}.`, "✓");
   } catch (error) {
     return actionError(error, "No se pudo agregar el alumno");
+  }
+}
+
+/**
+ * Edita un alumno existente por su `id` (a diferencia de createStudent, que
+ * hace upsert por RUT — reusarlo para "editar" corromperia el registro si el
+ * profe corrige un typo en el RUT, porque buscaria/mezclaria con otro alumno
+ * que ya tuviera ese RUT en vez de actualizar este).
+ */
+export async function updateStudent(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  const { supabase, school } = await getDashboardContext();
+
+  try {
+    const id = String(formData.get("id") ?? "").trim();
+    const name = String(formData.get("name") ?? "").trim();
+    const rut = String(formData.get("rut") ?? "").trim();
+    const course = String(formData.get("course") ?? "").trim();
+
+    if (!id) throw new Error("Falta el alumno a editar.");
+    if (!name || !rut || !course) throw new Error("Nombre, RUT y curso son obligatorios.");
+    if (!validateRut(rut)) throw new Error("El RUT chileno ingresado no es valido.");
+
+    const normalized = normalizeRut(rut);
+    const rutNormalized = canonicalRut(rut);
+
+    const { data: collision, error: collisionError } = await supabase
+      .from("students")
+      .select("id")
+      .eq("school_id", school.id)
+      .eq("rut_normalized", rutNormalized)
+      .neq("id", id)
+      .maybeSingle();
+    if (collisionError) throw new Error(collisionError.message);
+    if (collision) throw new Error("Ese RUT ya pertenece a otro alumno.");
+
+    const courseId = await findOrCreateCourse(supabase, school.id, course);
+    const updatePayload = {
+      student_id: normalized,
+      rut: normalized,
+      rut_normalized: rutNormalized,
+      name,
+      course,
+      course_id: courseId,
+      updated_at: new Date().toISOString(),
+    };
+
+    let updateResult = await supabase.from("students").update(updatePayload).eq("id", id).eq("school_id", school.id);
+    if (updateResult.error && isMissingColumnError(updateResult.error, "course_id")) {
+      updateResult = await supabase.from("students").update(withoutCourseId(updatePayload)).eq("id", id).eq("school_id", school.id);
+    }
+    if (updateResult.error) throw new Error(updateResult.error.message);
+
+    revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/quizzes");
+    revalidatePath("/app/students");
+    return actionSuccess("Alumno actualizado", `${name} quedo guardado.`, "✓");
+  } catch (error) {
+    return actionError(error, "No se pudo editar el alumno");
   }
 }
 
