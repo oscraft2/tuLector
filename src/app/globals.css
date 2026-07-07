@@ -46,6 +46,15 @@ html.cap-native, html.cap-native body {
   -webkit-touch-callout: none;
   overscroll-behavior-y: none;
 }
+/* El body global es #fafafa (para la web publica, tema claro). En el APK
+   casi toda pantalla nativa tiene un header oscuro (#111827) arriba — en el
+   instante de una transicion de ruta, antes de que la pantalla nueva pinte
+   su propio fondo, se ve el #fafafa del body por debajo. Contra un header
+   oscuro eso se percibe como un "flash blanco". Coincidir el body con el
+   tono del header en nativo hace que ese instante sea invisible. */
+html.cap-native body {
+  background-color: #111827;
+}
 /* NO usar user-select:none global (rompe el scroll táctil en WebView Android). */
 
 /* Safe areas (notch / barra de gestos) */
