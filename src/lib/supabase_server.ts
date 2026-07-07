@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
@@ -13,7 +14,7 @@ export type DashboardSchool = {
   id: string;
   name: string;
   subdomain: string | null;
-  plan: "starter" | "pro" | "school" | "district";
+  plan: "starter" | "pro" | "school";
   country_code: string | null;
   region: string | null;
   city: string | null;
@@ -60,7 +61,11 @@ export async function createSupabaseServerClient() {
   });
 }
 
-export async function getDashboardContext() {
+// cache(): dedupe si algo llama getDashboardContext() mas de una vez dentro
+// del MISMO request (ej. layout + page) — no ayuda entre navegaciones
+// distintas (cada una es un request nuevo), pero es gratis y evita repetir
+// la cadena de queries si en el futuro se llama desde mas de un lugar.
+export const getDashboardContext = cache(async function getDashboardContext() {
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/auth");
@@ -69,13 +74,18 @@ export async function getDashboardContext() {
   const activeSchoolId = cookieStore.get("tulector_active_school_id")?.value;
 
   let membership: any = null;
+  let embeddedSchool: any = null;
 
   // Staff check y membresia-activa son independientes → en paralelo. La
-  // membresia-activa solo se pide si hay cookie de colegio activo.
+  // membresia-activa solo se pide si hay cookie de colegio activo. Trae
+  // schools(*) embebido en la MISMA consulta (antes era un .from("schools")
+  // aparte, secuencial, después de resolver la membresia) — ahorra otro
+  // round-trip Vercel↔Supabase en cada navegacion nativa (esto corre en
+  // CADA pantalla de /app/*, no solo al abrir la app).
   const [{ data: staffMember }, activeMembershipResult] = await Promise.all([
     supabase.from("platform_users").select("role").eq("user_id", user.id).is("revoked_at", null).maybeSingle(),
     activeSchoolId
-      ? supabase.from("school_members").select("id, school_id, user_id, role, created_at").eq("user_id", user.id).eq("school_id", activeSchoolId).maybeSingle()
+      ? supabase.from("school_members").select("id, school_id, user_id, role, created_at, schools(*)").eq("user_id", user.id).eq("school_id", activeSchoolId).maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
 
@@ -84,6 +94,10 @@ export async function getDashboardContext() {
   // Try to use school ID from cookie if it's valid for this user
   if (activeSchoolId) {
     membership = activeMembershipResult.data;
+    if (membership) {
+      embeddedSchool = membership.schools;
+      delete membership.schools;
+    }
 
     // Staff impersonation override: if user is staff and has school ID cookie, grant session
     if (!membership && isStaff) {
@@ -101,7 +115,7 @@ export async function getDashboardContext() {
   if (!membership) {
     const { data, error: membershipError } = await supabase
       .from("school_members")
-      .select("id, school_id, user_id, role, created_at")
+      .select("id, school_id, user_id, role, created_at, schools(*)")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true })
       .limit(1)
@@ -109,6 +123,10 @@ export async function getDashboardContext() {
 
     if (membershipError) throw new Error(membershipError.message);
     membership = data;
+    if (membership) {
+      embeddedSchool = membership.schools;
+      delete membership.schools;
+    }
 
     // Set cookie for active school
     if (membership) {
@@ -127,16 +145,21 @@ export async function getDashboardContext() {
 
   if (!membership) redirect("/dashboard/onboarding");
 
-  // Fetch school details
-  const { data: school, error: schoolError } = await supabase
-    .from("schools")
-    .select("*")
-    .eq("id", membership.school_id)
-    .maybeSingle();
-
-  if (schoolError || !school) {
-    console.warn("[getDashboardContext] School not found for membership:", membership?.school_id, schoolError?.message);
-    redirect("/dashboard/onboarding");
+  // Solo hace falta un fetch aparte para el caso raro de impersonation de
+  // staff (membership sintetico, sin fila real de school_members de donde
+  // embeber el colegio).
+  let school = embeddedSchool;
+  if (!school) {
+    const { data, error: schoolError } = await supabase
+      .from("schools")
+      .select("*")
+      .eq("id", membership.school_id)
+      .maybeSingle();
+    if (schoolError || !data) {
+      console.warn("[getDashboardContext] School not found for membership:", membership?.school_id, schoolError?.message);
+      redirect("/dashboard/onboarding");
+    }
+    school = data;
   }
 
   // Estas dos son independientes entre si → en paralelo (ahorra un round-trip
@@ -163,7 +186,7 @@ export async function getDashboardContext() {
     isAdmin: membership.role === "admin",
     userSchools,
   };
-}
+});
 
 export function assertSchoolAdmin(isAdmin: boolean) {
   if (!isAdmin) throw new Error("Solo un administrador del colegio puede realizar esta accion.");
