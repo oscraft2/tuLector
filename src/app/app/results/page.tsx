@@ -1,7 +1,5 @@
-import Link from "next/link";
 import { getDashboardContext } from "@/lib/supabase_server";
-import { ResultsList } from "@/components/native/ResultsList";
-import { PullToRefresh } from "@/components/native/PullToRefresh";
+import { ResultsScreen } from "@/components/native/ResultsScreen";
 
 type QuizRow = { id: string; title: string; subject: string | null; grade: string | null; num_questions: number | null };
 type PaperCount = { quiz_id: string; status: string | null };
@@ -10,7 +8,8 @@ type PaperCount = { quiz_id: string; status: string | null };
  * Pantalla nativa de "Resultados": lista de ensayos con cuantos alumnos ya
  * escanearon y cuantas hojas quedaron para revision manual, en tarjetas (no
  * la tabla de escritorio de /dashboard/papers). Tocar un ensayo lleva al
- * detalle en /app/results/[quizId].
+ * detalle en /app/results/[quizId]. El render vive en ResultsScreen (header +
+ * filtros sticky, ver ese archivo).
  */
 export default async function NativeResultsPage() {
   const { supabase, school } = await getDashboardContext();
@@ -33,30 +32,12 @@ export default async function NativeResultsPage() {
   const totalPending = paperRows.filter((p) => p.status === "manual_review").length;
 
   return (
-    <main className="min-h-dvh bg-[#f5f6f8] text-[#0b1220]">
-      <header className="safe-pt flex items-center gap-3 bg-[#111827] px-5 pb-5 pt-5 text-white">
-        <Link href="/app" aria-label="Volver" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
-        </Link>
-        <h1 className="text-lg font-black tracking-tight">Resultados</h1>
-      </header>
-
-      <PullToRefresh>
-        <section className="space-y-5 px-5 py-6 pb-24">
-          {totalPending > 0 ? (
-            <div className="rounded-2xl border border-[#fbceb1] bg-[#fdf3ec] p-4 text-sm text-[#9a3412]">
-              <span className="font-bold">{totalPending} hoja{totalPending === 1 ? "" : "s"}</span> quedaron para revision manual (respuestas dudosas). Revisalas desde el navegador en tulector.vercel.app.
-            </div>
-          ) : null}
-
-          <ResultsList
-            quizzes={quizList.map((quiz) => ({
-              ...quiz,
-              ...(countByQuiz.get(quiz.id) ?? { total: 0, pending: 0 }),
-            }))}
-          />
-        </section>
-      </PullToRefresh>
-    </main>
+    <ResultsScreen
+      totalPending={totalPending}
+      quizzes={quizList.map((quiz) => ({
+        ...quiz,
+        ...(countByQuiz.get(quiz.id) ?? { total: 0, pending: 0 }),
+      }))}
+    />
   );
 }

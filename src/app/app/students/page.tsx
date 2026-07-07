@@ -1,17 +1,15 @@
-import Link from "next/link";
 import { getDashboardContext } from "@/lib/supabase_server";
-import { StudentSearchList } from "@/components/native/StudentSearchList";
-import { StudentsFab } from "@/components/native/StudentsFab";
-import { PullToRefresh } from "@/components/native/PullToRefresh";
+import { StudentsScreen } from "@/components/native/StudentsScreen";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 
 type StudentRow = { id: string; rut: string | null; student_id: string | null; name: string; course: string | null };
 type CourseRow = { id: string; name: string; grade: string | null };
 
 /**
- * Gestion de alumnos nativa: buscar + agregar uno nuevo, en tarjetas. Deja la
- * gestion de cursos, importacion CSV y edicion masiva para el navegador
- * (/dashboard/students), que sigue intacta para esos flujos mas avanzados.
+ * Gestion de alumnos nativa: buscar + agregar/editar, en tarjetas. Deja la
+ * importacion CSV y edicion masiva para el navegador (/dashboard/students),
+ * que sigue intacta para esos flujos mas avanzados. El render vive en
+ * StudentsScreen (header + buscador sticky, ver ese archivo).
  */
 export default async function NativeStudentsPage() {
   const { supabase, school } = await getDashboardContext();
@@ -30,22 +28,5 @@ export default async function NativeStudentsPage() {
   const students = (studentsData ?? []) as StudentRow[];
   const courseList = (courses ?? []) as CourseRow[];
 
-  return (
-    <main className="min-h-dvh bg-[#f5f6f8] text-[#0b1220]">
-      <header className="safe-pt flex items-center gap-3 bg-[#111827] px-5 pb-5 pt-5 text-white">
-        <Link href="/app" aria-label="Volver" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
-        </Link>
-        <h1 className="text-lg font-black tracking-tight">Alumnos</h1>
-      </header>
-
-      <PullToRefresh>
-        <section className="space-y-5 px-5 py-6 pb-24">
-          <StudentSearchList students={students} courses={courseList} />
-        </section>
-      </PullToRefresh>
-
-      <StudentsFab courses={courseList} />
-    </main>
-  );
+  return <StudentsScreen students={students} courses={courseList} />;
 }

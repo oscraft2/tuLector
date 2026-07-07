@@ -21,7 +21,7 @@ export default async function AppMenuPage() {
 
   return (
     <main className="flex min-h-dvh flex-col bg-[#f5f6f8] text-[#0b1220]">
-      <header className="safe-pt bg-[#111827] px-6 pb-6 pt-5 text-white">
+      <header className="safe-pt sticky top-0 z-30 bg-[#111827] px-6 pb-6 pt-5 text-white">
         <div className="flex items-center justify-between">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-lg font-black text-[#111827]">TL</div>
           <div className="flex items-center gap-4">
