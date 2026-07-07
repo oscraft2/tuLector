@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { StudentEditSheet } from "./StudentEditSheet";
 import { StudentsFab } from "./StudentsFab";
 import { PullToRefresh } from "./PullToRefresh";
 
@@ -11,12 +10,12 @@ type CourseOption = { id: string; name: string; grade: string | null };
 
 /**
  * Pantalla completa de Alumnos: header + buscador quedan pegados arriba
- * (sticky) mientras solo la lista hace scroll debajo — antes se iban con el
- * contenido al bajar la lista. Tocar una tarjeta abre el sheet de edicion.
+ * (sticky) mientras solo la lista hace scroll debajo. Tocar una tarjeta lleva
+ * al perfil del alumno (/app/students/[id]: resultados, KPIs, historial) —
+ * editar/eliminar vive ahi, en el boton del header de esa pantalla.
  */
 export function StudentsScreen({ students, courses }: { students: StudentRow[]; courses: CourseOption[] }) {
   const [query, setQuery] = useState("");
-  const [editing, setEditing] = useState<StudentRow | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -56,10 +55,9 @@ export function StudentsScreen({ students, courses }: { students: StudentRow[]; 
           ) : (
             <div className="grid gap-2">
               {filtered.map((student) => (
-                <button
+                <Link
                   key={student.id}
-                  type="button"
-                  onClick={() => setEditing(student)}
+                  href={`/app/students/${student.id}`}
                   className="flex items-center gap-3 rounded-2xl border border-[#e6e8eb] bg-white p-4 text-left shadow-sm active:scale-[0.98]"
                 >
                   <div className="min-w-0 flex-1">
@@ -70,16 +68,12 @@ export function StudentsScreen({ students, courses }: { students: StudentRow[]; 
                     <span className="shrink-0 rounded bg-[#f4f6f8] px-2 py-1 text-xs font-semibold text-[#1e293b]">{student.course}</span>
                   ) : null}
                   <svg className="h-4 w-4 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
-                </button>
+                </Link>
               ))}
             </div>
           )}
         </section>
       </PullToRefresh>
-
-      {editing ? (
-        <StudentEditSheet student={editing} courses={courses} onClose={() => setEditing(null)} />
-      ) : null}
 
       <StudentsFab courses={courses} />
     </main>
