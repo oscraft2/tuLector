@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
 import type { DashboardLocale } from "@/locales";
@@ -162,13 +162,18 @@ export const getDashboardContext = cache(async function getDashboardContext() {
     school = data;
   }
 
-  // Estas dos son independientes entre si → en paralelo (ahorra un round-trip
-  // Vercel↔Supabase, que a Chile pesa). allMemberships alimenta el switcher;
-  // profile trae el idioma.
-  const [{ data: allMemberships }, { data: profile }] = await Promise.all([
-    supabase.from("school_members").select("id, school_id, role, schools(name)").eq("user_id", user.id),
-    supabase.from("profiles").select("locale").eq("user_id", user.id).maybeSingle(),
-  ]);
+  // allMemberships alimenta el switcher de colegios y profile.locale el
+  // idioma — ninguno de los dos lo usa ninguna pantalla nativa (/app/*), solo
+  // el dashboard web. Saltarla ahi ahorra otro round-trip completo en CADA
+  // navegacion del APK (se detecta por el mismo User-Agent que ya usa
+  // dashboard/layout.tsx para enrutar nativo -> /app).
+  const isNativeRequest = /TuLectorApp/i.test((await headers()).get("user-agent") ?? "");
+  const [{ data: allMemberships }, { data: profile }] = isNativeRequest
+    ? [{ data: null }, { data: null }]
+    : await Promise.all([
+        supabase.from("school_members").select("id, school_id, role, schools(name)").eq("user_id", user.id),
+        supabase.from("profiles").select("locale").eq("user_id", user.id).maybeSingle(),
+      ]);
 
   const userSchools = (allMemberships ?? []).map((m: any) => ({
     id: m.school_id,
