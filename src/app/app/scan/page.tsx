@@ -68,11 +68,11 @@ export default async function NativeScanPage() {
               Todavia no tienes ensayos. Crea el primero con el boton + de abajo.
             </div>
           ) : (
-            <div className="grid gap-3">
+            <div className="divide-y divide-[#e6e8eb] overflow-hidden rounded-2xl border border-[#e6e8eb] bg-white">
               {otherQuizzes.map((quiz) => (
                 <form key={quiz.id} action={startScanForQuiz}>
                   <input type="hidden" name="quiz_id" value={quiz.id} />
-                  <button className="flex w-full items-center gap-3 rounded-2xl border border-[#e6e8eb] bg-white p-4 text-left shadow-sm active:scale-[0.98]">
+                  <button className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-[#f4f6f8]">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-bold text-[#111827]">{quiz.title}</p>
                       <p className="mt-0.5 text-xs text-[#5b6472]">{quiz.subject ?? quiz.grade ?? "Ensayo"} · {quiz.num_questions} preguntas</p>

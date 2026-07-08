@@ -18,7 +18,7 @@ export function StudentDetailHeader({ student, courses }: { student: StudentRow;
   return (
     <>
       <header className="safe-pt sticky top-0 z-30 flex items-center gap-3 bg-[#111827] px-5 pb-5 pt-5 text-white">
-        <Link href="/app/students" aria-label="Volver" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+        <Link href="/app/students" aria-label="Volver" transitionTypes={["nav-back"]} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
           <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
         </Link>
         <h1 className="min-w-0 flex-1 truncate text-lg font-black tracking-tight">{student.name}</h1>

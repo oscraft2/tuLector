@@ -97,12 +97,13 @@ export function ResultsScreen({ quizzes, totalPending }: { quizzes: QuizWithCoun
               {quizzes.length === 0 ? "Todavia no hay ensayos con resultados." : "Sin resultados para ese filtro."}
             </div>
           ) : (
-            <div className="grid gap-3">
+            <div className="divide-y divide-[#e6e8eb] overflow-hidden rounded-2xl border border-[#e6e8eb] bg-white">
               {filtered.map((quiz) => (
                 <Link
                   key={quiz.id}
                   href={`/app/results/${quiz.id}`}
-                  className="flex items-center gap-3 rounded-2xl border border-[#e6e8eb] bg-white p-4 shadow-sm active:scale-[0.98]"
+                  transitionTypes={["nav-forward"]}
+                  className="flex items-center gap-3 px-4 py-3.5 active:bg-[#f4f6f8]"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold text-[#111827]">{quiz.title}</p>

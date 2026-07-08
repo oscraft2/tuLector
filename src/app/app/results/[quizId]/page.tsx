@@ -51,7 +51,7 @@ export default async function NativeQuizResultsPage({ params }: PageProps) {
   return (
     <main className="min-h-dvh bg-[#f5f6f8] text-[#0b1220]">
       <header className="safe-pt flex items-center gap-3 bg-[#111827] px-5 pb-5 pt-5 text-white">
-        <Link href="/app/results" aria-label="Volver" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+        <Link href="/app/results" aria-label="Volver" transitionTypes={["nav-back"]} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
           <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
         </Link>
         <h1 className="truncate text-lg font-black tracking-tight">{quiz.title}</h1>

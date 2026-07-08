@@ -53,12 +53,13 @@ export function StudentsScreen({ students, courses }: { students: StudentRow[]; 
               {students.length === 0 ? "Todavia no hay alumnos registrados." : "Sin resultados para esa busqueda."}
             </p>
           ) : (
-            <div className="grid gap-2">
+            <div className="divide-y divide-[#e6e8eb] overflow-hidden rounded-2xl border border-[#e6e8eb] bg-white">
               {filtered.map((student) => (
                 <Link
                   key={student.id}
                   href={`/app/students/${student.id}`}
-                  className="flex items-center gap-3 rounded-2xl border border-[#e6e8eb] bg-white p-4 text-left shadow-sm active:scale-[0.98]"
+                  transitionTypes={["nav-forward"]}
+                  className="flex items-center gap-3 px-4 py-3.5 text-left active:bg-[#f4f6f8]"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold text-[#111827]">{student.name}</p>
