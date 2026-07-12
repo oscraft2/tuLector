@@ -151,7 +151,26 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
   return (
     <>
-      <div className="mb-6">
+      <section className="mb-5 overflow-hidden rounded-[1.75rem] bg-[#07305f] p-5 text-white shadow-xl shadow-[#07305f]/15 md:hidden">
+        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/60">TuLector School</p>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight">Panel movil</h1>
+        <p className="mt-2 line-clamp-2 text-sm leading-6 text-white/75">{school.name}</p>
+        <div className="mt-5 grid grid-cols-3 gap-2 text-center">
+          <MobileHeroMetric label="Ensayos" value={formatNumber(quizzesCount ?? 0, locale)} />
+          <MobileHeroMetric label="Alumnos" value={formatNumber(studentsCount ?? 0, locale)} />
+          <MobileHeroMetric label="Lecturas" value={formatNumber(allSchoolPapers.length, locale)} />
+        </div>
+        <div className="mt-5 grid gap-2">
+          <Link href="/scan" className="flex min-h-12 items-center justify-center rounded-2xl bg-white px-4 text-sm font-bold text-[#07305f] shadow-sm active:scale-[0.99]">
+            Escanear hoja
+          </Link>
+          <Link href="/dashboard/quizzes" className="flex min-h-12 items-center justify-center rounded-2xl border border-white/20 bg-white/10 px-4 text-sm font-bold text-white backdrop-blur active:scale-[0.99]">
+            Crear o abrir ensayo
+          </Link>
+        </div>
+      </section>
+
+      <div className="mb-6 hidden md:block">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7280]">TuLector School</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl md:text-4xl">{t.dashboard}</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5b6472]">Consola web para administrar cursos, ensayos, resultados y análisis. La lectura OMR ocurre desde la app móvil sincronizada.</p>
@@ -167,7 +186,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             secondary={{ label: "Importar alumnos", href: "/dashboard/students" }}
           />
         )}
-        <div className="flex flex-col gap-4 rounded-md border border-[#e6e8eb] bg-white p-5 md:flex-row md:items-center md:justify-between">
+        <div className="hidden flex-col gap-4 rounded-md border border-[#e6e8eb] bg-white p-5 md:flex md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm font-semibold text-[#111827]">{school.name}</p>
             <p className="mt-1 text-sm text-[#4b5563]">Plan {school.plan} · {countryProfile.profileName} {school.rbd ? `· RBD: ${school.rbd}` : ""}</p>
@@ -177,6 +196,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             <Link href="/scan" className="rounded-md bg-[#07305f] px-4 py-2 text-sm font-semibold text-white">Escanear</Link>
           </div>
         </div>
+
+        <MobileWorkflowCard />
 
         <DateRangeFilter />
 
@@ -321,7 +342,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
           <div className="space-y-6">
             <div className="rounded-md border border-[#e6e8eb] bg-white p-4 md:p-5"><QuotaBar used={scansUsed} limit={scansLimit} /></div>
-            <div className="rounded-md border border-[#e6e8eb] bg-white p-4 md:p-5">
+            <div className="hidden rounded-md border border-[#e6e8eb] bg-white p-4 md:block md:p-5">
               <h2 className="text-base font-semibold">Flujo correcto</h2>
               <div className="mt-4 grid gap-3 text-sm">
                 <Link href="/dashboard/quizzes" className="rounded-md border border-[#e6e8eb] px-4 py-3 font-semibold transition-colors hover:bg-gray-50">1. Crear ensayo y clave</Link>
@@ -337,9 +358,48 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   );
 }
 
+function MobileHeroMetric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-2xl bg-white/10 px-2 py-3 ring-1 ring-white/10">
+      <p className="text-xl font-bold tracking-tight">{value}</p>
+      <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/55">{label}</p>
+    </div>
+  );
+}
+
+function MobileWorkflowCard() {
+  const steps = [
+    { label: "Cursos y alumnos", href: "/dashboard/students" },
+    { label: "Ensayos", href: "/dashboard/quizzes" },
+    { label: "Hojas", href: "/sheet" },
+    { label: "Resultados", href: "/dashboard/papers" },
+  ];
+
+  return (
+    <section className="rounded-[1.5rem] border border-[#e6e8eb] bg-white p-4 shadow-sm md:hidden">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#64748b]">Flujo recomendado</p>
+          <h2 className="mt-1 text-lg font-bold text-[#111827]">Siguiente paso claro</h2>
+        </div>
+        <span className="rounded-full bg-[#e9fbf7] px-3 py-1 text-xs font-bold text-[#0f766e]">Movil</span>
+      </div>
+      <div className="mt-4 grid gap-2">
+        {steps.map((step, index) => (
+          <Link key={step.href} href={step.href} className="flex min-h-12 items-center gap-3 rounded-2xl border border-[#eef0f3] bg-[#f8fafc] px-3 text-sm font-bold text-[#1f2937] hover:border-[#d8dde3] hover:bg-white">
+            <span className="grid h-7 w-7 place-items-center rounded-full bg-[#07305f] text-xs text-white">{index + 1}</span>
+            <span>{step.label}</span>
+            <span className="ml-auto text-[#94a3b8]" aria-hidden="true">-&gt;</span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function StatCard({ label, value, detail, accent }: { label: string; value: string | number; detail?: string; accent?: boolean }) {
   return (
-    <article className={`rounded-md border p-4 shadow-sm md:p-5 ${accent ? "border-[#07305f]/25 bg-[#f5f8fd]" : "border-[#e6e8eb] bg-white"}`} aria-label={label}>
+    <article className={`rounded-[1.25rem] border p-4 shadow-sm md:rounded-md md:p-5 ${accent ? "border-[#07305f]/25 bg-[#f5f8fd]" : "border-[#e6e8eb] bg-white"}`} aria-label={label}>
       <p className="text-xs font-semibold text-[#6b7280]">{label}</p>
       <p className={`mt-2 text-3xl font-bold tracking-tight ${accent ? "text-[#07305f]" : "text-[#111827]"}`}>{value}</p>
       {detail ? <p className="mt-1.5 text-[11px] text-[#9aa3af]">{detail}</p> : null}

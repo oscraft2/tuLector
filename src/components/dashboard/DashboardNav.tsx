@@ -32,7 +32,6 @@ export function DashboardShell({
     { href: "/dashboard/quizzes", label: t.quizzes, active: title === t.quizzes },
     { href: "/dashboard/students", label: t.students, active: title === t.students },
     { href: "/dashboard/papers", label: t.papers, active: title === t.papers },
-    { href: "/dashboard/team", label: t.team, active: title === t.team },
     { href: "/dashboard/billing", label: t.billing, active: title === t.billing },
     { href: "/dashboard/settings", label: t.settings, active: title === t.settings },
   ];

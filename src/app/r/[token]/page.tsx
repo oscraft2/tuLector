@@ -1,9 +1,15 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase_server";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { resolveDisplayName, type PrivacyLevel } from "@/lib/display_name";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+  alternates: { canonical: "/r" },
+};
 
 type PageProps = { params: Promise<{ token: string }> };
 

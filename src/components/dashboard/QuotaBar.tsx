@@ -9,7 +9,7 @@ export function QuotaBar({ used, limit }: { used: number; limit: number }) {
       <div className="h-2 overflow-hidden rounded-full bg-[#eef0f3]" role="progressbar" aria-valuemin={0} aria-valuemax={limit} aria-valuenow={used}>
         <div className="h-full bg-[#111827]" style={{ width: `${pct}%` }} />
       </div>
-      {pct >= 85 ? <p className="mt-3 text-sm font-semibold text-[#92400e]">Limite cercano. Compra lecturas o sube de plan.</p> : null}
+      {pct >= 85 ? <p className="mt-3 text-sm font-semibold text-[#92400e]">Limite cercano. Sube de plan para ampliar tu cuota anual.</p> : null}
     </div>
   );
 }

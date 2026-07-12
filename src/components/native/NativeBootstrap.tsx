@@ -41,7 +41,7 @@ export function NativeBootstrap() {
   useEffect(() => {
     // OAuth de Apple (Android no tiene SDK nativo): sale a Chrome Custom Tabs y
     // Supabase vuelve al APK via el Android App Link verificado
-    // https://tulector.vercel.app/auth/callback con el ?code= PKCE. Lo
+    // https://tulector.app/auth/callback con el ?code= PKCE. Lo
     // intercambiamos por sesión AQUÍ (mismo WebView que inició el flujo, donde
     // vive el code_verifier) y entramos a /app.
     // (Google usa Credential Manager — sin navegador, ver initGoogleSignIn arriba.)

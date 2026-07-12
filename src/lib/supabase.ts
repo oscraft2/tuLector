@@ -9,7 +9,7 @@ export function createClient() {
 
 export type School = {
   id: string; name: string; subdomain: string | null;
-  plan: "starter" | "pro" | "school" | "district";
+  plan: "starter" | "pro" | "school";
   scans_limit: number; scans_used: number; created_at: string;
 };
 

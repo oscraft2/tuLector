@@ -83,7 +83,7 @@ const STATIC_TEMPLATES: Record<
           <div style="background-color: #fef3c7; border-left: 4px solid #d97706; padding: 15px; margin: 20px 0; border-radius: 4px;">
             <p style="margin: 0; font-weight: bold; color: #92400e;">Uso Actual: {{scans_used}} / {{scans_limit}} escaneos.</p>
           </div>
-          <p>Para evitar interrupciones en la lectura de hojas de respuestas desde la aplicación móvil, te sugerimos ampliar tu plan o comprar un paquete de escaneos adicionales.</p>
+          <p>Para evitar interrupciones en la lectura de hojas de respuestas desde la aplicación móvil, te sugerimos subir al plan anual que corresponda a tu volumen.</p>
           <div style="margin: 30px 0; text-align: center;">
             <a href="{{billing_link}}" style="background-color: #111827; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Ver Planes e Ingresos</a>
           </div>
@@ -107,7 +107,7 @@ const STATIC_TEMPLATES: Record<
           </div>
           <p style="font-weight: bold; color: #dc2626;">IMPORTANTE: Los nuevos escaneos intentados por los profesores desde la app móvil serán rechazados con el mensaje "scan quota exceeded" hasta que se amplíe la cuota.</p>
           <div style="margin: 30px 0; text-align: center;">
-            <a href="{{billing_link}}" style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Cargar Escaneos de Inmediato</a>
+            <a href="{{billing_link}}" style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Cambiar de Plan</a>
           </div>
           <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
           <p style="font-size: 12px; color: #9ca3af; text-align: center;">TuLector OMR Engine & Platform · Chile / Latinoamérica</p>
@@ -142,6 +142,115 @@ const STATIC_TEMPLATES: Record<
         </div>
       `,
       text: "Gracias por tu pago para {{school_name}}. Ítem: {{plan_or_pack}}, Monto: {{amount}}, Pasarela: {{payment_method}}. Los límites fueron actualizados. Ve al dashboard en: {{dashboard_link}}",
+    },
+  },
+  account_welcome: {
+    "es-CL": {
+      subject: "Bienvenido a TuLector - Cuenta creada",
+      html: `
+        <div style="font-family: sans-serif; padding: 20px; color: #111827; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px;">
+          <h2 style="color: #07305f; font-size: 20px;">¡Bienvenido a TuLector!</h2>
+          <p>Confirmamos la creación de tu cuenta e institución en la plataforma.</p>
+          <div style="background-color: #eef4ff; border: 1px solid #c7dbff; padding: 20px; margin: 20px 0; border-radius: 6px;">
+            <h3 style="margin-top: 0; font-size: 16px; color: #07305f;">Resumen de tu cuenta</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+              <tr><td style="padding: 6px 0; color: #4b5563;">Institución:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{school_name}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">Correo de la cuenta:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{user_email}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">Plan inicial:</td><td style="padding: 6px 0; font-weight: bold; text-align: right; text-transform: capitalize;">{{plan_name}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">Cuota de escaneos:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{scans_limit}} lecturas</td></tr>
+            </table>
+          </div>
+          <p>Puedes contratar o cambiar entre Pro y School desde la sección de facturación.</p>
+          <div style="margin: 30px 0; text-align: center;">
+            <a href="{{dashboard_link}}" style="background-color: #07305f; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Ir al Dashboard</a>
+          </div>
+          <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+          <p style="font-size: 12px; color: #9ca3af; text-align: center;">TuLector OMR Engine & Platform · Chile / Latinoamérica</p>
+        </div>
+      `,
+      text: "Bienvenido a TuLector. Institucion: {{school_name}}. Cuenta: {{user_email}}. Plan inicial: {{plan_name}} ({{scans_limit}} lecturas). Ingresa al dashboard: {{dashboard_link}}",
+    },
+  },
+  order_receipt: {
+    "es-CL": {
+      subject: "Comprobante de compra N° {{receipt_number}} - TuLector",
+      html: `
+        <div style="font-family: sans-serif; padding: 20px; color: #111827; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #07305f; padding-bottom: 14px; margin-bottom: 18px;">
+            <div>
+              <p style="margin: 0; font-size: 18px; font-weight: bold; color: #07305f;">TuLector SpA</p>
+              <p style="margin: 2px 0 0; font-size: 12px; color: #6b7280;">Plataforma de corrección OMR</p>
+            </div>
+            <div style="text-align: right;">
+              <p style="margin: 0; font-size: 13px; color: #6b7280;">Comprobante N°</p>
+              <p style="margin: 2px 0 0; font-size: 16px; font-weight: bold; color: #111827;">{{receipt_number}}</p>
+            </div>
+          </div>
+
+          <h2 style="color: #059669; font-size: 20px; margin-top: 0;">Compra confirmada</h2>
+          <p>Hemos registrado tu pago correctamente. Este comprobante acredita la compra del servicio contratado en TuLector.</p>
+
+          <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 20px; margin: 20px 0; border-radius: 6px;">
+            <h3 style="margin-top: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: #166534;">Detalle de la compra</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+              <tr><td style="padding: 6px 0; color: #4b5563;">Fecha:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{order_date}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">Servicio:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{item_description}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">Periodo cubierto:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{billing_period}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">Monto total:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{amount}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">Medio de pago:</td><td style="padding: 6px 0; font-weight: bold; text-align: right; text-transform: uppercase;">{{payment_method}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">N° de transacción:</td><td style="padding: 6px 0; font-size: 12px; color: #4b5563; text-align: right;">{{transaction_id}}</td></tr>
+            </table>
+          </div>
+
+          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; margin: 20px 0; border-radius: 6px;">
+            <h3 style="margin-top: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: #334155;">Datos de facturación</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+              <tr><td style="padding: 6px 0; color: #4b5563;">Institución:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{school_name}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">Razón social:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{legal_name}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">RUT:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{tax_id}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">Giro:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{business_activity}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">Dirección:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{address_line}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">Región / Comuna:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{region_name}} / {{commune}}</td></tr>
+            </table>
+          </div>
+
+          <p>Los límites de escaneos OMR han sido actualizados automáticamente en la consola del colegio.</p>
+          <div style="margin: 30px 0; text-align: center;">
+            <a href="{{dashboard_link}}" style="background-color: #059669; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Ir al Dashboard</a>
+          </div>
+
+          <p style="font-size: 12px; color: #6b7280; line-height: 1.5;">Este comprobante acredita la compra del servicio digital contratado con TuLector SpA y no reemplaza la boleta o factura tributaria electrónica cuando corresponda, la cual se emite de forma independiente según la normativa vigente.</p>
+          <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+          <p style="font-size: 12px; color: #9ca3af; text-align: center;">TuLector OMR Engine & Platform · Chile / Latinoamérica · soporte@tulector.com</p>
+        </div>
+      `,
+      text: "Comprobante N° {{receipt_number}} - TuLector SpA. Fecha: {{order_date}}. Servicio: {{item_description}}. Periodo: {{billing_period}}. Monto: {{amount}}. Medio de pago: {{payment_method}}. Transaccion: {{transaction_id}}. Facturado a: {{legal_name}} (RUT {{tax_id}}), {{business_activity}}, {{address_line}}, {{region_name}}/{{commune}}. Institucion: {{school_name}}. Este comprobante no reemplaza boleta o factura tributaria. Dashboard: {{dashboard_link}}",
+    },
+  },
+  payment_failed: {
+    "es-CL": {
+      subject: "Pago no completado - TuLector",
+      html: `
+        <div style="font-family: sans-serif; padding: 20px; color: #111827; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px;">
+          <h2 style="color: #dc2626; font-size: 20px;">Tu pago no pudo completarse</h2>
+          <p>Intentamos procesar tu compra en TuLector, pero la pasarela de pago no aprobó la transacción.</p>
+          <div style="background-color: #fef2f2; border: 1px solid #fecaca; padding: 20px; margin: 20px 0; border-radius: 6px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+              <tr><td style="padding: 6px 0; color: #4b5563;">Colegio:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{school_name}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">Servicio:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{item_description}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">Monto:</td><td style="padding: 6px 0; font-weight: bold; text-align: right;">{{amount}}</td></tr>
+              <tr><td style="padding: 6px 0; color: #4b5563;">Estado:</td><td style="padding: 6px 0; font-weight: bold; text-align: right; text-transform: uppercase;">{{status_label}}</td></tr>
+            </table>
+          </div>
+          <p>No se realizó ningún cargo ni cambio de plan. Puedes intentar nuevamente desde el dashboard.</p>
+          <div style="margin: 30px 0; text-align: center;">
+            <a href="{{billing_link}}" style="background-color: #111827; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Intentar de nuevo</a>
+          </div>
+          <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+          <p style="font-size: 12px; color: #9ca3af; text-align: center;">TuLector OMR Engine & Platform · Chile / Latinoamérica</p>
+        </div>
+      `,
+      text: "Tu pago para {{school_name}} no pudo completarse. Servicio: {{item_description}}, Monto: {{amount}}, Estado: {{status_label}}. No se realizo ningun cargo. Intenta nuevamente en: {{billing_link}}",
     },
   },
 };
@@ -189,9 +298,10 @@ export async function sendEmail({ to, subject, html, text }: SendEmailOptions): 
     }
 
     return { success: true, id: json.id };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[email] excepcion en llamada Resend:", error);
-    return { success: false, error: error?.message || "Excepción de red" };
+    const message = error instanceof Error ? error.message : "Excepción de red";
+    return { success: false, error: message };
   }
 }
 

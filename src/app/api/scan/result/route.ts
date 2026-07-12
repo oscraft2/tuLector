@@ -328,7 +328,7 @@ export async function POST(request: Request) {
           void sendPushToSchool(school.id, {
             title: used >= limit ? "Cuota de escaneos agotada" : "Cuota de escaneos casi agotada",
             body: used >= limit
-              ? `Alcanzaste el limite de ${limit} escaneos. Amplia tu plan para seguir escaneando.`
+              ? `Alcanzaste el limite de ${limit} escaneos. Sube de plan para seguir escaneando.`
               : `Has usado ${used} de ${limit} escaneos. Queda poco para llegar al limite.`,
             data: { type: "quota", used: String(used), limit: String(limit) },
           });

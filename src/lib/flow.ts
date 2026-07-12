@@ -43,6 +43,9 @@ export async function createFlowPayment(options: FlowPaymentCreateOptions): Prom
   const flowUrl = config.sandbox ? "https://sandbox.flow.cl/api" : "https://www.flow.cl/api";
 
   if (!config.apiKey || !config.secretKey) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Flow no esta configurado para procesar pagos reales.");
+    }
     // Modo simulación en desarrollo si no hay credenciales reales configuradas
     console.log("[flow] MOCK: Creando pago simulación:", options);
     const mockToken = `mock_flow_token_${Date.now()}`;
@@ -90,9 +93,9 @@ export async function createFlowPayment(options: FlowPaymentCreateOptions): Prom
       url: `${json.url}?token=${json.token}`,
       token: json.token,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[flow] excepción al crear pago:", err);
-    throw new Error(err.message || "Excepción de red al comunicar con Flow");
+    throw new Error(err instanceof Error ? err.message : "Excepción de red al comunicar con Flow");
   }
 }
 
@@ -103,17 +106,20 @@ export async function getFlowPaymentStatus(token: string): Promise<{
   status: number;
   amount: number;
   commerceOrder: string;
-  paymentData: Record<string, any>;
+  paymentData: Record<string, unknown>;
 }> {
   const config = getFlowConfig();
   const flowUrl = config.sandbox ? "https://sandbox.flow.cl/api" : "https://www.flow.cl/api";
 
   if (!config.apiKey || !config.secretKey) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Flow no esta configurado para verificar pagos reales.");
+    }
     // Modo simulación en desarrollo
     if (token.startsWith("mock_flow_token_")) {
       return {
         status: 2, // Pagado
-        amount: 19900,
+        amount: 19990,
         commerceOrder: token.split("_orderId_")[1] || "mock_order",
         paymentData: { method: "mock_webpay" },
       };
@@ -149,8 +155,8 @@ export async function getFlowPaymentStatus(token: string): Promise<{
       commerceOrder: json.commerceOrder,
       paymentData: json,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[flow] excepción en getStatus:", err);
-    throw new Error(err.message || "Excepción al consultar estado en Flow");
+    throw new Error(err instanceof Error ? err.message : "Excepción al consultar estado en Flow");
   }
 }

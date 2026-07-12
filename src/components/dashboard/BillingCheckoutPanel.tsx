@@ -4,8 +4,8 @@ import { useState, type FormEvent, type ReactNode } from "react";
 
 export type CheckoutItem = {
   id: string;
-  type: "plan" | "scan_pack";
-  plan?: "pro" | "school";
+  type: "plan";
+  plan: "pro" | "school";
   scansAdded: number;
   amountCents: number;
   currency: string;
@@ -102,9 +102,7 @@ export function BillingCheckoutPanel({
     setError("");
     setIsSubmitting(true);
 
-    const checkoutSelection = selectedItem.type === "plan"
-      ? { type: "plan", plan: selectedItem.plan }
-      : { type: "scan_pack", scansAdded: selectedItem.scansAdded };
+    const checkoutSelection = { type: "plan", plan: selectedItem.plan };
 
     try {
       const response = await fetch("/api/billing/checkout", {
@@ -136,7 +134,7 @@ export function BillingCheckoutPanel({
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-[#9fc5ff]">Checkout seguro</p>
               <h2 id="billing-checkout-title" className="mt-3 text-2xl font-black tracking-tight sm:text-3xl">Sube de plan sin friccion</h2>
-              <p className="mt-3 max-w-lg text-sm leading-6 text-[#cbd7ea]">Elige plan o paquete, completa datos de facturacion y paga en Flow. TuLector no guarda datos bancarios.</p>
+              <p className="mt-3 max-w-lg text-sm leading-6 text-[#cbd7ea]">Elige tu plan anual, completa datos de facturacion y paga en Flow. TuLector no guarda datos bancarios.</p>
             </div>
             <span className="hidden rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-white sm:inline-flex">Flow Chile</span>
           </div>
@@ -174,7 +172,7 @@ export function BillingCheckoutPanel({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.14em] text-[#9fc5ff]">Resumen</p>
-                <p className="mt-1 text-sm text-[#e5edf8]">Plan actual: <span className="font-bold capitalize text-white">{currentPlan || "starter"}</span></p>
+                <p className="mt-1 text-sm text-[#e5edf8]">Plan actual: <span className="font-bold capitalize text-white">{currentPlan === "starter" ? "gratis" : currentPlan || "gratis"}</span></p>
               </div>
               <div className="text-right">
                 <p className="text-xs text-[#cbd7ea]">Total</p>

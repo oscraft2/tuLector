@@ -22,7 +22,6 @@ export async function requirePlatformContext(allowedRoles: string[] = ["platform
 
   const admin = createSupabaseAdminClient();
 
-  // Auto-promote: For testing/development, auto-promote any authenticated user to platform_admin
   const { data: existingStaff } = await admin
     .from("platform_users")
     .select("role, revoked_at")
@@ -30,24 +29,11 @@ export async function requirePlatformContext(allowedRoles: string[] = ["platform
     .maybeSingle();
 
   if (!existingStaff || existingStaff.revoked_at !== null) {
-    await admin.from("platform_users").upsert({
-      user_id: user.id,
-      role: "platform_admin",
-      revoked_at: null,
-    }, { onConflict: "user_id" });
-    
-    await admin.auth.admin.updateUserById(user.id, {
-      app_metadata: { role: "platform_admin" },
-    });
+    redirect("/dashboard");
+  }
 
-    await admin.from("audit_log").insert({
-      actor_user_id: user.id,
-      actor_role: "platform_admin",
-      action: "platform.bootstrap_admin",
-      reason: "Auto-promocion de usuario para pruebas y desarrollo",
-    });
-
-    return { user, role: "platform_admin", admin };
+  if (!allowedRoles.includes(existingStaff.role)) {
+    redirect("/admin");
   }
 
   return { user, role: existingStaff.role as string, admin };

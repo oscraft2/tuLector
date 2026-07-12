@@ -24,6 +24,9 @@ export async function createMercadoPagoPreference(options: MercadoPagoPreference
   const config = getMercadoPagoConfig();
 
   if (!config.accessToken || config.accessToken === "APP_USR-...") {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("MercadoPago no esta configurado para procesar pagos reales.");
+    }
     // Modo simulación en desarrollo
     console.log("[mercadopago] MOCK: Creando preferencia simulación:", options);
     const mockPrefId = `mock_mp_pref_${Date.now()}`;
@@ -77,9 +80,9 @@ export async function createMercadoPagoPreference(options: MercadoPagoPreference
       url,
       preferenceId: json.id,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[mercadopago] excepción al crear preferencia:", err);
-    throw new Error(err.message || "Excepción de red al comunicar con MercadoPago");
+    throw new Error(err instanceof Error ? err.message : "Excepción de red al comunicar con MercadoPago");
   }
 }
 
@@ -91,11 +94,14 @@ export async function getMercadoPagoPayment(paymentId: string): Promise<{
   amount: number;
   externalReference: string;
   paymentMethod: string;
-  raw: Record<string, any>;
+  raw: Record<string, unknown>;
 }> {
   const config = getMercadoPagoConfig();
 
   if (!config.accessToken || config.accessToken === "APP_USR-...") {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("MercadoPago no esta configurado para verificar pagos reales.");
+    }
     if (paymentId.startsWith("mock_mp_payment_")) {
       return {
         status: "approved",
@@ -128,8 +134,8 @@ export async function getMercadoPagoPayment(paymentId: string): Promise<{
       paymentMethod: json.payment_method_id,
       raw: json,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[mercadopago] excepción en getPayment:", err);
-    throw new Error(err.message || "Excepción al consultar pago en MercadoPago");
+    throw new Error(err instanceof Error ? err.message : "Excepción al consultar pago en MercadoPago");
   }
 }

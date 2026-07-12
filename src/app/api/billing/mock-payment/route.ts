@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { redirect } from "next/navigation";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { markOrderPaidAndApplyEntitlement } from "@/lib/billing_orders";
 
 export async function GET(request: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Mock payments are disabled in production" }, { status: 404 });
+  }
+
   const url = new URL(request.url);
   const gateway = url.searchParams.get("gateway");
   const token = url.searchParams.get("token") || "";
@@ -34,62 +39,10 @@ export async function GET(request: Request) {
         method: "POST",
       });
     } else {
-      // Stripe/Other fallback: directly mark as paid via Admin Client (since Stripe webhook is placeholder)
       const admin = createSupabaseAdminClient();
-      
-      const { data: order } = await admin
-        .from("orders")
-        .select("*")
-        .eq("id", orderId)
-        .single();
-
-      if (order && order.status === "pending") {
-        await admin
-          .from("orders")
-          .update({
-            status: "paid",
-            paid_at: new Date().toISOString(),
-            stripe_checkout_session_id: token,
-          })
-          .eq("id", orderId);
-
-        // Update school quota
-        const { data: school } = await admin
-          .from("schools")
-          .select("id, scans_limit, plan")
-          .eq("id", order.school_id)
-          .single();
-
-        if (school) {
-          const extraScans = order.scans_added ?? 0;
-          const newScansLimit = (school.scans_limit ?? 0) + extraScans;
-          let targetPlan = school.plan;
-          if (order.type === "plan") {
-            targetPlan = extraScans >= 10000 ? "school" : "pro";
-          }
-
-          await admin
-            .from("schools")
-            .update({
-              scans_limit: newScansLimit,
-              plan: targetPlan,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", school.id);
-
-          if (order.type === "plan") {
-            await admin.from("subscriptions").upsert({
-              school_id: school.id,
-              plan: targetPlan,
-              status: "active",
-              currency: order.currency,
-              amount_cents: order.amount_cents,
-              current_period_start: new Date().toISOString(),
-              current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-              updated_at: new Date().toISOString(),
-            }, { onConflict: "stripe_subscription_id" });
-          }
-        }
+      await markOrderPaidAndApplyEntitlement(admin, orderId);
+      if (token) {
+        await admin.from("orders").update({ stripe_checkout_session_id: token }).eq("id", orderId);
       }
     }
   } catch (error) {

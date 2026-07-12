@@ -1,0 +1,32 @@
+# TuLector
+
+> Plataforma de lectura optica (OMR) con camara movil que corrige ensayos, simulacros y pruebas estandarizadas en Latinoamerica.
+
+TuLector esta pensada para colegios, preuniversitarios y docentes de Peru, Brasil, Argentina, Mexico y Chile. Lee hojas de respuesta con la camara del celular, las corrige automaticamente y entrega resultados academicos por alumno y grupo.
+
+## Que resuelve
+- Correccion automatica de ensayos EXANI (MX), ECE (PE), CBC (AR), ENEM (BR), PAES (CL).
+- Hojas de respuesta imprimibles reutilizables.
+- Dashboard docente con filtros por curso, fecha y pregunta.
+- Exportacion a Excel/PDF y portal publico de resultados para familias.
+
+## Como usarlo
+1. Crea una cuenta en https://tulector.app/es-MX
+2. Crea una evaluacion y personaliza la clave de respuestas.
+3. Imprime hojas de respuesta para tus alumnos.
+4. Escanea las hojas con la camara del celular o la web.
+5. Revisa resultados en el dashboard.
+
+## Confianza y seguridad
+- RLS habilitada en todas las tablas Supabase.
+- Sesion en cookies httpOnly/secure/sameSite.
+- Datos de estudiantes no se comparten con terceros.
+- Politica de privacidad: https://tulector.app/es-MX/privacy
+
+## Contacto
+- Comercial MX: ventas-mx@tulector.app
+- Comercial PE: ventas-pe@tulector.app
+- Comercial AR: ventas-ar@tulector.app
+- Comercial BR: vendas-br@tulector.app
+- Comercial CL: ventas-cl@tulector.app
+- Soporte institucional: https://tulector.app/es-MX/support

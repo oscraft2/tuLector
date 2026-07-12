@@ -52,3 +52,5 @@ scratch/
 SECURITY_PROMPT.md
 SECURITY_PROMPT_APK.md
 SEO_PROMPT.md
+
+.env*

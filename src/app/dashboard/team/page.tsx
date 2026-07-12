@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { getDashboardMessages } from "@/locales";
 import { InviteForm } from "@/components/dashboard/InviteForm";
@@ -9,7 +10,8 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 export const dynamic = "force-dynamic";
 
 export default async function TeamPage() {
-  const { supabase, locale, isAdmin, user } = await getDashboardContext();
+  const { supabase, locale, isAdmin, user, school } = await getDashboardContext();
+  if (school.plan !== "school") redirect("/dashboard/billing");
   const t = getDashboardMessages(locale);
   const [{ data: members }, { data: invitations }] = await Promise.all([
     supabase.from("school_members").select("id,user_id,role,created_at").order("created_at"),

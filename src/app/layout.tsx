@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { NativeBootstrap } from "@/components/native/NativeBootstrap";
+import { JsonLd } from "@/components/JsonLd";
+import { locales, defaultLocale } from "@/i18n/config";
 
-const siteUrl = "https://tulector.vercel.app";
+const siteUrl = "https://tulector.app";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -22,15 +24,11 @@ export const metadata: Metadata = {
   ],
   alternates: {
     canonical: "/",
-    languages: {
-      "es-CL": "/",
-      "pt-BR": "/?lang=pt",
-      en: "/?lang=en",
-    },
+    languages: Object.fromEntries(locales.map((l) => [l, `/${l}`])),
   },
   openGraph: {
     type: "website",
-    locale: "es_CL",
+    locale: "es_MX",
     url: siteUrl,
     siteName: "TuLector",
     title: "TuLector | Corrige pruebas y ensayos en minutos",
@@ -59,15 +57,58 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: "cover",
+};
+
+const orgLd = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "TuLector",
+  url: "https://tulector.app",
+  logo: "https://tulector.app/tulector-hero.webp",
+  sameAs: [
+    "https://www.linkedin.com/company/tulector",
+    "https://github.com/oscraft2/tuLector",
+  ],
+  contactPoint: [{
+    "@type": "ContactPoint",
+    contactType: "sales",
+    email: "contacto@tulector.app",
+    availableLanguage: ["Spanish", "Portuguese", "English"],
+  }],
+};
+
+const webAppLd = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  name: "TuLector",
+  applicationCategory: "EducationalApplication",
+  operatingSystem: "Web, Android",
+  url: "https://tulector.app",
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  publisher: { "@type": "Organization", name: "TuLector" },
+};
+
+const webSiteLd = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "TuLector",
+  url: "https://tulector.app",
+  potentialAction: {
+    "@type": "SearchAction",
+    target: {
+      "@type": "EntryPoint",
+      urlTemplate: "https://tulector.app/recursos?q={search_term_string}",
+    },
+    "query-input": "required name=search_term_string",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" className="h-full antialiased">
+    <html lang={defaultLocale} className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-[#fafafa] text-[#0b1220]">
+        <JsonLd data={[orgLd, webAppLd, webSiteLd]} />
         <NativeBootstrap />
         {children}
       </body>

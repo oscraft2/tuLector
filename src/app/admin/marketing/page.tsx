@@ -221,7 +221,7 @@ function TestEmailForm({ editKey, editTemplate }: { editKey?: string; editTempla
       <input disabled value={editKey} className="w-full rounded border border-[#cfd6df] bg-[#f8fafc] px-3 py-2 font-mono text-sm text-[#07305f]" />
       <select name="locale" defaultValue={editTemplate?.locale || "es-CL"} className="w-full rounded border border-[#cfd6df] px-3 py-2 text-sm outline-none"><option value="es-CL">es-CL</option><option value="en">en</option><option value="pt-BR">pt-BR</option></select>
       <input type="email" name="test_email" required placeholder="profesor@ejemplo.com" className="w-full rounded border border-[#cfd6df] px-3 py-2 text-sm outline-none" />
-      <textarea name="variables_json" rows={6} defaultValue={JSON.stringify({ school_name: "Liceo de Prueba", dashboard_link: "https://tulector.vercel.app/dashboard" }, null, 2)} className="w-full rounded border border-[#cfd6df] px-3 py-2 font-mono text-xs outline-none" />
+      <textarea name="variables_json" rows={6} defaultValue={JSON.stringify({ school_name: "Liceo de Prueba", dashboard_link: "https://tulector.app/dashboard" }, null, 2)} className="w-full rounded border border-[#cfd6df] px-3 py-2 font-mono text-xs outline-none" />
       <button className="w-full rounded bg-[#10b981] px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-[#059669]">Enviar correo de prueba</button>
     </form>
   );

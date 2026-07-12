@@ -11,9 +11,10 @@ export async function updateSchoolPlan(formData: FormData) {
   const schoolId = String(formData.get("school_id") ?? "");
   const plan = String(formData.get("plan") ?? "starter");
   const reason = String(formData.get("reason") ?? "Cambio manual de plan");
-  if (!schoolId || !["starter", "pro", "school", "district"].includes(plan)) return;
-  await admin.from("schools").update({ plan, updated_at: new Date().toISOString() }).eq("id", schoolId);
-  await writeAuditLog({ actorUserId: user.id, actorRole: role, schoolId, targetType: "school", targetId: schoolId, action: "school.plan_update", reason, metadata: { plan } });
+  if (!schoolId || !["starter", "pro", "school"].includes(plan)) return;
+  const scansLimit = plan === "school" ? 10000 : plan === "pro" ? 2000 : 100;
+  await admin.from("schools").update({ plan, scans_limit: scansLimit, scans_used: 0, updated_at: new Date().toISOString() }).eq("id", schoolId);
+  await writeAuditLog({ actorUserId: user.id, actorRole: role, schoolId, targetType: "school", targetId: schoolId, action: "school.plan_update", reason, metadata: { plan, scans_limit: scansLimit } });
   revalidatePath("/admin/schools");
 }
 

@@ -3,7 +3,7 @@ import type { DashboardLocale } from "@/locales";
 
 export function LanguageSwitcher({ locale }: { locale: DashboardLocale }) {
   return (
-    <form action={updateLocale} className="flex items-center gap-2">
+    <form action={updateLocale} className="flex flex-wrap items-center gap-2">
       <label htmlFor="locale" className="text-sm font-semibold text-[#4b5563]">Idioma</label>
       <select id="locale" name="locale" defaultValue={locale} className="rounded-md border border-[#d8dde3] bg-white px-3 py-2 text-sm">
         <option value="es-CL">ES/CL</option>

@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+  alternates: { canonical: "/account-deleted" },
+};
 
 /** Confirmacion tras eliminar la cuenta (deleteMyAccount en dashboard/actions.ts). */
 export default function AccountDeletedPage() {

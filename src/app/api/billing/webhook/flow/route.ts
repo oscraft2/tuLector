@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getFlowPaymentStatus } from "@/lib/flow";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { sendTemplatedEmail } from "@/lib/email";
+import { markOrderPaidAndApplyEntitlement, sendOrderReceiptIfNeeded } from "@/lib/billing_orders";
 
 export async function POST(request: Request) {
   try {
@@ -23,87 +24,19 @@ export async function POST(request: Request) {
 
     const orderId = payment.commerceOrder;
     const admin = createSupabaseAdminClient();
+    const result = await markOrderPaidAndApplyEntitlement(admin, orderId, {
+      expectedAmountCents: Math.round(payment.amount * 100),
+      expectedCurrency: "clp",
+      gateway: "flow",
+      gatewayPaymentId: token,
+      billingPeriodMonths: 12,
+    });
 
-    // 2. Fetch the corresponding pending order
-    const { data: order, error: orderError } = await admin
-      .from("orders")
-      .select("*")
-      .eq("id", orderId)
-      .single();
+    const { order, school, extraScans, targetPlan } = result;
+    const orderCurrency = String(order.currency || "clp").toUpperCase();
+    const planOrPack = order.type === "plan" ? `Plan ${(targetPlan || "pro").toUpperCase()}` : `Paquete de ${extraScans} escaneos`;
 
-    if (orderError || !order) {
-      console.error("[flow_webhook] orden no encontrada:", orderId, orderError?.message);
-      return NextResponse.json({ error: "Orden no encontrada" }, { status: 404 });
-    }
-
-    if (order.status === "paid") {
-      // Order already processed
-      return NextResponse.json({ status: "already_processed" });
-    }
-
-    // 3. Mark order as paid
-    const { error: updateOrderError } = await admin
-      .from("orders")
-      .update({
-        status: "paid",
-        paid_at: new Date().toISOString(),
-      })
-      .eq("id", orderId);
-
-    if (updateOrderError) {
-      console.error("[flow_webhook] error al actualizar orden:", updateOrderError.message);
-      return NextResponse.json({ error: "Error de base de datos" }, { status: 500 });
-    }
-
-    // 4. Update school scans limit and plan
-    const { data: school, error: schoolError } = await admin
-      .from("schools")
-      .select("id, name, scans_limit, plan")
-      .eq("id", order.school_id)
-      .single();
-
-    if (schoolError || !school) {
-      console.error("[flow_webhook] colegio no encontrado:", order.school_id, schoolError?.message);
-      return NextResponse.json({ error: "Colegio no encontrado" }, { status: 404 });
-    }
-
-    const extraScans = order.scans_added ?? 0;
-    const newScansLimit = (school.scans_limit ?? 0) + extraScans;
-
-    let targetPlan = school.plan;
-    if (order.type === "plan") {
-      // Pro/School updates depending on price or scans added
-      targetPlan = extraScans >= 10000 ? "school" : "pro";
-    }
-
-    const { error: updateSchoolError } = await admin
-      .from("schools")
-      .update({
-        scans_limit: newScansLimit,
-        plan: targetPlan,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", school.id);
-
-    if (updateSchoolError) {
-      console.error("[flow_webhook] error al actualizar colegio:", updateSchoolError.message);
-    }
-
-    // 5. If it is a subscription plan, create or update subscription record
-    if (order.type === "plan") {
-      await admin.from("subscriptions").upsert({
-        school_id: school.id,
-        plan: targetPlan,
-        status: "active",
-        currency: order.currency,
-        amount_cents: order.amount_cents,
-        current_period_start: new Date().toISOString(),
-        current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "stripe_subscription_id" }); // Or school_id if unique
-    }
-
-    // 6. Fetch admins to send confirmation email
+    // Fetch admins to send confirmation email
     const { data: members } = await admin
       .from("school_members")
       .select("user_id")
@@ -118,17 +51,17 @@ export async function POST(request: Request) {
           .filter((u) => adminUserIds.includes(u.id) && u.email)
           .map((u) => u.email!);
 
-        const formattedAmount = `$${(order.amount_cents / 100).toLocaleString("es-CL")} ${order.currency.toUpperCase()}`;
+        const formattedAmount = `$${(Number(order.amount_cents ?? 0) / 100).toLocaleString("es-CL")} ${orderCurrency}`;
         const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
         for (const email of emails) {
           await sendTemplatedEmail({
             to: email,
-            templateKey: "payment_success",
+            templateKey: result.alreadyProcessed ? "payment_success" : "payment_success",
             locale: "es-CL",
             variables: {
               school_name: school.name,
-              plan_or_pack: order.type === "plan" ? `Plan ${targetPlan.toUpperCase()}` : `Paquete de ${extraScans} escaneos`,
+              plan_or_pack: planOrPack,
               amount: formattedAmount,
               transaction_id: token,
               payment_method: "Flow (Chile)",
@@ -136,12 +69,18 @@ export async function POST(request: Request) {
             },
           });
         }
+
+        // Enviar comprobante formal solo si aun no se ha enviado.
+        const receiptResult = await sendOrderReceiptIfNeeded(admin, orderId, planOrPack, "Flow (Chile)", siteUrl);
+        if (!receiptResult.sent && !receiptResult.alreadySent) {
+          console.warn("[flow_webhook] no se pudo enviar comprobante:", receiptResult.error);
+        }
       }
     }
 
     return NextResponse.json({ status: "success", order_id: orderId });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[flow_webhook] error crítico:", err);
-    return NextResponse.json({ error: err.message || "Excepción de servidor" }, { status: 500 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Excepción de servidor" }, { status: 500 });
   }
 }

@@ -23,7 +23,7 @@ export const publicPages: Record<PublicPageKey, Record<PublicLocale, PublicPageC
         { title: "Datos de estudiantes", body: "Cuando una institucion usa TuLector con estudiantes, la institucion sigue siendo responsable de contar con autorizaciones y bases legales aplicables. TuLector debe operar bajo minimizacion, permisos por rol y separacion por institucion." },
         { title: "Proveedores", body: "TuLector puede usar infraestructura y servicios externos como Supabase, Vercel, Google, Apple y proveedores de pago o correo. Solo deben recibir los datos necesarios para prestar el servicio contratado o solicitado." },
         { title: "Conservacion", body: "Los datos se conservan mientras exista una cuenta activa, una relacion institucional, una obligacion legal o una necesidad operativa razonable. Las imagenes y registros tecnicos deben tener periodos de retencion definidos por plan o contrato." },
-        { title: "Derechos", body: "Los usuarios pueden pedir acceso, rectificacion, actualizacion, eliminacion, oposicion o portabilidad cuando corresponda. Las solicitudes se reciben en contacto@tulector.cl o mediante la pagina de solicitud de datos." },
+        { title: "Derechos", body: "Los usuarios pueden pedir acceso, rectificacion, actualizacion, eliminacion, oposicion o portabilidad cuando corresponda. Las solicitudes se reciben en contacto@tulector.app o mediante la pagina de solicitud de datos." },
       ],
     },
     pt: {
@@ -37,7 +37,7 @@ export const publicPages: Record<PublicPageKey, Record<PublicLocale, PublicPageC
         { title: "Dados de estudantes", body: "Quando uma instituicao usa TuLector com estudantes, a instituicao deve contar com autorizacoes e bases legais aplicaveis. TuLector deve operar com minimizacao, permissoes por funcao e separacao por instituicao." },
         { title: "Fornecedores", body: "TuLector pode usar infraestrutura e servicos externos como Supabase, Vercel, Google, Apple e provedores de pagamento ou email. Eles devem receber apenas os dados necessarios para prestar o servico." },
         { title: "Retencao", body: "Os dados sao conservados enquanto existir conta ativa, relacao institucional, obrigacao legal ou necessidade operacional razoavel. Imagens e registros tecnicos devem ter periodos definidos por plano ou contrato." },
-        { title: "Direitos", body: "Usuarios podem solicitar acesso, correcao, atualizacao, eliminacao, oposicao ou portabilidade quando aplicavel. As solicitacoes sao recebidas em contato@tulector.com ou na pagina de solicitacao de dados." },
+        { title: "Direitos", body: "Usuarios podem solicitar acesso, correcao, atualizacao, eliminacao, oposicao ou portabilidade quando aplicavel. As solicitacoes sao recebidas em contato@tulector.app ou na pagina de solicitacao de dados." },
       ],
     },
     en: {
@@ -51,7 +51,7 @@ export const publicPages: Record<PublicPageKey, Record<PublicLocale, PublicPageC
         { title: "Student data", body: "When an institution uses TuLector with students, the institution remains responsible for required permissions and legal bases. TuLector should operate with minimization, role permissions and institution-level separation." },
         { title: "Providers", body: "TuLector may use infrastructure and external services such as Supabase, Vercel, Google, Apple and payment or email providers. They should receive only the data required to provide the requested service." },
         { title: "Retention", body: "Data is kept while there is an active account, an institutional relationship, a legal obligation or a reasonable operational need. Images and technical logs should have retention periods defined by plan or contract." },
-        { title: "Rights", body: "Users may request access, correction, update, deletion, objection or portability when applicable. Requests are received at contact@tulector.com or through the data request page." },
+        { title: "Rights", body: "Users may request access, correction, update, deletion, objection or portability when applicable. Requests are received at contact@tulector.app or through the data request page." },
       ],
     },
   },
@@ -111,7 +111,7 @@ export const publicPages: Record<PublicPageKey, Record<PublicLocale, PublicPageC
         { title: "Almacenamiento", body: "Las imagenes de hojas y archivos sensibles deben almacenarse en repositorios privados, con URLs firmadas, retencion definida y eliminacion cuando ya no sean necesarios." },
         { title: "Auditoria", body: "Los registros tecnicos deben ayudar a diagnosticar lecturas, errores y abuso sin exponer informacion personal innecesaria a usuarios sin permiso." },
         { title: "Proveedores", body: "Cada proveedor con acceso a datos debe estar justificado por una finalidad operativa. Las llaves, tokens y secretos deben vivir fuera del codigo fuente y rotarse si existe sospecha de exposicion." },
-        { title: "Limitacion", body: "Ningun sistema es invulnerable. Si detectas una vulnerabilidad o exposicion de datos, escribe a contacto@tulector.cl con detalles tecnicos y pasos de reproduccion." },
+        { title: "Limitacion", body: "Ningun sistema es invulnerable. Si detectas una vulnerabilidad o exposicion de datos, escribe a contacto@tulector.app con detalles tecnicos y pasos de reproduccion." },
       ],
     },
     pt: {
@@ -125,7 +125,7 @@ export const publicPages: Record<PublicPageKey, Record<PublicLocale, PublicPageC
         { title: "Armazenamento", body: "Imagens de folhas e arquivos sensiveis devem ficar em repositorios privados, com URLs assinadas, retencao definida e eliminacao quando nao forem mais necessarios." },
         { title: "Auditoria", body: "Registros tecnicos devem ajudar a diagnosticar leituras, erros e abuso sem expor informacao pessoal desnecessaria a usuarios sem permissao." },
         { title: "Fornecedores", body: "Cada fornecedor com acesso a dados deve estar justificado por uma finalidade operacional. Chaves, tokens e segredos devem ficar fora do codigo fonte e ser rotacionados se houver suspeita de exposicao." },
-        { title: "Limitacao", body: "Nenhum sistema e invulneravel. Se detectar vulnerabilidade ou exposicao de dados, escreva para contato@tulector.com com detalhes tecnicos e passos de reproducao." },
+        { title: "Limitacao", body: "Nenhum sistema e invulneravel. Se detectar vulnerabilidade ou exposicao de dados, escreva para contato@tulector.app com detalhes tecnicos e passos de reproducao." },
       ],
     },
     en: {
@@ -139,7 +139,7 @@ export const publicPages: Record<PublicPageKey, Record<PublicLocale, PublicPageC
         { title: "Storage", body: "Sheet images and sensitive files should live in private repositories with signed URLs, defined retention and deletion when no longer needed." },
         { title: "Audit", body: "Technical records should help diagnose readings, errors and abuse without exposing unnecessary personal information to users without permission." },
         { title: "Providers", body: "Each provider with data access must be justified by an operational purpose. Keys, tokens and secrets must live outside source code and rotate when exposure is suspected." },
-        { title: "Limitation", body: "No system is invulnerable. If you detect a vulnerability or data exposure, email contact@tulector.com with technical details and reproduction steps." },
+        { title: "Limitation", body: "No system is invulnerable. If you detect a vulnerability or data exposure, email contact@tulector.app with technical details and reproduction steps." },
       ],
     },
   },
@@ -150,7 +150,7 @@ export const publicPages: Record<PublicPageKey, Record<PublicLocale, PublicPageC
       intro: "Soporte cubre cuentas, hojas imprimibles, lectura con camara, exportaciones, resultados y solicitudes sobre datos personales.",
       updated: "Actualizado el 29 de junio de 2026",
       sections: [
-        { title: "Contacto", body: "Escribe a contacto@tulector.cl con institucion, curso, ensayo y descripcion del problema." },
+        { title: "Contacto", body: "Escribe a contacto@tulector.app con institucion, curso, ensayo y descripcion del problema." },
         { title: "Diagnostico", body: "Para fallas de lectura conviene adjuntar foto original, PDF de hoja y descripcion del dispositivo usado, evitando enviar datos de estudiantes si no es necesario." },
         { title: "Datos", body: "Para acceso, correccion o eliminacion de datos, usa la pagina de solicitud de datos o escribe desde el correo asociado a la cuenta." },
         { title: "Operacion", body: "Las instituciones pueden pedir pilotos, configuracion inicial, revision de flujos de correccion y recomendaciones para imprimir hojas con mejor lectura." },
@@ -162,7 +162,7 @@ export const publicPages: Record<PublicPageKey, Record<PublicLocale, PublicPageC
       intro: "O suporte cobre contas, folhas imprimiveis, leitura pela camera, exportacoes, resultados e solicitacoes sobre dados pessoais.",
       updated: "Atualizado em 29 de junho de 2026",
       sections: [
-        { title: "Contato", body: "Escreva para contato@tulector.com com instituicao, turma, prova e descricao do problema." },
+        { title: "Contato", body: "Escreva para contato@tulector.app com instituicao, turma, prova e descricao do problema." },
         { title: "Diagnostico", body: "Para falhas de leitura, anexe foto original, PDF da folha e descricao do dispositivo usado, evitando enviar dados de estudantes se nao for necessario." },
         { title: "Dados", body: "Para acesso, correcao ou eliminacao de dados, use a pagina de solicitacao de dados ou escreva pelo email associado a conta." },
         { title: "Operacao", body: "Instituicoes podem solicitar pilotos, configuracao inicial, revisao de fluxos de correcao e recomendacoes para imprimir folhas com melhor leitura." },
@@ -174,7 +174,7 @@ export const publicPages: Record<PublicPageKey, Record<PublicLocale, PublicPageC
       intro: "Support covers accounts, printable sheets, camera reading, exports, results and personal data requests.",
       updated: "Updated June 29, 2026",
       sections: [
-        { title: "Contact", body: "Email contact@tulector.com with institution, class, exam and a description of the issue." },
+        { title: "Contact", body: "Email contact@tulector.app with institution, class, exam and a description of the issue." },
         { title: "Diagnostics", body: "For scan failures, attach the original photo, sheet PDF and device description, avoiding student data when it is not necessary." },
         { title: "Data", body: "For data access, correction or deletion, use the data request page or write from the email associated with the account." },
         { title: "Operations", body: "Institutions may request pilots, initial configuration, scoring workflow review and recommendations to print sheets with better reading quality." },
@@ -188,7 +188,7 @@ export const publicPages: Record<PublicPageKey, Record<PublicLocale, PublicPageC
       intro: "Usa este canal para ejercer derechos sobre datos personales o informacion asociada a una cuenta TuLector. Si la solicitud involucra estudiantes, puede requerir validacion de la institucion responsable.",
       updated: "Actualizado el 29 de junio de 2026",
       sections: [
-        { title: "Como solicitar", body: "Escribe a contacto@tulector.cl desde el correo asociado a la cuenta e indica si pides acceso, rectificacion, actualizacion, eliminacion, oposicion o portabilidad. Incluye institucion, rol y alcance de la solicitud." },
+        { title: "Como solicitar", body: "Escribe a contacto@tulector.app desde el correo asociado a la cuenta e indica si pides acceso, rectificacion, actualizacion, eliminacion, oposicion o portabilidad. Incluye institucion, rol y alcance de la solicitud." },
         { title: "Validacion", body: "Podemos pedir antecedentes adicionales para confirmar identidad, autorizacion institucional o representacion legal antes de ejecutar cambios sobre datos academicos." },
         { title: "Tiempos", body: "TuLector debe responder dentro de un plazo razonable y priorizar solicitudes relacionadas con seguridad, eliminacion de cuenta o datos de estudiantes." },
         { title: "Eliminacion", body: "La eliminacion puede excluir registros que deban conservarse por obligaciones legales, seguridad, facturacion, auditoria o defensa de derechos. Cuando sea posible, se minimiza o anonimiza informacion no necesaria." },
@@ -200,7 +200,7 @@ export const publicPages: Record<PublicPageKey, Record<PublicLocale, PublicPageC
       intro: "Use este canal para exercer direitos sobre dados pessoais ou informacoes associadas a uma conta TuLector. Se a solicitacao envolver estudantes, pode exigir validacao da instituicao responsavel.",
       updated: "Atualizado em 29 de junho de 2026",
       sections: [
-        { title: "Como solicitar", body: "Escreva para contato@tulector.com pelo email associado a conta e indique se solicita acesso, correcao, atualizacao, eliminacao, oposicao ou portabilidade. Inclua instituicao, funcao e escopo da solicitacao." },
+        { title: "Como solicitar", body: "Escreva para contato@tulector.app pelo email associado a conta e indique se solicita acesso, correcao, atualizacao, eliminacao, oposicao ou portabilidade. Inclua instituicao, funcao e escopo da solicitacao." },
         { title: "Validacao", body: "Podemos pedir informacoes adicionais para confirmar identidade, autorizacao institucional ou representacao legal antes de alterar dados academicos." },
         { title: "Prazos", body: "TuLector deve responder em prazo razoavel e priorizar solicitacoes relacionadas a seguranca, eliminacao de conta ou dados de estudantes." },
         { title: "Eliminacao", body: "A eliminacao pode excluir registros que precisem ser conservados por obrigacoes legais, seguranca, faturamento, auditoria ou defesa de direitos. Quando possivel, minimizamos ou anonimizamos informacao nao necessaria." },
@@ -212,7 +212,7 @@ export const publicPages: Record<PublicPageKey, Record<PublicLocale, PublicPageC
       intro: "Use this channel to exercise rights over personal data or information associated with a TuLector account. If the request involves students, validation from the responsible institution may be required.",
       updated: "Updated June 29, 2026",
       sections: [
-        { title: "How to request", body: "Email contact@tulector.com from the account email and indicate whether you request access, correction, update, deletion, objection or portability. Include institution, role and request scope." },
+        { title: "How to request", body: "Email contact@tulector.app from the account email and indicate whether you request access, correction, update, deletion, objection or portability. Include institution, role and request scope." },
         { title: "Validation", body: "We may request additional information to confirm identity, institutional authorization or legal representation before making changes to academic data." },
         { title: "Timing", body: "TuLector should respond within a reasonable period and prioritize requests related to security, account deletion or student data." },
         { title: "Deletion", body: "Deletion may exclude records that must be kept for legal obligations, security, billing, audit or defense of rights. Where possible, unnecessary information is minimized or anonymized." },
