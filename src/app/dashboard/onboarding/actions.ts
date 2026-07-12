@@ -47,5 +47,5 @@ export async function completeOnboarding(formData: FormData) {
     throw new Error(profileError.message);
   }
 
-  redirect("/dashboard/settings");
+  redirect("/dashboard");
 }
