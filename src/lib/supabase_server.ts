@@ -196,3 +196,36 @@ export const getDashboardContext = cache(async function getDashboardContext() {
 export function assertSchoolAdmin(isAdmin: boolean) {
   if (!isAdmin) throw new Error("Solo un administrador del colegio puede realizar esta accion.");
 }
+
+export type GuardianStudent = {
+  id: string;
+  school_id: string;
+  student_id: string | null;
+  name: string | null;
+  rut: string | null;
+  national_id_normalized: string | null;
+  schools?: { name: string | null; country_code: string | null } | null;
+};
+
+// Sesion del APODERADO (Fase 3, login estudiantil — ver docs/plan-multipais-motor.md
+// y supabase/migrations/20260712000000_guardian_login.sql). Espeja getDashboardContext
+// pero para el rol de apoderado: no hay "colegio activo" ni membresia, solo la
+// lista de alumnos vinculados via guardian_links (RLS filtra automaticamente).
+export const getPortalContext = cache(async function getPortalContext() {
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/portal/auth");
+
+  const { data: links, error } = await supabase
+    .from("guardian_links")
+    .select("student_id, students(id, school_id, student_id, name, rut, national_id_normalized, schools(name, country_code))")
+    .eq("auth_user_id", user.id);
+
+  if (error) throw new Error(error.message);
+
+  const students = (links ?? [])
+    .map((l) => l.students as unknown as GuardianStudent | null)
+    .filter((s): s is GuardianStudent => s !== null);
+
+  return { supabase, user, students };
+});
