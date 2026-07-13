@@ -299,7 +299,7 @@ export default function SheetPage() {
                 </select>
               </label>
             </div>
-            <p className="text-xs text-zinc-500">Rango validado: <strong className="text-zinc-300">{MIN_QUESTIONS}–{MAX_QUESTIONS}</strong> preguntas · 1 col ≤40 · 2 col ≥12. Toda config aquí lee 100% (guard <code>test:omr</code>).</p>
+            <p className="text-xs text-zinc-500">Rango validado: <strong className="text-zinc-300">{MIN_QUESTIONS}–{MAX_QUESTIONS}</strong> preguntas · 1 col ≤40 · 2 col 12–50 · 3 col 18–90 · 4 col 21–100. Toda config aquí lee 100% (guard <code>test:omr</code>).</p>
           </section>
 
           {/* Branding */}

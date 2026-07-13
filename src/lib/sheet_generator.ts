@@ -87,15 +87,20 @@ export function randomPartialAnswers(numQuestions: number, numOptions: number, m
 }
 
 // Sobre SEGURO validado por test:omr (guard "Config sweep"): fuera de este rango
-// las filas quedan muy juntas o faltan marcas de timing → no lee 100%.
+// las filas quedan muy juntas o faltan marcas de timing → no lee 100%. 3-4
+// columnas (jul 2026) llegan a nivel ZipGrade (100 preguntas en 1 hoja) —
+// reutilizan la MISMA densidad de fila que 1-2 columnas, solo agregan
+// geometría horizontal nueva subdividiendo las 2 franjas libres entre anclas.
 export const MIN_QUESTIONS = 6;
-export const MAX_QUESTIONS = 50;
+export const MAX_QUESTIONS = 100;
 
-/** Columnas VÁLIDAS para un nº de preguntas (1 col: ≤40; 2 col: ≥12). */
+/** Columnas VÁLIDAS para un nº de preguntas (cada rango es el sobre validado por barrido). */
 export function allowedColumns(numQuestions: number): number[] {
   const cols: number[] = [];
   if (numQuestions <= 40) cols.push(1);
-  if (numQuestions >= 12) cols.push(2);
+  if (numQuestions >= 12 && numQuestions <= 50) cols.push(2);
+  if (numQuestions >= 18 && numQuestions <= 90) cols.push(3);
+  if (numQuestions >= 21 && numQuestions <= 100) cols.push(4);
   return cols.length ? cols : [1];
 }
 

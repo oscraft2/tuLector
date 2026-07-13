@@ -16,6 +16,7 @@ import {
   optionLabelsFor,
 } from "@/lib/quiz_constraints";
 import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
+import { suggestColumns } from "@/lib/sheet_generator";
 import { sendTemplatedEmail } from "@/lib/email";
 import { calculateGrade } from "@/lib/latam";
 import type { DashboardSchool } from "@/lib/supabase_server";
@@ -55,7 +56,7 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     const requestedQuestions = Number(formData.get("num_questions") ?? 20);
     const requestedOptions = Number(formData.get("options_per_question") ?? 5);
     if (!Number.isInteger(requestedQuestions) || requestedQuestions < QUIZ_MIN_QUESTIONS || requestedQuestions > QUIZ_MAX_QUESTIONS) {
-      throw new Error("El lector movil soporta entre 1 y 40 preguntas.");
+      throw new Error(`El lector movil soporta entre ${QUIZ_MIN_QUESTIONS} y ${QUIZ_MAX_QUESTIONS} preguntas.`);
     }
     if (!QUIZ_ALLOWED_OPTIONS.includes(requestedOptions as (typeof QUIZ_ALLOWED_OPTIONS)[number])) {
       throw new Error("El lector movil soporta 3, 4 o 5 opciones.");
@@ -70,8 +71,9 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     if (!title) throw new Error("Ingresa un titulo para el ensayo.");
     if (answerKey.length !== numQuestions) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
 
-    // N.  de columnas derivado + sheet_code correlativo (con reintento anti-colision).
-    const numColumns = numQuestions > 30 ? 2 : 1;
+    // N. de columnas derivado (sobre seguro validado por test:omr, ver
+    // sheet_generator.allowedColumns) + sheet_code correlativo (con reintento anti-colision).
+    const numColumns = suggestColumns(numQuestions);
     const SHEET_CODE_MAX = 0xfffff; // 1.048.575
     const baseCode = await nextSheetCode(supabase, school.id);
     const grade = String(formData.get("grade") ?? "") || null;
@@ -141,7 +143,7 @@ export async function duplicateQuiz(_prevState: DashboardActionState, formData: 
       title: `${data.title} copia`,
       num_questions: data.num_questions,
       options_per_question: data.options_per_question,
-      num_columns: data.num_columns ?? (Number(data.num_questions) > 30 ? 2 : 1),
+      num_columns: data.num_columns ?? suggestColumns(Number(data.num_questions)),
       sheet_code: sheetCode,
       option_labels: data.option_labels,
       answer_key: data.answer_key,

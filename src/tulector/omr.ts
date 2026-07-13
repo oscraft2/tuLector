@@ -19,7 +19,7 @@ import { bubbleProbability } from "./classifier";
 
 export interface OMRConfig {
   numQuestions: number; numOptions: number; optionLabels: string;
-  numColumns?: number; // 1 (default) | 2
+  numColumns?: number; // 1 (default) | 2 | 3 | 4
   idRows: number; idCols: number;
   sheetWidth: number; sheetHeight: number;
   margin: number; cornerSize: number;
@@ -948,10 +948,16 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
     return { results, valid: false, reason: "Sin respuestas detectadas", diag };
   }
 
+  // Umbral RELATIVO a numQuestions (antes fijo en 18, calibrado para examenes
+  // de ~20 preguntas): con hojas de 75-100 preguntas (3-4 columnas), una opcion
+  // popular puede repetirse legitimamente ~19-20 veces sin que sea un mal warp
+  // (18/100 = 18%, nada sospechoso). El piso de 18 preserva el comportamiento
+  // exacto de hoy para examenes de ~20 preguntas (18/20 = 90%, el caso original).
   const maxSame = Math.max(...Object.values(sameCount));
-  if (maxSame >= 18 && answeredCount >= 18) {
+  const suspiciousThreshold = Math.max(18, Math.ceil(numQuestions * 0.9));
+  if (maxSame >= suspiciousThreshold && answeredCount >= 18) {
     const dominant = Object.entries(sameCount).find(([, v]) => v === maxSame)?.[0];
-    return { results, valid: false, reason: `${maxSame}/20 respuestas "${dominant}" - posible mal warp`, diag };
+    return { results, valid: false, reason: `${maxSame}/${numQuestions} respuestas "${dominant}" - posible mal warp`, diag };
   }
 
   return { results, valid: true, diag };
@@ -1019,12 +1025,12 @@ function rutRowYat(d: number, rowYs: number[] | null): number {
  * o null si no detecta la cantidad exacta (hoja vieja sin pista → fallback a Y
  * canonico, sin regresion).
  */
-function readRutTimingY(gray: Float32Array, w: number, h: number): number[] | null {
+function readRutTimingY(gray: Float32Array, w: number, h: number, timingRows: number = L.RUT_TIMING_ROWS): number[] | null {
   const x0 = Math.max(0, Math.round(L.RUT_TIMING_X - L.RUT_TIMING_W / 2 - 3));
   const x1 = Math.min(w - 1, Math.round(L.RUT_TIMING_X + L.RUT_TIMING_W / 2 + 3));
   // Banda Y acotada al bloque RUT (ignora la franja del codigo y las preguntas).
   const yLo = Math.max(0, L.rutRowY(0) - L.RUT_ROW_STEP);
-  const yHi = Math.min(h - 1, L.rutRowY(L.RUT_TIMING_ROWS - 1) + L.RUT_ROW_STEP);
+  const yHi = Math.min(h - 1, L.rutRowY(timingRows - 1) + L.RUT_ROW_STEP);
   // Gris promedio por fila en la banda.
   const rowAvg: number[] = [];
   for (let y = yLo; y <= yHi; y++) {
@@ -1062,7 +1068,7 @@ function readRutTimingY(gray: Float32Array, w: number, h: number): number[] | nu
   const byIndex = new Map<number, number>();
   for (const c of centers) {
     const i = Math.round((c - L.rutRowY(0)) / L.RUT_ROW_STEP);
-    if (i < 0 || i >= L.RUT_TIMING_ROWS) continue;
+    if (i < 0 || i >= timingRows) continue;
     const expected = L.rutRowY(i);
     const prev = byIndex.get(i);
     if (prev === undefined || Math.abs(c - expected) < Math.abs(prev - expected)) byIndex.set(i, c);
@@ -1076,15 +1082,16 @@ function readRutTimingY(gray: Float32Array, w: number, h: number): number[] | nu
   const a = (pts.length * sic - si * sc) / denom;
   const b = (sc - a * si) / pts.length;
   if (a < L.RUT_ROW_STEP * 0.7 || a > L.RUT_ROW_STEP * 1.3) return null; // pendiente sana
-  return Array.from({ length: L.RUT_TIMING_ROWS }, (_, i) => Math.round(a * i + b));
+  return Array.from({ length: timingRows }, (_, i) => Math.round(a * i + b));
 }
 
-/** Oscuridad concentrada en los centros de burbuja del RUT para un offset (dx,dy). */
-function darkAtRut(gray: Float32Array, w: number, h: number, dx: number, dy: number, rowYs: number[] | null): number {
+/** Oscuridad concentrada en los centros de burbuja del bloque de ID para un offset (dx,dy). */
+function darkAtRut(gray: Float32Array, w: number, h: number, dx: number, dy: number, rowYs: number[] | null, idCfg: L.IdBlockConfig): number {
   const r = L.RUT_R;
+  const cols = L.idBlockCols(idCfg);
   let darkSum = 0;
-  for (let c = 0; c < L.RUT_COLS; c++) {
-    const rowCount = c === L.RUT_COLS - 1 ? L.RUT_ROWS + 1 : L.RUT_ROWS;
+  for (let c = 0; c < cols; c++) {
+    const rowCount = L.idBlockRowsForCol(idCfg, c);
     for (let d = 0; d < rowCount; d++) {
       const cx = L.rutColX(c) + dx, cy = rutRowYat(d, rowYs) + dy;
       for (let yy = -r; yy <= r; yy++) {
@@ -1109,21 +1116,21 @@ function darkAtRut(gray: Float32Array, w: number, h: number, dx: number, dy: num
  * (dx,dy) que maximiza la oscuridad sobre los centros de burbuja esperados. En
  * un warp perfecto el optimo es (0,0), por lo que no degrada el caso ideal.
  */
-function findRutOffset(gray: Float32Array, w: number, h: number, rowYs: number[] | null): { dx: number; dy: number } {
+function findRutOffset(gray: Float32Array, w: number, h: number, rowYs: number[] | null, idCfg: L.IdBlockConfig): { dx: number; dy: number } {
   let bestDx = 0, bestDy = 0, bestDark = -1;
   for (let dy = -CALIB.rutSearchDy; dy <= CALIB.rutSearchDy; dy += CALIB.rutSearchStep) {
     for (let dx = -CALIB.rutSearchDx; dx <= CALIB.rutSearchDx; dx += CALIB.rutSearchStep) {
-      const darkSum = darkAtRut(gray, w, h, dx, dy, rowYs);
+      const darkSum = darkAtRut(gray, w, h, dx, dy, rowYs, idCfg);
       if (darkSum > bestDark) { bestDark = darkSum; bestDx = dx; bestDy = dy; }
     }
   }
   return { dx: bestDx, dy: bestDy };
 }
 
-/** Oscuridad sobre los centros de burbuja de UNA columna del RUT (para refinarla). */
-function darkAtRutCol(gray: Float32Array, w: number, h: number, c: number, dx: number, dy: number, rowYs: number[] | null): number {
+/** Oscuridad sobre los centros de burbuja de UNA columna del bloque de ID (para refinarla). */
+function darkAtRutCol(gray: Float32Array, w: number, h: number, c: number, dx: number, dy: number, rowYs: number[] | null, idCfg: L.IdBlockConfig): number {
   const r = L.RUT_R;
-  const rowCount = c === L.RUT_COLS - 1 ? L.RUT_ROWS + 1 : L.RUT_ROWS;
+  const rowCount = L.idBlockRowsForCol(idCfg, c);
   let darkSum = 0;
   for (let d = 0; d < rowCount; d++) {
     const cx = L.rutColX(c) + dx, cy = rutRowYat(d, rowYs) + dy;
@@ -1146,11 +1153,11 @@ function darkAtRutCol(gray: Float32Array, w: number, h: number, c: number, dx: n
  * un leve error de escala/cizalla; cada columna engancha su propia grilla de
  * anillos. Columnas ya bien registradas devuelven ~(0,0): no degrada el caso ideal.
  */
-function refineRutCol(gray: Float32Array, w: number, h: number, c: number, baseDx: number, baseDy: number, rowYs: number[] | null): { dx: number; dy: number } {
+function refineRutCol(gray: Float32Array, w: number, h: number, c: number, baseDx: number, baseDy: number, rowYs: number[] | null, idCfg: L.IdBlockConfig): { dx: number; dy: number } {
   let bestDx = baseDx, bestDy = baseDy, bestDark = -1;
   for (let ddy = -CALIB.rutColRefine; ddy <= CALIB.rutColRefine; ddy += 2) {
     for (let ddx = -CALIB.rutColRefine; ddx <= CALIB.rutColRefine; ddx += 2) {
-      const dk = darkAtRutCol(gray, w, h, c, baseDx + ddx, baseDy + ddy, rowYs);
+      const dk = darkAtRutCol(gray, w, h, c, baseDx + ddx, baseDy + ddy, rowYs, idCfg);
       if (dk > bestDark) { bestDark = dk; bestDx = baseDx + ddx; bestDy = baseDy + ddy; }
     }
   }
@@ -1168,19 +1175,58 @@ export function computeRutDV(body: number[]): number {
   return res === 11 ? 0 : res; // res === 10 → K (se devuelve 10)
 }
 
-export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFIG): RutResult {
+/**
+ * Digitos verificadores del CPF brasileno: modulo 11 en DOS pasadas, cada una
+ * con su propia tabla de pesos (10..2 para d1; 11..2 para d2, que YA incluye
+ * d1 en la suma). Algoritmo distinto al RUT chileno (investigacion-brasil.md).
+ * body = 9 digitos. Devuelve [d1, d2] (0-9 cada uno; CPF no usa letra).
+ */
+export function checkDigitsBr(body: number[]): number[] {
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += body[i] * (10 - i);
+  let d1 = 11 - (sum % 11);
+  if (d1 >= 10) d1 = 0;
+  sum = 0;
+  const withD1 = [...body, d1];
+  for (let i = 0; i < 10; i++) sum += withD1[i] * (11 - i);
+  let d2 = 11 - (sum % 11);
+  if (d2 >= 10) d2 = 0;
+  return [d1, d2];
+}
+
+/**
+ * Config de lectura del bloque de ID nacional: geometria (IdBlockConfig, ver
+ * sheet_layout) + funcion de digitos verificadores (undefined = pais sin DV,
+ * como Argentina/Peru/Colombia; devuelve un array porque algunos paises tienen
+ * mas de uno, como el CPF brasileno). Pluggable para no acoplar el motor a un
+ * unico algoritmo (RUT chileno mod-11 de un digito es solo UN perfil mas).
+ */
+export interface IdReadConfig {
+  block: L.IdBlockConfig;
+  checkDigit?: (body: number[]) => number[];
+}
+
+export const ID_READ_CL: IdReadConfig = { block: L.ID_BLOCK_CL, checkDigit: (body) => [computeRutDV(body)] };
+export const ID_READ_AR: IdReadConfig = { block: L.ID_BLOCK_AR }; // DNI: sin digito verificador
+export const ID_READ_BR: IdReadConfig = { block: L.ID_BLOCK_BR, checkDigit: checkDigitsBr };
+
+export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFIG, idReadCfg: IdReadConfig = ID_READ_CL): RutResult {
   const { width, height, data } = imageData;
   const gray = new Float32Array(width * height);
   for (let i = 0; i < gray.length; i++) gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
 
-  // Pista de temporizacion del RUT: ancla el Y de cada fila (0..9 + K). Si la hoja
-  // la trae y se detecta, el RUT deja de fallar en frames movidos. Hoja vieja sin
-  // pista → rowYs=null → fallback al Y canonico (sin regresion).
-  const rowYs = readRutTimingY(gray, width, height);
+  const idCfg = idReadCfg.block;
+  const numCols = L.idBlockCols(idCfg);
+  const timingRows = L.idBlockTimingRows(idCfg);
 
-  // Registro local del bloque RUT antes de muestrear (las preguntas se anclan
-  // con la pista de temporizacion; el RUT busca su offset, ahora con Y anclado).
-  const { dx: regDx, dy: regDy } = findRutOffset(gray, width, height, rowYs);
+  // Pista de temporizacion del bloque de ID: ancla el Y de cada fila. Si la hoja
+  // la trae y se detecta, el bloque deja de fallar en frames movidos. Hoja vieja
+  // sin pista → rowYs=null → fallback al Y canonico (sin regresion).
+  const rowYs = readRutTimingY(gray, width, height, timingRows);
+
+  // Registro local del bloque antes de muestrear (las preguntas se anclan con la
+  // pista de temporizacion; el bloque busca su offset, ahora con Y anclado).
+  const { dx: regDx, dy: regDy } = findRutOffset(gray, width, height, rowYs, idCfg);
 
   const r = L.RUT_R;
   // Para cada columna: refina su offset propio y elige la fila (digito) marcada.
@@ -1190,10 +1236,9 @@ export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFI
   const picked: (number | null)[] = [];
   const cols: RutColDiag[] = [];
   let baseDx = regDx, baseDy = regDy;
-  for (let c = 0; c < L.RUT_COLS; c++) {
-    const isDV = c === L.RUT_COLS - 1;
-    const rowCount = isDV ? L.RUT_ROWS + 1 : L.RUT_ROWS; // la columna DV tiene K
-    const { dx: colDx, dy: colDy } = refineRutCol(gray, width, height, c, baseDx, baseDy, rowYs);
+  for (let c = 0; c < numCols; c++) {
+    const rowCount = L.idBlockRowsForCol(idCfg, c);
+    const { dx: colDx, dy: colDy } = refineRutCol(gray, width, height, c, baseDx, baseDy, rowYs, idCfg);
     baseDx = colDx; baseDy = colDy; // la siguiente columna arranca desde aqui
     // Gris promedio del centro de cada fila (burbuja).
     const avgs: number[] = [];
@@ -1225,40 +1270,49 @@ export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFI
     });
   }
 
-  // Cuerpo (8 columnas, alineado a la derecha): nulos iniciales = RUT mas corto.
-  const bodyCols = picked.slice(0, L.RUT_DIGITS);
+  // Cuerpo (idCfg.idDigits columnas, alineado a la derecha): nulos iniciales = ID mas corto.
+  const bodyCols = picked.slice(0, idCfg.idDigits);
   const body: number[] = [];
   let started = false, bodyComplete = true;
   for (const d of bodyCols) {
     if (d === null) { if (started) bodyComplete = false; }
     else { started = true; body.push(d); }
   }
-  const dvPicked = picked[L.RUT_COLS - 1];
 
-  // El DV es un checksum (modulo 11) del cuerpo. Si el cuerpo se leyo completo y
-  // confiable pero la burbuja del DV no se logra leer (columna del borde, foto
-  // angulada), lo CALCULAMOS para entregar el RUT completo igual.
+  // Los digitos verificadores (si el pais los tiene, ver IdReadConfig.checkDigit)
+  // son un checksum del cuerpo — puede ser UNO (RUT) o DOS (CPF brasileno, cada
+  // uno con su propia tabla de pesos). Si el cuerpo se leyo completo y confiable
+  // pero alguna burbuja del DV no se logra leer (columna del borde, foto
+  // angulada), los CALCULAMOS para entregar el ID completo igual. Paises sin DV
+  // (AR/PE/CO) no pasan por este bloque: no hay columna extra que leer.
+  const hasDv = idCfg.checkDigits > 0 && !!idReadCfg.checkDigit;
+  let dvPickedArr: (number | null)[] = [];
+  let dvAllPicked = false;
   let dvOk = false;
   let dvComputed = false;
   let dvStr = "?";
-  if (dvPicked !== null) {
-    dvStr = dvPicked === 10 ? "K" : String(dvPicked);
-    dvOk = bodyComplete && body.length > 0 && dvPicked === computeRutDV(body);
-  } else if (bodyComplete && body.length >= 7) {
-    // Cuerpo confiable, DV ilegible → calcular el DV (no verificado por lectura).
-    const cdv = computeRutDV(body);
-    dvStr = cdv === 10 ? "K" : String(cdv);
-    dvComputed = true;
+  if (hasDv) {
+    dvPickedArr = picked.slice(numCols - idCfg.checkDigits, numCols);
+    dvAllPicked = dvPickedArr.every((d) => d !== null);
+    if (dvAllPicked) {
+      dvStr = (dvPickedArr as number[]).map((d) => (d === 10 ? "K" : String(d))).join("");
+      dvOk = bodyComplete && body.length > 0 && idReadCfg.checkDigit!(body).every((d, i) => d === dvPickedArr[i]);
+    } else if (bodyComplete && body.length >= idCfg.idDigits - 1) {
+      // Cuerpo confiable, DV ilegible → calcular los DV (no verificados por lectura).
+      const computed = idReadCfg.checkDigit!(body);
+      dvStr = computed.map((d) => (d === 10 ? "K" : String(d))).join("");
+      dvComputed = true;
+    }
   }
 
-  const complete = bodyComplete && body.length > 0 && (dvPicked !== null || dvComputed);
-  const rut = body.length > 0 ? `${body.join("")}-${dvStr}` : "";
-  // Confianza del RUT (#4): no cambia el valor leído, solo señala si conviene revisarlo.
+  const complete = bodyComplete && body.length > 0 && (!hasDv || dvAllPicked || dvComputed);
+  const rut = body.length > 0 ? (hasDv ? `${body.join("")}-${dvStr}` : body.join("")) : "";
+  // Confianza del ID (#4): no cambia el valor leído, solo señala si conviene revisarlo.
   let rutFlag: MarkFlag = "ok"; let rutReason: string | undefined;
-  if (!rut) { rutFlag = "revisar"; rutReason = "RUT no leido"; }
-  else if (!complete) { rutFlag = "revisar"; rutReason = "RUT incompleto"; }
-  else if (dvComputed) { rutFlag = "revisar"; rutReason = "DV calculado (no leido de la hoja)"; }
-  else if (!dvOk) { rutFlag = "revisar"; rutReason = "DV no coincide"; }
+  if (!rut) { rutFlag = "revisar"; rutReason = "ID no leido"; }
+  else if (!complete) { rutFlag = "revisar"; rutReason = "ID incompleto"; }
+  else if (hasDv && dvComputed) { rutFlag = "revisar"; rutReason = "DV calculado (no leido de la hoja)"; }
+  else if (hasDv && !dvOk) { rutFlag = "revisar"; rutReason = "DV no coincide"; }
   return { rut, dvOk, complete, dvComputed, flag: rutFlag, flagReason: rutReason, diag: { dx: regDx, dy: regDy, dvComputed, cols, timing: rowYs ? rowYs.length : 0 } };
 }
 

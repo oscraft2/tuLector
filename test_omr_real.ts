@@ -6,8 +6,8 @@
  */
 import { createCanvas, ImageData as CanvasImageData, loadImage } from "canvas";
 import { TEST_IMAGE_BASE64, EXPECTED_ANSWERS, EXPECTED_RUT, EXPECTED_CODE } from "./src/app/test/test_image";
-import { findCorners, gradeBubbles, readRut, readSheetCode, warpImageData, warpSheet, cropNameBox, DEFAULT_CONFIG } from "./src/lib/omr";
-import { TIMING_X, rowCY, SHEET_W, SHEET_H } from "./src/lib/sheet_layout";
+import { findCorners, gradeBubbles, readRut, readSheetCode, warpImageData, warpSheet, cropNameBox, DEFAULT_CONFIG, ID_READ_AR, ID_READ_BR, checkDigitsBr } from "./src/lib/omr";
+import { TIMING_X, rowCY, SHEET_W, SHEET_H, ID_BLOCK_AR, ID_BLOCK_BR } from "./src/lib/sheet_layout";
 import { drawSheet, type Ctx2D } from "./src/lib/sheet_render";
 
 (globalThis as unknown as { ImageData: typeof CanvasImageData }).ImageData = CanvasImageData;
@@ -141,6 +141,47 @@ async function main() {
   if (rutBow4.rut === EXPECTED_RUT) console.warn(`  (nota: 4-esquinas tambien leyo bien con amp=45; subir para contraste)`);
   console.log(`Block-warp guard passed: pandeo amp=45 → 4-esquinas="${rutBow4.rut}" vs 12-anclas="${rutBow12.rut}" ✓`);
 
+  // ─── Guardia de ID NACIONAL (Fase 0, multi-país): genera y lee una hoja con
+  // el bloque de Argentina (DNI, 8 dígitos, SIN dígito verificador) en vez del
+  // RUT chileno. Prueba que el bloque de ID es de verdad paramétrico (columnas
+  // variables + checksum desconectable), no solo el layout de preguntas. ───
+  const dniAr = "20345678";
+  const cfgAr = { numQuestions: 20, numOptions: 5, idBlock: ID_BLOCK_AR };
+  const sheetAr = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetAr.getContext("2d") as unknown as Ctx2D, { answers: Array.from({ length: 20 }, (_, i) => i % 5), rut: dniAr, filled: true }, cfgAr);
+  const imgAr = await loadImage(sheetAr.toDataURL("image/png"));
+  const capAr = createCanvas(imgAr.width, imgAr.height);
+  capAr.getContext("2d").drawImage(imgAr, 0, 0);
+  const frameAr = capAr.getContext("2d").getImageData(0, 0, capAr.width, capAr.height) as unknown as globalThis.ImageData;
+  const cornersAr = findCorners(frameAr) ?? fail("id-nacional-AR: sin esquinas");
+  const warpedAr = warpImageData(frameAr, cornersAr);
+  const idAr = readRut(warpedAr, undefined, ID_READ_AR);
+  if (idAr.rut !== dniAr) fail(`id-nacional-AR: DNI leído "${idAr.rut}" (esperaba "${dniAr}")`);
+  if (idAr.dvComputed) fail(`id-nacional-AR: no debería calcular DV (Argentina no tiene dígito verificador)`);
+  console.log(`National-ID guard (Argentina/DNI, sin DV) passed: ${idAr.rut}`);
+
+  // ─── Guardia de ID NACIONAL (Fase 0, segundo país): Brasil (CPF, 9 dígitos +
+  // 2 dígitos verificadores módulo-11 en dos pasadas, algoritmo distinto al RUT).
+  // Prueba que el checksum es de verdad intercambiable (no solo desconectable,
+  // como el caso de Argentina) y que el bloque soporta MÁS de una columna de DV. ───
+  const bodyBr = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+  const [d1Br, d2Br] = checkDigitsBr(bodyBr);
+  const cpfBr = `${bodyBr.join("")}-${d1Br}${d2Br}`;
+  const cfgBr = { numQuestions: 20, numOptions: 5, idBlock: ID_BLOCK_BR };
+  const sheetBr = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetBr.getContext("2d") as unknown as Ctx2D, { answers: Array.from({ length: 20 }, (_, i) => i % 5), rut: cpfBr, filled: true }, cfgBr);
+  const imgBr = await loadImage(sheetBr.toDataURL("image/png"));
+  const capBr = createCanvas(imgBr.width, imgBr.height);
+  capBr.getContext("2d").drawImage(imgBr, 0, 0);
+  const frameBr = capBr.getContext("2d").getImageData(0, 0, capBr.width, capBr.height) as unknown as globalThis.ImageData;
+  const cornersBr = findCorners(frameBr) ?? fail("id-nacional-BR: sin esquinas");
+  const warpedBr = warpImageData(frameBr, cornersBr);
+  const idBr = readRut(warpedBr, undefined, ID_READ_BR);
+  if (idBr.rut !== cpfBr) fail(`id-nacional-BR: CPF leído "${idBr.rut}" (esperaba "${cpfBr}")`);
+  if (!idBr.dvOk) fail(`id-nacional-BR: los 2 dígitos verificadores no validaron`);
+  if (idBr.dvComputed) fail(`id-nacional-BR: no debería calcular DV (ambas burbujas se leyeron)`);
+  console.log(`National-ID guard (Brasil/CPF, DV mod-11 x2) passed: ${idBr.rut}`);
+
   // ─── Guardia PARAMÉTRICO (Fase C): generar y leer una hoja con OTRO config
   // (30 preguntas / 3 opciones, formato tipo EXANI México). Prueba que el layout
   // paramétrico funciona de punta a punta. ───
@@ -185,6 +226,51 @@ async function main() {
     fail(`multicolumna 40q/2col: ${miss40.length} erradas (ej q${first + 1}: leyo '${report40.results[first].answer}' esperaba '${exp40[first]}')`);
   }
   console.log(`Multi-column guard passed: 40 preguntas / 2 columnas leidas OK (${report40.results.length}/40)`);
+
+  // ─── Guardia de 3-4 COLUMNAS (exploración: ¿llegamos a ~100 preguntas en 1
+  // hoja, como ZipGrade?). Reutiliza la MISMA densidad de fila que el 50q/2col
+  // ya validado (25 filas/columna, rowH=36, burbuja r=15) — solo agrega
+  // geometría horizontal nueva (COL_GEOM[3]/[4], paso 38px) subdividiendo las
+  // 2 franjas libres entre anclas. Si esto lee 100%, baja mucho la necesidad
+  // de multipágina para pruebas comunes. ───
+  const ans75 = Array.from({ length: 75 }, (_, i) => (i * 7 + 3) % 4);
+  const cfg75 = { numQuestions: 75, numOptions: 4, numColumns: 3 };
+  const sheet75 = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheet75.getContext("2d") as unknown as Ctx2D, { answers: ans75, rut: "12345678-5", filled: true }, cfg75);
+  const img75 = await loadImage(sheet75.toDataURL("image/png"));
+  const cap75 = createCanvas(img75.width, img75.height);
+  cap75.getContext("2d").drawImage(img75, 0, 0);
+  const frame75 = cap75.getContext("2d").getImageData(0, 0, cap75.width, cap75.height) as unknown as globalThis.ImageData;
+  const corners75 = findCorners(frame75) ?? fail("3-columnas: esquinas no detectadas");
+  const warped75 = warpImageData(frame75, corners75);
+  const config75 = { ...DEFAULT_CONFIG, numQuestions: 75, numOptions: 4, optionLabels: "ABCD", numColumns: 3 };
+  const report75 = gradeBubbles(warped75, config75, corners75);
+  if (!report75.valid) fail(`3-columnas 75q/3col invalido: ${report75.reason}`);
+  const exp75 = ans75.map((a) => "ABCD"[a]);
+  const miss75 = report75.results.filter((r, i) => r.answer !== exp75[i]).length;
+  if (miss75 > 0) fail(`3-columnas: ${miss75}/75 erradas`);
+  console.log(`3-column guard passed: 75 preguntas / 3 columnas leidas OK (${report75.results.length}/75)`);
+
+  const ans100 = Array.from({ length: 100 }, (_, i) => (i * 7 + 3) % 5);
+  const cfg100 = { numQuestions: 100, numOptions: 5, numColumns: 4 };
+  const sheet100 = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheet100.getContext("2d") as unknown as Ctx2D, { answers: ans100, rut: "12345678-5", filled: true }, cfg100);
+  const img100 = await loadImage(sheet100.toDataURL("image/png"));
+  const cap100 = createCanvas(img100.width, img100.height);
+  cap100.getContext("2d").drawImage(img100, 0, 0);
+  const frame100 = cap100.getContext("2d").getImageData(0, 0, cap100.width, cap100.height) as unknown as globalThis.ImageData;
+  const corners100 = findCorners(frame100) ?? fail("4-columnas: esquinas no detectadas");
+  const warped100 = warpImageData(frame100, corners100);
+  const config100 = { ...DEFAULT_CONFIG, numQuestions: 100, numOptions: 5, optionLabels: "ABCDE", numColumns: 4 };
+  const report100 = gradeBubbles(warped100, config100, corners100);
+  if (!report100.valid) fail(`4-columnas 100q/4col invalido: ${report100.reason}`);
+  const exp100 = ans100.map((a) => "ABCDE"[a]);
+  const miss100 = report100.results.filter((r, i) => r.answer !== exp100[i]).length;
+  if (miss100 > 0) {
+    const first = report100.results.findIndex((r, i) => r.answer !== exp100[i]);
+    fail(`4-columnas: ${miss100}/100 erradas (ej q${first + 1}: leyo '${report100.results[first].answer}' esperaba '${exp100[first]}')`);
+  }
+  console.log(`4-column guard passed: 100 preguntas / 4 columnas leidas OK (${report100.results.length}/100) — nivel ZipGrade en 1 hoja`);
 
   // ─── Guardia de SOMBRA (umbral adaptativo): oscurece fuerte la mitad inferior
   // de la hoja (papel de fondo cae por debajo de 70). Con umbral FIJO ese papel
@@ -304,6 +390,23 @@ async function main() {
   if (!codeLC || codeLC.sheetId !== 54321 || codeLC.page !== 1 || codeLC.pagesTotal !== 3) fail(`codigo-lavado: leyo ${JSON.stringify(codeLC)} (esperado sheetId=54321 p1/3)`);
   console.log(`Low-contrast sheet-code guard passed: codigo id=${codeLC.sheetId} p${codeLC.page}/${codeLC.pagesTotal} en warp lavado [90,185]`);
 
+  // ─── Guardia de CÓDIGO DE HOJA v2 (Fase 1, multi-país): agrega el campo
+  // COUNTRY sin cambiar la geometría física (46 celdas, sale del SHEET_ID que
+  // pasa de 20→16 bits). Prueba que v2 codifica/decodifica país+sheetId chicos
+  // y que sigue siendo el MISMO detector (contraste relativo) sin regresión. ───
+  const sheetV2 = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetV2.getContext("2d") as unknown as Ctx2D, { answers: Array.from({ length: 20 }, (_, i) => i % 5), rut: "12345678-5", filled: true, code: { version: 2, country: 1, sheetId: 4242, page: 2, pagesTotal: 3 } });
+  const imgV2 = await loadImage(sheetV2.toDataURL("image/png"));
+  const capV2 = createCanvas(imgV2.width, imgV2.height);
+  capV2.getContext("2d").drawImage(imgV2, 0, 0);
+  const frameV2 = capV2.getContext("2d").getImageData(0, 0, capV2.width, capV2.height) as unknown as globalThis.ImageData;
+  const warpedV2 = warpImageData(frameV2, findCorners(frameV2) ?? fail("codigo-v2: sin esquinas"));
+  const codeV2 = readSheetCode(warpedV2);
+  if (!codeV2 || codeV2.version !== 2 || codeV2.country !== 1 || codeV2.sheetId !== 4242 || codeV2.page !== 2 || codeV2.pagesTotal !== 3) {
+    fail(`codigo-v2: leyo ${JSON.stringify(codeV2)} (esperado v2 country=1 sheetId=4242 p2/3)`);
+  }
+  console.log(`Sheet-code v2 guard passed: country=${codeV2.country} sheetId=${codeV2.sheetId} p${codeV2.page}/${codeV2.pagesTotal}`);
+
   // ─── Guardia de CONFIANZA (#4): las banderas deben ser coherentes y NO dar
   // falsas alarmas en marcas limpias (marca sólida → "ok", RUT válido → "ok"). ───
   const sheetCf = createCanvas(SHEET_W, SHEET_H);
@@ -330,13 +433,17 @@ async function main() {
   // ─── Guardia de BARRIDO: lee TODA combinación que el generador puede crear
   // (nº preguntas × opciones × columnas). Es el "blindaje" — si una config no
   // lee 100%, aquí se ve y se sabe el sobre seguro del generador. ───
-  // Sobre SEGURO (validado por este barrido): 1 col 6-40 preguntas; 2 col 12-50.
-  // Fuera de eso las filas quedan muy juntas o faltan marcas de timing → el
-  // generador se restringe a este rango (ver sheet_generator.safeColumns/MAX).
+  // Sobre SEGURO (validado por este barrido): 1 col 6-40; 2 col 12-50; 3 col
+  // 18-90; 4 col 21-100 (nivel ZipGrade en 1 hoja, jul 2026 — más allá de 100
+  // en 4 col ya se detectaron errores/timing insuficiente en el barrido
+  // exploratorio, por eso el tope). Fuera de esto el generador se restringe
+  // (ver sheet_generator.safeColumns/allowedColumns/MAX_QUESTIONS).
   const sweepConfigs: { nq: number; no: number; nc: number }[] = [];
   for (const no of [3, 4, 5]) {
     for (const nq of [6, 10, 15, 20, 25, 30, 40]) sweepConfigs.push({ nq, no, nc: 1 });
     for (const nq of [12, 20, 30, 40, 50]) sweepConfigs.push({ nq, no, nc: 2 });
+    for (const nq of [18, 30, 45, 60, 75, 90]) sweepConfigs.push({ nq, no, nc: 3 });
+    for (const nq of [21, 40, 60, 80, 100]) sweepConfigs.push({ nq, no, nc: 4 });
   }
   let sweepOk = 0;
   const sweepFail: string[] = [];

@@ -114,6 +114,49 @@ export function rutRowY(d: number): number {
   return RUT_Y0 + d * RUT_ROW_STEP;
 }
 
+// ─── Bloque de ID nacional PARAMÉTRICO (multi-país) ────────────
+// La grilla (rutColX/rutRowY, misma separacion de pixeles) es comun a todos los
+// paises; lo que cambia es CUANTAS columnas/filas se dibujan y cuantos digitos
+// verificadores tiene. RUT (Chile) es el caso por defecto: 8 digitos + 1 DV con
+// K. CPF (Brasil) necesita DOS columnas de digito verificador (no una) — de ahi
+// que sea un contador y no un boolean.
+export interface IdBlockConfig {
+  idLabel: string;          // etiqueta impresa ("R.U.T.", "DNI", "CPF", ...)
+  idDigits: number;         // digitos del cuerpo (columnas de digito puro)
+  checkDigits: number;      // 0, 1 (RUT/CPF chileno-style) o 2 (CPF) columnas de DV
+  hasLetterDigit: boolean;  // la ULTIMA columna de DV admite letra (K chilena) ademas de 0-9
+}
+
+export const ID_BLOCK_CL: IdBlockConfig = {
+  idLabel: "R.U.T.", idDigits: RUT_DIGITS, checkDigits: 1, hasLetterDigit: true,
+};
+
+// Argentina: DNI de 7-8 digitos, SIN digito verificador (investigacion-argentina.md).
+export const ID_BLOCK_AR: IdBlockConfig = {
+  idLabel: "DNI", idDigits: 8, checkDigits: 0, hasLetterDigit: false,
+};
+
+// Brasil: CPF de 9 digitos de cuerpo + 2 digitos verificadores modulo-11 en
+// dos pasadas (investigacion-brasil.md:134-155) — algoritmo distinto al RUT.
+export const ID_BLOCK_BR: IdBlockConfig = {
+  idLabel: "CPF", idDigits: 9, checkDigits: 2, hasLetterDigit: false,
+};
+
+export function idBlockCols(cfg: IdBlockConfig): number {
+  return cfg.idDigits + cfg.checkDigits;
+}
+
+/** Filas (digitos posibles) de la columna c: 10, u 11 si es la ULTIMA columna de DV y admite letra. */
+export function idBlockRowsForCol(cfg: IdBlockConfig, c: number): number {
+  const isLastCheckCol = cfg.checkDigits > 0 && c === idBlockCols(cfg) - 1;
+  return isLastCheckCol && cfg.hasLetterDigit ? RUT_ROWS + 1 : RUT_ROWS;
+}
+
+/** Filas de la pista de temporizacion compartida (la mas larga de todas las columnas). */
+export function idBlockTimingRows(cfg: IdBlockConfig): number {
+  return cfg.checkDigits > 0 && cfg.hasLetterDigit ? RUT_ROWS + 1 : RUT_ROWS;
+}
+
 // ─── Grilla de preguntas ───
 export const Q_TOP = 340;     // Y del centro de la fila 1 (q=0) menos el offset interno
 export const ROW_H = 60;      // separacion vertical entre filas
@@ -145,7 +188,8 @@ export function rowCY(q: number): number {
 export interface SheetConfig {
   numQuestions: number;   // 1..~60
   numOptions: number;     // 3 | 4 | 5
-  numColumns?: number;    // 1 (default) | 2
+  numColumns?: number;    // 1 (default) | 2 | 3 | 4
+  idBlock?: IdBlockConfig; // ID nacional a dibujar (default ID_BLOCK_CL = RUT)
 }
 
 export const DEFAULT_SHEET: SheetConfig = { numQuestions: NUM_QUESTIONS, numOptions: NUM_OPTIONS };
@@ -170,16 +214,25 @@ export interface QLayout {
 const Q_BOTTOM = 1540;          // borde inferior del area de preguntas
 const Q_MULTICOL_TOP = 620;     // las preguntas multi-columna arrancan bajo el RUT
 
-// Geometria horizontal por nº de columnas (evita las anclas en x=580 y x=1130).
-// 1 col: identico a hoy. 2 cols: izq 195.., der 700.. con paso mas ajustado.
+// Geometria horizontal por nº de columnas (evita las 3 anclas verticales en
+// x=70, x=580, x=1130 — cada una ocupa ±20px). Hay 2 franjas libres entre
+// anclas: [90,560] y [600,1110]. 1 y 2 columnas usan 1 columna por franja
+// (espaciado holgado, igual que hoy). 3 y 4 columnas SUBDIVIDEN cada franja en
+// 2 sub-columnas con paso mas angosto (38px) — la densidad VERTICAL (filas,
+// radio de burbuja) no cambia nada, sigue viniendo de rowsPerCol como siempre;
+// esto es prueba de que 4 columnas x 25 filas = 100 preguntas en 1 hoja, con
+// la MISMA fila/burbuja ya validada por el barrido en 50q/2col (ver guardia
+// "100-question / 4-column" en test_omr_real.ts).
 const COL_GEOM: Record<number, { qnum: number[]; optX0: number[]; optStep: number }> = {
   1: { qnum: [QNUM_X], optX0: [OPT_X0], optStep: OPT_STEP },
   2: { qnum: [150, 648], optX0: [195, 700], optStep: 58 },
+  3: { qnum: [150, 355, 620], optX0: [178, 383, 648], optStep: 34 },
+  4: { qnum: [150, 355, 620, 855], optX0: [178, 383, 648, 883], optStep: 34 },
 };
 
 /** Layout de la grilla de preguntas calculado desde el config. */
 export function questionLayout(cfg: SheetConfig = DEFAULT_SHEET): QLayout {
-  const numColumns = Math.max(1, Math.min(2, cfg.numColumns ?? 1));
+  const numColumns = Math.max(1, Math.min(4, cfg.numColumns ?? 1));
   const n = Math.max(1, cfg.numQuestions);
   const rowsPerCol = Math.ceil(n / numColumns);
   const qTop = numColumns === 1 ? Q_TOP : Q_MULTICOL_TOP;

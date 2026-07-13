@@ -57,43 +57,51 @@ function bubble(ctx: Ctx2D, cx: number, cy: number, r: number, fill: boolean) {
   }
 }
 
-/** Normaliza un RUT a { body: number[8-right-aligned], dv: 0..10 (10=K) }. */
-export function parseRut(rut: string): { body: number[]; dv: number } {
+/** Normaliza un ID a { body: number[right-aligned], dv: number[] (0..10, 10=K) — un valor por columna de DV. */
+export function parseRut(rut: string, checkDigits: number = 1): { body: number[]; dv: number[] } {
   const clean = rut.replace(/[.\-\s]/g, "").toUpperCase();
-  const dvChar = clean.slice(-1);
-  const body = clean.slice(0, -1).replace(/\D/g, "").split("").map(Number);
-  const dv = dvChar === "K" ? 10 : /\d/.test(dvChar) ? Number(dvChar) : -1;
+  if (checkDigits <= 0) {
+    const body = clean.replace(/\D/g, "").split("").map(Number);
+    return { body, dv: [] };
+  }
+  const dvChars = clean.slice(-checkDigits).split("");
+  const dv = dvChars.map((ch) => (ch === "K" ? 10 : /\d/.test(ch) ? Number(ch) : -1));
+  const body = clean.slice(0, -checkDigits).replace(/\D/g, "").split("").map(Number);
   return { body, dv };
 }
 
-function drawRut(ctx: Ctx2D, marks: SheetMarks): void {
+function drawRut(ctx: Ctx2D, marks: SheetMarks, idCfg: L.IdBlockConfig = L.ID_BLOCK_CL): void {
+  const cols = L.idBlockCols(idCfg);
+  const timingRows = L.idBlockTimingRows(idCfg);
+
   ctx.fillStyle = BLACK;
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   ctx.font = "bold 15px sans-serif";
-  ctx.fillText("R.U.T.", L.rutColX(0) - 14, L.rutRowY(0) - 22);
+  ctx.fillText(idCfg.idLabel, L.rutColX(0) - 14, L.rutRowY(0) - 22);
 
-  // Etiquetas de fila 0-9 y K a la izquierda de la grilla
+  // Etiquetas de fila 0-9 y K (si el pais la usa) a la izquierda de la grilla
   ctx.font = "11px sans-serif";
   for (let d = 0; d <= 9; d++) ctx.fillText(String(d), L.rutColX(0) - 28, L.rutRowY(d) + 4);
-  ctx.fillText("K", L.rutColX(0) - 28, L.rutRowY(L.RUT_K_ROW) + 4);
+  if (idCfg.hasLetterDigit) ctx.fillText("K", L.rutColX(0) - 28, L.rutRowY(L.RUT_ROWS) + 4);
 
-  // Pista de temporizacion del RUT: una marca solida por fila (0..9 + K).
+  // Pista de temporizacion del bloque: una marca solida por fila.
   ctx.fillStyle = BLACK;
-  for (let d = 0; d < L.RUT_TIMING_ROWS; d++) {
+  for (let d = 0; d < timingRows; d++) {
     ctx.fillRect(L.RUT_TIMING_X - L.RUT_TIMING_W / 2, L.rutRowY(d) - L.RUT_TIMING_H / 2, L.RUT_TIMING_W, L.RUT_TIMING_H);
   }
 
-  const parsed = marks.rut ? parseRut(marks.rut) : { body: [], dv: -1 };
-  const bodyOffset = L.RUT_DIGITS - parsed.body.length; // alinear a la derecha
+  const parsed = marks.rut ? parseRut(marks.rut, idCfg.checkDigits) : { body: [], dv: [] };
+  const bodyOffset = idCfg.idDigits - parsed.body.length; // alinear a la derecha
 
-  for (let c = 0; c < L.RUT_COLS; c++) {
-    const isDV = c === L.RUT_COLS - 1;
-    const rows = isDV ? L.RUT_ROWS + 1 : L.RUT_ROWS; // la columna DV agrega la K
+  for (let c = 0; c < cols; c++) {
+    const isDvCol = idCfg.checkDigits > 0 && c >= idCfg.idDigits;
+    const dvIdx = c - idCfg.idDigits;
+    const rows = L.idBlockRowsForCol(idCfg, c);
     for (let d = 0; d < rows; d++) {
       let filled = false;
       if (marks.filled) {
-        if (isDV) filled = d === parsed.dv;
+        if (isDvCol) filled = d === parsed.dv[dvIdx];
         else {
           const digitIdx = c - bodyOffset;
           if (digitIdx >= 0 && digitIdx < parsed.body.length) filled = parsed.body[digitIdx] === d;
@@ -146,8 +154,8 @@ export function drawSheet(ctx: Ctx2D, marks: SheetMarks = {}, cfg: L.SheetConfig
   // ─── Código de hoja (franja superior) ───
   if (marks.code) drawSheetCode(ctx, marks.code);
 
-  // ─── Grilla de RUT (8 dígitos + DV con K) ───
-  drawRut(ctx, marks);
+  // ─── Grilla de ID nacional (RUT por defecto: 8 dígitos + DV con K) ───
+  drawRut(ctx, marks, cfg.idBlock ?? L.ID_BLOCK_CL);
 
   // ─── Pista de temporizacion + grilla de preguntas (parametrica, multi-columna) ───
   const ql = L.questionLayout(cfg);

@@ -1,5 +1,9 @@
 export const QUIZ_MIN_QUESTIONS = 1;
-export const QUIZ_MAX_QUESTIONS = 40;
+// Sobre SEGURO validado por test:omr (guard "Config sweep" en test_omr_real.ts):
+// 1 col ≤40, 2 col 12-50, 3 col 18-90, 4 col 21-100 (nivel ZipGrade en 1 hoja,
+// jul 2026). El nº de columnas real se deriva en dashboard/actions.ts con
+// sheet_generator.suggestColumns, no queda fijo en 1.
+export const QUIZ_MAX_QUESTIONS = 100;
 export const QUIZ_OPTION_LABELS = "ABCDE";
 export const QUIZ_ALLOWED_OPTIONS = [3, 4, 5] as const;
 
