@@ -6,8 +6,8 @@
  */
 import { createCanvas, ImageData as CanvasImageData, loadImage } from "canvas";
 import { TEST_IMAGE_BASE64, EXPECTED_ANSWERS, EXPECTED_RUT, EXPECTED_CODE } from "./src/app/test/test_image";
-import { findCorners, gradeBubbles, readRut, readSheetCode, warpImageData, warpSheet, cropNameBox, DEFAULT_CONFIG, ID_READ_AR, ID_READ_BR, checkDigitsBr } from "./src/lib/omr";
-import { TIMING_X, rowCY, SHEET_W, SHEET_H, ID_BLOCK_AR, ID_BLOCK_BR } from "./src/lib/sheet_layout";
+import { findCorners, gradeBubbles, readRut, readSheetCode, warpImageData, warpSheet, cropNameBox, DEFAULT_CONFIG, ID_READ_AR, ID_READ_BR, ID_READ_PE, ID_READ_CO, ID_READ_EC, ID_READ_UY, checkDigitsBr, checkDigitMod10Ec, checkDigitMod10Uy } from "./src/lib/omr";
+import { TIMING_X, rowCY, SHEET_W, SHEET_H, ID_BLOCK_AR, ID_BLOCK_BR, ID_BLOCK_PE, ID_BLOCK_CO, ID_BLOCK_EC, ID_BLOCK_UY } from "./src/lib/sheet_layout";
 import { drawSheet, type Ctx2D } from "./src/lib/sheet_render";
 
 (globalThis as unknown as { ImageData: typeof CanvasImageData }).ImageData = CanvasImageData;
@@ -181,6 +181,81 @@ async function main() {
   if (!idBr.dvOk) fail(`id-nacional-BR: los 2 dígitos verificadores no validaron`);
   if (idBr.dvComputed) fail(`id-nacional-BR: no debería calcular DV (ambas burbujas se leyeron)`);
   console.log(`National-ID guard (Brasil/CPF, DV mod-11 x2) passed: ${idBr.rut}`);
+
+  // ─── Guardia de ID NACIONAL (Fase 0, tercer país): Peru (DNI, 8 dígitos, SIN
+  // dígito verificador) — mismo patrón que Argentina, confirma el perfil PE. ───
+  const dniPe = "44556677";
+  const cfgPe = { numQuestions: 20, numOptions: 5, idBlock: ID_BLOCK_PE };
+  const sheetPe = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetPe.getContext("2d") as unknown as Ctx2D, { answers: Array.from({ length: 20 }, (_, i) => i % 5), rut: dniPe, filled: true }, cfgPe);
+  const imgPe = await loadImage(sheetPe.toDataURL("image/png"));
+  const capPe = createCanvas(imgPe.width, imgPe.height);
+  capPe.getContext("2d").drawImage(imgPe, 0, 0);
+  const framePe = capPe.getContext("2d").getImageData(0, 0, capPe.width, capPe.height) as unknown as globalThis.ImageData;
+  const cornersPe = findCorners(framePe) ?? fail("id-nacional-PE: sin esquinas");
+  const warpedPe = warpImageData(framePe, cornersPe);
+  const idPe = readRut(warpedPe, undefined, ID_READ_PE);
+  if (idPe.rut !== dniPe) fail(`id-nacional-PE: DNI leído "${idPe.rut}" (esperaba "${dniPe}")`);
+  console.log(`National-ID guard (Peru/DNI, sin DV) passed: ${idPe.rut}`);
+
+  // ─── Guardia de ID NACIONAL (Fase 0, cuarto país): Colombia (CC, largo
+  // VARIABLE 6-10 dígitos, SIN dígito verificador). A diferencia de AR/PE (que
+  // usan el ancho completo de columnas), esta prueba un ID MÁS CORTO que las
+  // 10 columnas de la grilla → confirma el alineado a la derecha con columnas
+  // vacías a la izquierda. ───
+  const ccCo = "1234567"; // 7 de 10 columnas
+  const cfgCo = { numQuestions: 20, numOptions: 5, idBlock: ID_BLOCK_CO };
+  const sheetCo = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetCo.getContext("2d") as unknown as Ctx2D, { answers: Array.from({ length: 20 }, (_, i) => i % 5), rut: ccCo, filled: true }, cfgCo);
+  const imgCo = await loadImage(sheetCo.toDataURL("image/png"));
+  const capCo = createCanvas(imgCo.width, imgCo.height);
+  capCo.getContext("2d").drawImage(imgCo, 0, 0);
+  const frameCo = capCo.getContext("2d").getImageData(0, 0, capCo.width, capCo.height) as unknown as globalThis.ImageData;
+  const cornersCo = findCorners(frameCo) ?? fail("id-nacional-CO: sin esquinas");
+  const warpedCo = warpImageData(frameCo, cornersCo);
+  const idCo = readRut(warpedCo, undefined, ID_READ_CO);
+  if (idCo.rut !== ccCo) fail(`id-nacional-CO: CC leída "${idCo.rut}" (esperaba "${ccCo}")`);
+  console.log(`National-ID guard (Colombia/CC, largo variable, sin DV) passed: ${idCo.rut}`);
+
+  // ─── Guardia de ID NACIONAL (Fase 0, quinto país): Ecuador (Cédula, 9 dígitos
+  // de cuerpo + 1 DV módulo-10 con coeficientes propios). Prueba un TERCER
+  // algoritmo de checksum distinto a RUT (mod-11) y CPF (mod-11 x2). ───
+  const bodyEc = [1, 7, 2, 3, 4, 5, 6, 7, 8]; // provincia "17" (Pichincha, válida 01-24)
+  const dvEc = checkDigitMod10Ec(bodyEc);
+  const cedulaEc = `${bodyEc.join("")}-${dvEc}`;
+  const cfgEc = { numQuestions: 20, numOptions: 5, idBlock: ID_BLOCK_EC };
+  const sheetEc = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetEc.getContext("2d") as unknown as Ctx2D, { answers: Array.from({ length: 20 }, (_, i) => i % 5), rut: cedulaEc, filled: true }, cfgEc);
+  const imgEc = await loadImage(sheetEc.toDataURL("image/png"));
+  const capEc = createCanvas(imgEc.width, imgEc.height);
+  capEc.getContext("2d").drawImage(imgEc, 0, 0);
+  const frameEc = capEc.getContext("2d").getImageData(0, 0, capEc.width, capEc.height) as unknown as globalThis.ImageData;
+  const cornersEc = findCorners(frameEc) ?? fail("id-nacional-EC: sin esquinas");
+  const warpedEc = warpImageData(frameEc, cornersEc);
+  const idEc = readRut(warpedEc, undefined, ID_READ_EC);
+  if (idEc.rut !== cedulaEc) fail(`id-nacional-EC: Cédula leída "${idEc.rut}" (esperaba "${cedulaEc}")`);
+  if (!idEc.dvOk) fail(`id-nacional-EC: el dígito verificador no validó`);
+  console.log(`National-ID guard (Ecuador/Cédula, DV mod-10) passed: ${idEc.rut}`);
+
+  // ─── Guardia de ID NACIONAL (Fase 0, sexto país): Uruguay (CI, 7 dígitos de
+  // cuerpo + 1 DV módulo-10 con multiplicadores propios). Cierra la validación
+  // de los 6 países numéricos del plan multi-país (queda México/CURP aparte). ───
+  const bodyUy = [1, 2, 3, 4, 5, 6, 7];
+  const dvUy = checkDigitMod10Uy(bodyUy);
+  const ciUy = `${bodyUy.join("")}-${dvUy}`;
+  const cfgUy = { numQuestions: 20, numOptions: 5, idBlock: ID_BLOCK_UY };
+  const sheetUy = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetUy.getContext("2d") as unknown as Ctx2D, { answers: Array.from({ length: 20 }, (_, i) => i % 5), rut: ciUy, filled: true }, cfgUy);
+  const imgUy = await loadImage(sheetUy.toDataURL("image/png"));
+  const capUy = createCanvas(imgUy.width, imgUy.height);
+  capUy.getContext("2d").drawImage(imgUy, 0, 0);
+  const frameUy = capUy.getContext("2d").getImageData(0, 0, capUy.width, capUy.height) as unknown as globalThis.ImageData;
+  const cornersUy = findCorners(frameUy) ?? fail("id-nacional-UY: sin esquinas");
+  const warpedUy = warpImageData(frameUy, cornersUy);
+  const idUy = readRut(warpedUy, undefined, ID_READ_UY);
+  if (idUy.rut !== ciUy) fail(`id-nacional-UY: CI leída "${idUy.rut}" (esperaba "${ciUy}")`);
+  if (!idUy.dvOk) fail(`id-nacional-UY: el dígito verificador no validó`);
+  console.log(`National-ID guard (Uruguay/CI, DV mod-10) passed: ${idUy.rut}`);
 
   // ─── Guardia PARAMÉTRICO (Fase C): generar y leer una hoja con OTRO config
   // (30 preguntas / 3 opciones, formato tipo EXANI México). Prueba que el layout

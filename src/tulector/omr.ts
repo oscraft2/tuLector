@@ -1195,6 +1195,35 @@ export function checkDigitsBr(body: number[]): number[] {
 }
 
 /**
+ * Digito verificador de la cedula ecuatoriana: modulo 10 con coeficientes
+ * [2,1,2,1,2,1,2,1,2] (investigacion-ecuador.md:150-179). Cada producto >=10
+ * se reduce restando 9 (equivalente a sumar sus digitos, como Luhn).
+ * body = 9 digitos. Devuelve un solo digito (0-9).
+ */
+export function checkDigitMod10Ec(body: number[]): number {
+  const coeffs = [2, 1, 2, 1, 2, 1, 2, 1, 2];
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    let product = body[i] * coeffs[i];
+    if (product >= 10) product -= 9;
+    sum += product;
+  }
+  return (10 - (sum % 10)) % 10;
+}
+
+/**
+ * Digito verificador de la cedula uruguaya: modulo 10 con multiplicadores
+ * [2,9,8,7,6,3,4,1] aplicados a los 7 digitos de cuerpo (investigacion-uruguay.md:107-127).
+ * body = 7 digitos. Devuelve un solo digito (0-9).
+ */
+export function checkDigitMod10Uy(body: number[]): number {
+  const mults = [2, 9, 8, 7, 6, 3, 4, 1];
+  let sum = 0;
+  for (let i = 0; i < 7; i++) sum += body[i] * mults[i];
+  return (10 - (sum % 10)) % 10;
+}
+
+/**
  * Config de lectura del bloque de ID nacional: geometria (IdBlockConfig, ver
  * sheet_layout) + funcion de digitos verificadores (undefined = pais sin DV,
  * como Argentina/Peru/Colombia; devuelve un array porque algunos paises tienen
@@ -1209,6 +1238,10 @@ export interface IdReadConfig {
 export const ID_READ_CL: IdReadConfig = { block: L.ID_BLOCK_CL, checkDigit: (body) => [computeRutDV(body)] };
 export const ID_READ_AR: IdReadConfig = { block: L.ID_BLOCK_AR }; // DNI: sin digito verificador
 export const ID_READ_BR: IdReadConfig = { block: L.ID_BLOCK_BR, checkDigit: checkDigitsBr };
+export const ID_READ_PE: IdReadConfig = { block: L.ID_BLOCK_PE }; // DNI: sin digito verificador
+export const ID_READ_CO: IdReadConfig = { block: L.ID_BLOCK_CO }; // CC: sin digito verificador
+export const ID_READ_EC: IdReadConfig = { block: L.ID_BLOCK_EC, checkDigit: (body) => [checkDigitMod10Ec(body)] };
+export const ID_READ_UY: IdReadConfig = { block: L.ID_BLOCK_UY, checkDigit: (body) => [checkDigitMod10Uy(body)] };
 
 export function readRut(imageData: ImageData, _config: OMRConfig = DEFAULT_CONFIG, idReadCfg: IdReadConfig = ID_READ_CL): RutResult {
   const { width, height, data } = imageData;

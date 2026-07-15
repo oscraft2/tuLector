@@ -142,6 +142,31 @@ export const ID_BLOCK_BR: IdBlockConfig = {
   idLabel: "CPF", idDigits: 9, checkDigits: 2, hasLetterDigit: false,
 };
 
+// Peru: DNI de 8 digitos, SIN digito verificador (investigacion-peru.md:15,135-160).
+export const ID_BLOCK_PE: IdBlockConfig = {
+  idLabel: "DNI", idDigits: 8, checkDigits: 0, hasLetterDigit: false,
+};
+
+// Colombia: CC de 6-10 digitos (largo variable), SIN digito verificador
+// (investigacion-colombia.md:139-148). 10 columnas, igual que Argentina admite
+// largo variable dentro de la grilla (los digitos que faltan quedan sin marcar
+// a la izquierda, alineado a la derecha).
+export const ID_BLOCK_CO: IdBlockConfig = {
+  idLabel: "CC", idDigits: 10, checkDigits: 0, hasLetterDigit: false,
+};
+
+// Ecuador: Cedula de 10 digitos = 9 de cuerpo + 1 digito verificador modulo-10
+// con coeficientes [2,1,2,1,2,1,2,1,2] (investigacion-ecuador.md:150-179).
+export const ID_BLOCK_EC: IdBlockConfig = {
+  idLabel: "Cedula", idDigits: 9, checkDigits: 1, hasLetterDigit: false,
+};
+
+// Uruguay: CI de 8 digitos = 7 de cuerpo + 1 digito verificador modulo-10 con
+// multiplicadores [2,9,8,7,6,3,4,1] (investigacion-uruguay.md:107-127).
+export const ID_BLOCK_UY: IdBlockConfig = {
+  idLabel: "CI", idDigits: 7, checkDigits: 1, hasLetterDigit: false,
+};
+
 export function idBlockCols(cfg: IdBlockConfig): number {
   return cfg.idDigits + cfg.checkDigits;
 }

@@ -30,6 +30,7 @@ export interface ScanLogPayload {
   corrected?: { q: number; a: string }[]; // respuestas verdaderas (ground truth) por pregunta
   verified?: boolean;  // true: el profe confirmó la lectura → ejemplo etiquetado (FASE 3 dataset)
   rutTrue?: string;    // RUT verdadero confirmado
+  countryCode?: string; // pais del bloque de ID leido (default "CL"); segmenta el dataset por pais (Fase 2, plan-multipais-motor.md)
 }
 
 export interface ScanLogRow {

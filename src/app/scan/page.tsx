@@ -184,6 +184,7 @@ export default function ScanPage() {
    answers: results.map((r) => ({ q: r.question, a: r.answer, s: r.scores, f: r.features })),
    corrected: results.map((r) => ({ q: r.question, a: r.answer })),
    rut: studentId[0], rutTrue: studentId[0], verified: true,
+   countryCode: "CL", // hoy todo el trafico real es CL; ver Fase 2 en plan-multipais-motor.md
   });
  };
 
