@@ -44,14 +44,20 @@ export function normalizeNationalId(raw: string): string {
   return raw.toUpperCase().replace(/[.\s-]/g, "");
 }
 
-/** Valida el formato del ID tal como lo escribe el usuario (CON separadores) contra el pais elegido. */
+/** Valida el formato del ID contra el pais elegido. Acepta tanto la forma que
+ * escribe un humano (CON separadores) como la forma normalizada (sin ellos):
+ * el motor OMR emite el ID con guion antes del/los digito(s) verificador(es)
+ * (ej. Ecuador "172345678-4"), pero el regex de algunos paises (EC) solo
+ * contempla la forma sin guion "1723456784" — probar ambas evita rechazar la
+ * salida legitima del lector. Es SOLO mas permisivo (nunca rechaza lo que ya
+ * aceptaba), y Chile ni pasa por aca (usa canonicalRut en resolveNationalId). */
 export function validateNationalIdFormat(raw: string, countryCode: string): boolean {
   const trimmed = raw.trim();
   if (!trimmed) return false;
   const format = resolveCountryIdFormat(countryCode);
   if (!format) return false;
   if (!format.regex) return trimmed.length >= 4; // sin regex conocido: solo exige un largo minimo razonable
-  return format.regex.test(trimmed);
+  return format.regex.test(trimmed) || format.regex.test(normalizeNationalId(trimmed));
 }
 
 export interface ResolvedNationalId {
