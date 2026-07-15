@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase_server";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-import { canonicalRut } from "@/lib/rut";
+import { resolveNationalId } from "@/lib/national_id";
+import { resolveCountryProfile } from "@/lib/country_profiles";
 import { resolveDisplayName, type PrivacyLevel } from "@/lib/display_name";
 
 export const dynamic = "force-dynamic";
@@ -10,11 +11,16 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const rut = searchParams.get("rut")?.trim();
+    // Default "CL" por compatibilidad: links viejos guardados/compartidos antes
+    // de la Fase multi-pais no traen &country= y deben seguir funcionando igual.
+    const countryCode = searchParams.get("country")?.trim() || "CL";
+    const countryProfile = resolveCountryProfile(countryCode);
 
-    if (!rut) return NextResponse.json({ error: "Ingresa un RUT" }, { status: 400 });
+    if (!rut) return NextResponse.json({ error: `Ingresa un ${countryProfile.studentIdLabel}` }, { status: 400 });
 
-    const normalizedRut = canonicalRut(rut);
-    if (!normalizedRut) return NextResponse.json({ error: "RUT no valido" }, { status: 400 });
+    const resolvedId = resolveNationalId(rut, countryProfile.code);
+    if (!resolvedId.canonical) return NextResponse.json({ error: `${countryProfile.studentIdLabel} no valido` }, { status: 400 });
+    const normalizedRut = resolvedId.canonical;
 
     const adminClient = createSupabaseAdminClient();
     const anonClient = await createSupabaseServerClient();
@@ -27,7 +33,7 @@ export async function GET(request: Request) {
 
     if (error) throw error;
     if (!links || links.length === 0) {
-      return NextResponse.json({ results: [], message: "No hay resultados publicados para este RUT" });
+      return NextResponse.json({ results: [], message: `No hay resultados publicados para este ${countryProfile.studentIdLabel}` });
     }
 
     const paperIds = links.map((r: Record<string, unknown>) => r.paper_id);
@@ -36,15 +42,32 @@ export async function GET(request: Request) {
       paperIdByLink[l.paper_id as string] = l;
     }
 
-    const { data: papers, error: paperError } = await anonClient
+    const { data: papersRaw, error: paperError } = await anonClient
       .from("papers")
-      .select("id, student_name, student_id, score, total, grade, equivalent_score, scanned_at, quiz_id, student_rut_norm")
+      .select("id, student_name, student_id, score, total, grade, equivalent_score, scanned_at, quiz_id, student_rut_norm, school_id")
       .in("id", paperIds)
       .eq("student_rut_norm", normalizedRut);
 
     if (paperError) throw paperError;
-    if (!papers || papers.length === 0) {
-      return NextResponse.json({ results: [], message: "No hay resultados publicados para este RUT" });
+    if (!papersRaw || papersRaw.length === 0) {
+      return NextResponse.json({ results: [], message: `No hay resultados publicados para este ${countryProfile.studentIdLabel}` });
+    }
+
+    // El ID normalizado NO es unico global entre paises (un DNI argentino y
+    // una CI uruguaya pueden coincidir como string) — este endpoint es publico
+    // y muestra notas, asi que se cruza contra el pais del colegio del paper
+    // para no filtrar el resultado de un alumno de OTRO pais por coincidencia
+    // numerica. Solo aplica si el colegio tiene country_code (default "CL" en
+    // schools, asi que en la practica siempre lo tiene).
+    const schoolIds = [...new Set(papersRaw.map((p: Record<string, unknown>) => p.school_id).filter(Boolean))];
+    const { data: schoolRows } = schoolIds.length
+      ? await anonClient.from("schools").select("id, country_code").in("id", schoolIds)
+      : { data: [] as { id: string; country_code: string | null }[] };
+    const schoolCountry = new Map((schoolRows ?? []).map((s) => [s.id, s.country_code ?? "CL"]));
+    const papers = papersRaw.filter((p: Record<string, unknown>) => schoolCountry.get(p.school_id as string) === countryProfile.code);
+
+    if (papers.length === 0) {
+      return NextResponse.json({ results: [], message: `No hay resultados publicados para este ${countryProfile.studentIdLabel}` });
     }
 
     const quizIds = [...new Set(papers.map((p: Record<string, unknown>) => p.quiz_id))];

@@ -2,6 +2,7 @@
 
 import { useState, useRef, FormEvent } from "react";
 import Link from "next/link";
+import { countryProfiles, resolveCountryProfile } from "@/lib/country_profiles";
 
 type ResultItem = {
   token: string;
@@ -18,6 +19,8 @@ type ResultItem = {
 };
 
 export default function ConsultaPage() {
+  const [countryCode, setCountryCode] = useState("CL");
+  const countryProfile = resolveCountryProfile(countryCode);
   const [rut, setRut] = useState("");
   const [results, setResults] = useState<ResultItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -25,6 +28,8 @@ export default function ConsultaPage() {
   const [searched, setSearched] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Formato con puntos+guion SOLO para Chile (RUT); el resto del pais escribe
+  // su ID libre (el backend valida/normaliza segun el pais elegido).
   const formatRut = (value: string) => {
     const raw = value.replace(/[^0-9kK]/g, "");
     if (raw.length <= 1) return raw;
@@ -35,7 +40,15 @@ export default function ConsultaPage() {
   };
 
   const handleRutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setRut(formatRut(e.target.value));
+    setRut(countryCode === "CL" ? formatRut(e.target.value) : e.target.value.toUpperCase());
+  };
+
+  const handleCountryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setCountryCode(e.target.value);
+    setRut("");
+    setSearched(false);
+    setResults([]);
+    setError(null);
   };
 
   const search = async (e: FormEvent) => {
@@ -48,7 +61,7 @@ export default function ConsultaPage() {
     setSearched(true);
 
     try {
-      const res = await fetch(`/api/consulta?rut=${encodeURIComponent(cleanRut)}`);
+      const res = await fetch(`/api/consulta?rut=${encodeURIComponent(cleanRut)}&country=${encodeURIComponent(countryCode)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al buscar");
       setResults(data.results ?? []);
@@ -80,19 +93,32 @@ export default function ConsultaPage() {
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Consulta tus resultados</h1>
           <p className="mt-2 text-sm text-[#5b6472]">
-            Ingresa el RUT del estudiante para ver los resultados que tu colegio ha publicado.
+            Ingresa el {countryProfile.studentIdLabel} del estudiante para ver los resultados que tu colegio ha publicado.
           </p>
         </div>
+
+        <label className="mb-3 block text-xs font-semibold text-[#6b7280]">
+          País
+          <select
+            value={countryCode}
+            onChange={handleCountryChange}
+            className="mt-1 w-full rounded-lg border border-[#cfd6df] bg-white px-3 py-2 text-sm text-[#111827] focus:border-[#07305f] focus:outline-none focus:ring-2 focus:ring-[#07305f]/20"
+          >
+            {countryProfiles.map((p) => (
+              <option key={p.code} value={p.code}>{p.flag} {p.countryName} ({p.studentIdLabel})</option>
+            ))}
+          </select>
+        </label>
 
         <form onSubmit={search} className="mb-8 flex gap-2">
           <input
             ref={inputRef}
             type="text"
-            inputMode="numeric"
+            inputMode={countryCode === "CL" ? "numeric" : "text"}
             value={rut}
             onChange={handleRutChange}
-            placeholder="12.345.678-9"
-            maxLength={12}
+            placeholder={countryProfile.studentIdExample}
+            maxLength={20}
             className="flex-1 rounded-lg border border-[#cfd6df] bg-white px-4 py-3 text-base text-[#111827] placeholder:text-[#9ca3af] focus:border-[#07305f] focus:outline-none focus:ring-2 focus:ring-[#07305f]/20"
           />
           <button
@@ -121,7 +147,7 @@ export default function ConsultaPage() {
                 </div>
                 <p className="text-sm font-semibold text-[#111827]">Sin resultados</p>
                 <p className="mt-1 text-sm text-[#6b7280]">
-                  No encontramos resultados publicados para este RUT. Consulta con tu colegio si ya estan disponibles.
+                  No encontramos resultados publicados para este {countryProfile.studentIdLabel}. Consulta con tu colegio si ya estan disponibles.
                 </p>
               </div>
             ) : (
