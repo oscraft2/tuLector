@@ -1,3 +1,5 @@
+import { canonicalRut, normalizeRut } from "@/lib/rut";
+
 /**
  * Validacion/normalizacion de ID nacional para el login de apoderados (Fase 3,
  * ver docs/plan-multipais-motor.md). Los regex espejan countries.id_format_regex
@@ -50,4 +52,30 @@ export function validateNationalIdFormat(raw: string, countryCode: string): bool
   if (!format) return false;
   if (!format.regex) return trimmed.length >= 4; // sin regex conocido: solo exige un largo minimo razonable
   return format.regex.test(trimmed);
+}
+
+export interface ResolvedNationalId {
+  normalized: string;       // forma a guardar en las columnas rut/student_id
+  canonical: string | null; // forma para matching/duplicados; null si no paso la validacion
+  valid: boolean;
+}
+
+/**
+ * Resuelve el ID nacional crudo que escribe el profe/staff a lo que el resto
+ * del producto (roster, asignacion manual de paper, etc.) necesita — version
+ * a guardar + version canonica para matching + si es valido. Para Chile usa
+ * EXACTAMENTE `canonicalRut`/`normalizeRut` de rut.ts (exige DV correcto,
+ * conserva el guion) — cero cambio de comportamiento para colegios chilenos
+ * ya en produccion. Para el resto de paises valida solo el FORMATO (mismo
+ * criterio ya usado por el login de apoderados en request-link/route.ts, que
+ * tampoco valida checksum) y usa `normalizeNationalId` (sin separadores).
+ */
+export function resolveNationalId(raw: string, countryCode: string): ResolvedNationalId {
+  if (countryCode.toUpperCase() === "CL") {
+    const canonical = canonicalRut(raw);
+    return { normalized: normalizeRut(raw), canonical, valid: canonical !== null };
+  }
+  const normalized = normalizeNationalId(raw);
+  const valid = validateNationalIdFormat(raw, countryCode);
+  return { normalized, canonical: valid ? normalized : null, valid };
 }

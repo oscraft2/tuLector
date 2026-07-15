@@ -29,7 +29,7 @@ const initialState: DashboardActionState = { status: "idle" };
 
 type CourseOption = { id: string; name: string; grade: string | null };
 
-export function QuizCreateForm({ courses }: { courses: CourseOption[] }) {
+export function QuizCreateForm({ courses, countryCode = "CL" }: { courses: CourseOption[]; countryCode?: string }) {
   const [state, formAction] = useActionState(createQuiz, initialState);
   const formRef = useRef<HTMLFormElement>(null);
   const noCourses = courses.length === 0;
@@ -82,7 +82,7 @@ export function QuizCreateForm({ courses }: { courses: CourseOption[] }) {
             </label>
           </div>
 
-          <AnswerKeyEditor questions={20} />
+          <AnswerKeyEditor questions={20} countryCode={countryCode} />
 
           <label className="block text-sm font-semibold">
             Exigencia

@@ -10,6 +10,7 @@ import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H, rutColX, rutRowY, RUT_COLS, RU
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
 import { APP_VERSION } from "@/lib/version";
 import { safeColumns, allowedColumns } from "@/lib/sheet_generator";
+import { resolveIdReadConfig } from "@/lib/country_profiles";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
 type ScanSyncState = "idle" | "saving" | "saved" | "review" | "error" | "queued";
@@ -168,6 +169,10 @@ export default function ScanPage() {
  const [labeled, setLabeled] = useState(false);
  const [activeQuizId, setActiveQuizId] = useState<string | null>(null);
  const [activeSheetCode, setActiveSheetCode] = useState<number | null>(null);
+ // Pais del colegio del ensayo activo: decide con que bloque de ID nacional se
+ // lee el RUT/DNI/CPF/... (Fase 0/1, plan-multipais-motor.md). Default CL.
+ const [activeCountryCode, setActiveCountryCode] = useState<string>("CL");
+ const idReadCfg = useMemo(() => resolveIdReadConfig(activeCountryCode), [activeCountryCode]);
  const [sheetWarn, setSheetWarn] = useState<string | null>(null);
   const [syncState, setSyncState] = useState<ScanSyncState>("idle");
   const [syncMessage, setSyncMessage] = useState("");
@@ -213,9 +218,10 @@ export default function ScanPage() {
      setError("Selecciona un ensayo desde el dashboard antes de escanear.");
      return;
     }
-    const data = await res.json() as { id?: string; answer_key?: string; title?: string; num_questions?: number; options_per_question?: number; option_labels?: string; num_columns?: number; sheet_code?: number | null };
+    const data = await res.json() as { id?: string; answer_key?: string; title?: string; num_questions?: number; options_per_question?: number; option_labels?: string; num_columns?: number; sheet_code?: number | null; country_code?: string };
     if (data.id) setActiveQuizId(String(data.id));
     setActiveSheetCode(typeof data.sheet_code === "number" ? data.sheet_code : null);
+    if (data.country_code) setActiveCountryCode(data.country_code);
     if (data.answer_key) {
      const arr = parseKey(String(data.answer_key));
      if (arr.length > 0) setAnswerKey(arr);
@@ -380,7 +386,7 @@ export default function ScanPage() {
    } catch { /* no crítico */ }
 
    const report = gradeBubbles(warped, config, corners);
-   const rutR = readRut(warped, config);
+   const rutR = readRut(warped, config, idReadCfg);
    const codeR = readSheetCode(warped);
    setSheetWarn(checkSheetCode(codeR));
    const idRows = rutR.rut ? [rutR.rut] : [];
@@ -498,7 +504,7 @@ export default function ScanPage() {
    const warped = warpSheet(frame, corners, config);
    const report = gradeBubbles(warped, config, corners);
    if (!report.valid || report.diag?.timingRows !== marksRequired) { rejInvalid++; await sleep(40); continue; }
-   const rutR = readRut(warped, config);
+   const rutR = readRut(warped, config, idReadCfg);
    const reads = report.results.map((r) => r.answer);
    sessions.push({ answers: reads, rut: rutR.rut, dvOk: rutR.dvOk, scores: report.results.map((r) => r.scores), features: report.results.map((r) => r.features), rutDiag: rutR.diag });
    frameReads.push(reads.join(","));

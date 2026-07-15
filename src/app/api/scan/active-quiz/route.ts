@@ -13,12 +13,21 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("quizzes")
-    .select("id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code")
+    .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code")
     .eq("id", quizId)
     .is("archived_at", null)
     .single();
 
   if (error || !data) return NextResponse.json({ error: "Ensayo no disponible" }, { status: 404 });
+
+  // Pais del colegio: decide con que bloque de ID nacional se lee la hoja
+  // (Fase 0/1 del plan multi-pais). Query aparte para no depender de un FK
+  // join nuevo; fallback "CL" si el colegio no tiene country_code (default).
+  const { data: schoolRow } = await supabase
+    .from("schools")
+    .select("country_code")
+    .eq("id", data.school_id)
+    .maybeSingle();
 
   return NextResponse.json({
     id: data.id,
@@ -29,5 +38,6 @@ export async function GET() {
     option_labels: data.option_labels,
     num_columns: data.num_columns,
     sheet_code: data.sheet_code,
+    country_code: schoolRow?.country_code ?? "CL",
   });
 }

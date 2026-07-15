@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { calculateGrade } from "@/lib/latam";
-import { canonicalRut, normalizeRut } from "@/lib/rut";
+import { resolveNationalId } from "@/lib/national_id";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 import { sendPushToSchool } from "@/lib/push_server";
 
@@ -186,11 +186,12 @@ export async function POST(request: Request) {
     }, 0);
 
     const rawRut = String(payload.rut ?? "").trim();
-    const studentCode = rawRut;
-    const legacyStudentCode = rawRut ? normalizeRut(rawRut) : "";
-    const studentRutNorm = canonicalRut(rawRut);
-    const candidateCodes = Array.from(new Set([studentCode, legacyStudentCode].filter(Boolean)));
     const countryCode = school.country_code ?? "CL";
+    const resolvedId = resolveNationalId(rawRut, countryCode);
+    const studentCode = rawRut;
+    const legacyStudentCode = rawRut ? resolvedId.normalized : "";
+    const studentRutNorm = resolvedId.canonical;
+    const candidateCodes = Array.from(new Set([studentCode, legacyStudentCode].filter(Boolean)));
     const gradeResult = calculateGrade(score, total, countryCode, {
       gradeScale: {
         min: school.grading_scale_min ?? 1.0,

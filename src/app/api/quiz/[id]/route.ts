@@ -17,5 +17,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     .single();
 
   if (error || !data) return NextResponse.json({ error: "Ensayo no disponible" }, { status: 404 });
-  return NextResponse.json(data);
+  // country_code del colegio: /sheet lo usa para imprimir el bloque de ID
+  // nacional correcto (RUT/DNI/CPF/... — Fase 0/1, plan-multipais-motor.md).
+  return NextResponse.json({ ...data, country_code: school.country_code ?? "CL" });
 }

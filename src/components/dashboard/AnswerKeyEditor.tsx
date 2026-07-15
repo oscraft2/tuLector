@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, optionLabelsFor } from "@/lib/quiz_constraints";
+import { resolveCountryProfile } from "@/lib/country_profiles";
 
 export type EvaluationType = "custom" | "paes" | "simce";
 
@@ -10,14 +11,22 @@ export function AnswerKeyEditor({
   questions = 20,
   defaultOptions = 5,
   defaultValue = "",
+  countryCode = "CL",
 }: {
   name?: string;
   questions?: number;
   defaultOptions?: number;
   defaultValue?: string;
+  countryCode?: string;
 }) {
   const [evalType, setEvalType] = useState<EvaluationType>("custom");
   const [evalVariant, setEvalVariant] = useState<string>("");
+  // PAES/SIMCE (con formula propia de puntaje 100-1000/100-400) son especificos
+  // de Chile. Otros paises usan los sistemas de evaluacion de su propio perfil
+  // (country_profiles.ts) como ETIQUETA (evaluation_type sigue "custom", puntaje
+  // por porcentaje simple — ver equivalentScore en api/scan/result/route.ts).
+  const countryProfile = resolveCountryProfile(countryCode);
+  const isChile = countryProfile.code === "CL";
 
   const [value, setValue] = useState(defaultValue.toUpperCase());
   const [questionCount, setQuestionCount] = useState(questions);
@@ -74,21 +83,41 @@ export function AnswerKeyEditor({
     <div className="space-y-4">
       {/* Tipo de Evaluacion */}
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-sm font-semibold">
-          Tipo de prueba
-          <select
-            name="evaluation_type"
-            value={evalType}
-            onChange={(e) => handleEvalTypeChange(e.target.value as EvaluationType)}
-            className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal"
-          >
-            <option value="custom">Personalizado (Manual)</option>
-            <option value="paes">PAES (Admisión Superior)</option>
-            <option value="simce">SIMCE (Agencia Calidad)</option>
-          </select>
-        </label>
+        {isChile ? (
+          <label className="text-sm font-semibold">
+            Tipo de prueba
+            <select
+              name="evaluation_type"
+              value={evalType}
+              onChange={(e) => handleEvalTypeChange(e.target.value as EvaluationType)}
+              className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal"
+            >
+              <option value="custom">Personalizado (Manual)</option>
+              <option value="paes">PAES (Admisión Superior)</option>
+              <option value="simce">SIMCE (Agencia Calidad)</option>
+            </select>
+          </label>
+        ) : (
+          <>
+            <input type="hidden" name="evaluation_type" value="custom" />
+            <label className="text-sm font-semibold">
+              Sistema de evaluación (opcional)
+              <select
+                name="evaluation_variant"
+                value={evalVariant}
+                onChange={(e) => setEvalVariant(e.target.value)}
+                className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal"
+              >
+                <option value="">Personalizado (sin sistema)</option>
+                {countryProfile.evaluationSystems.map((sys) => (
+                  <option key={sys} value={sys}>{sys.replace(/_/g, " ")}</option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
 
-        {evalType === "paes" && (
+        {isChile && evalType === "paes" && (
           <label className="text-sm font-semibold">
             Variante PAES
             <select
@@ -106,7 +135,7 @@ export function AnswerKeyEditor({
           </label>
         )}
 
-        {evalType === "simce" && (
+        {isChile && evalType === "simce" && (
           <label className="text-sm font-semibold">
             Variante SIMCE
             <select

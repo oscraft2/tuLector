@@ -5,7 +5,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { parse } from "csv-parse/sync";
 import { getDashboardContext } from "@/lib/supabase_server";
-import { canonicalRut, validateRut, normalizeRut } from "@/lib/rut";
+import { normalizeRut } from "@/lib/rut";
+import { resolveNationalId } from "@/lib/national_id";
 import {
   QUIZ_ALLOWED_OPTIONS,
   QUIZ_MAX_QUESTIONS,
@@ -359,23 +360,25 @@ export async function importStudents(_prevState: DashboardActionState, formData:
 
   try {
     const csv = String(formData.get("csv") ?? "");
+    const countryCode = school.country_code ?? "CL";
     const courseGrades = new Map<string, string>();
     const validRows = parseStudentCsv(csv).map((row) => {
-      if (!row.rut || !row.name || !validateRut(row.rut)) return null;
+      if (!row.rut || !row.name) return null;
+      const resolved = resolveNationalId(row.rut, countryCode);
+      if (!resolved.valid) return null;
       const course = row.course;
       if (course && row.grade && !courseGrades.has(course)) courseGrades.set(course, row.grade);
-      const normalized = normalizeRut(row.rut);
 
       return {
-        student_id: normalized,
-        rut: normalized,
-        rut_normalized: canonicalRut(row.rut),
+        student_id: resolved.normalized,
+        rut: resolved.normalized,
+        rut_normalized: resolved.canonical,
         name: row.name,
         course,
       };
     }).filter((row): row is NonNullable<typeof row> => row !== null);
 
-    if (validRows.length === 0) throw new Error("No hay alumnos validos para importar. Revisa RUT, nombre y curso.");
+    if (validRows.length === 0) throw new Error(`No hay alumnos validos para importar. Revisa ${resolveCountryProfile(countryCode).studentIdLabel}, nombre y curso.`);
 
     // Sincroniza el catalogo de cursos: cada curso del CSV queda registrado en
     // `courses` para poder asociarlo a un ensayo (antes solo quedaba como texto).
@@ -660,12 +663,11 @@ export async function createStudent(_prevState: DashboardActionState, formData: 
     const name = String(formData.get("name") ?? "").trim();
     const rut = String(formData.get("rut") ?? "").trim();
     const course = String(formData.get("course") ?? "").trim();
+    const countryProfile = resolveCountryProfile(school.country_code ?? "CL");
 
-    if (!name || !rut || !course) throw new Error("Nombre, RUT y curso son obligatorios.");
-    if (!validateRut(rut)) throw new Error("El RUT chileno ingresado no es valido.");
-
-    const normalized = normalizeRut(rut);
-    const rutNormalized = canonicalRut(rut);
+    if (!name || !rut || !course) throw new Error(`Nombre, ${countryProfile.studentIdLabel} y curso son obligatorios.`);
+    const resolved = resolveNationalId(rut, countryProfile.code);
+    if (!resolved.valid) throw new Error(`El ${countryProfile.studentIdLabel} ingresado no es valido.`);
 
     // Asegura que el curso exista en el catalogo (por si vino de texto libre).
     const courseId = await findOrCreateCourse(supabase, school.id, course);
@@ -673,9 +675,9 @@ export async function createStudent(_prevState: DashboardActionState, formData: 
     await saveStudentWithoutConstraint(supabase, {
       school_id: school.id,
       user_id: user.id,
-      student_id: normalized,
-      rut: normalized,
-      rut_normalized: rutNormalized,
+      student_id: resolved.normalized,
+      rut: resolved.normalized,
+      rut_normalized: resolved.canonical,
       name,
       course,
       course_id: courseId,
@@ -705,29 +707,28 @@ export async function updateStudent(_prevState: DashboardActionState, formData: 
     const name = String(formData.get("name") ?? "").trim();
     const rut = String(formData.get("rut") ?? "").trim();
     const course = String(formData.get("course") ?? "").trim();
+    const countryProfile = resolveCountryProfile(school.country_code ?? "CL");
 
     if (!id) throw new Error("Falta el alumno a editar.");
-    if (!name || !rut || !course) throw new Error("Nombre, RUT y curso son obligatorios.");
-    if (!validateRut(rut)) throw new Error("El RUT chileno ingresado no es valido.");
-
-    const normalized = normalizeRut(rut);
-    const rutNormalized = canonicalRut(rut);
+    if (!name || !rut || !course) throw new Error(`Nombre, ${countryProfile.studentIdLabel} y curso son obligatorios.`);
+    const resolved = resolveNationalId(rut, countryProfile.code);
+    if (!resolved.valid) throw new Error(`El ${countryProfile.studentIdLabel} ingresado no es valido.`);
 
     const { data: collision, error: collisionError } = await supabase
       .from("students")
       .select("id")
       .eq("school_id", school.id)
-      .eq("rut_normalized", rutNormalized)
+      .eq("rut_normalized", resolved.canonical)
       .neq("id", id)
       .maybeSingle();
     if (collisionError) throw new Error(collisionError.message);
-    if (collision) throw new Error("Ese RUT ya pertenece a otro alumno.");
+    if (collision) throw new Error(`Ese ${countryProfile.studentIdLabel} ya pertenece a otro alumno.`);
 
     const courseId = await findOrCreateCourse(supabase, school.id, course);
     const updatePayload = {
-      student_id: normalized,
-      rut: normalized,
-      rut_normalized: rutNormalized,
+      student_id: resolved.normalized,
+      rut: resolved.normalized,
+      rut_normalized: resolved.canonical,
       name,
       course,
       course_id: courseId,
@@ -805,7 +806,7 @@ export async function assignPaperStudent(formData: FormData) {
   const paperId = String(formData.get("paper_id") ?? "").trim();
   const studentCode = String(formData.get("student_id") ?? "").trim();
   if (!paperId || !studentCode) throw new Error("Faltan datos para asignar el alumno.");
-  const studentRutNorm = canonicalRut(studentCode);
+  const studentRutNorm = resolveNationalId(studentCode, school.country_code ?? "CL").canonical;
 
   const { data: studentByRut } = studentRutNorm
     ? await supabase
@@ -837,7 +838,7 @@ export async function assignPaperStudent(formData: FormData) {
   if (!student) throw new Error("Alumno no encontrado.");
 
   const paperStudentCode = student.rut ?? student.student_id ?? studentCode;
-  const quizId = await assignPaperToStudent(supabase, school, paperId, paperStudentCode, student.name, student.rut_normalized ?? canonicalRut(paperStudentCode));
+  const quizId = await assignPaperToStudent(supabase, school, paperId, paperStudentCode, student.name, student.rut_normalized ?? resolveNationalId(paperStudentCode, school.country_code ?? "CL").canonical);
 
   revalidatePath("/dashboard/papers");
   revalidatePath(`/dashboard/papers/${paperId}`);
@@ -851,26 +852,26 @@ export async function createStudentAndAssignPaper(formData: FormData) {
   const rut = String(formData.get("rut") ?? "").trim();
   const course = String(formData.get("course") ?? "").trim();
 
-  if (!paperId || !name || !rut || !course) throw new Error("Nombre, RUT y curso son obligatorios.");
-  if (!validateRut(rut)) throw new Error("El RUT chileno ingresado no es válido.");
+  const countryProfile = resolveCountryProfile(school.country_code ?? "CL");
+  if (!paperId || !name || !rut || !course) throw new Error(`Nombre, ${countryProfile.studentIdLabel} y curso son obligatorios.`);
+  const resolved = resolveNationalId(rut, countryProfile.code);
+  if (!resolved.valid) throw new Error(`El ${countryProfile.studentIdLabel} ingresado no es valido.`);
 
-  const normalized = normalizeRut(rut);
-  const rutNormalized = canonicalRut(rut);
   const courseId = await findOrCreateCourse(supabase, school.id, course);
 
   await saveStudentWithoutConstraint(supabase, {
     school_id: school.id,
     user_id: user.id,
-    student_id: normalized,
-    rut: normalized,
-    rut_normalized: rutNormalized,
+    student_id: resolved.normalized,
+    rut: resolved.normalized,
+    rut_normalized: resolved.canonical,
     name,
     course,
     course_id: courseId,
     updated_at: new Date().toISOString(),
   });
 
-  const quizId = await assignPaperToStudent(supabase, school, paperId, normalized, name, rutNormalized);
+  const quizId = await assignPaperToStudent(supabase, school, paperId, resolved.normalized, name, resolved.canonical);
 
   revalidatePath("/dashboard/students");
   revalidatePath("/dashboard/papers");

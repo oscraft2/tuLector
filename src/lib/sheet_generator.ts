@@ -7,6 +7,7 @@ import { drawSheet, type Ctx2D } from "@/lib/sheet_render";
 import { computeRutDV } from "@/lib/omr";
 import { SHEET_W, type SheetConfig } from "@/lib/sheet_layout";
 import { type SheetCodeData } from "@/lib/sheet_code";
+import { resolveIdBlock, resolveIdReadConfig } from "@/lib/country_profiles";
 
 export interface Branding {
   title?: string;     // título del ensayo
@@ -69,6 +70,21 @@ export function randomValidRut(): string {
   if (body[0] === 0) body[0] = 1 + Math.floor(Math.random() * 9); // sin cero a la izquierda
   const dv = computeRutDV(body);
   return body.join("") + "-" + (dv === 10 ? "K" : String(dv));
+}
+
+/** ID nacional aleatorio VÁLIDO para el país dado (cuerpo + DV según el
+ * algoritmo de checksum de ese país; motor ya generalizado a 7 países — ver
+ * plan-multipais-motor.md). Chile delega en randomValidRut (largo variable
+ * 7-8, sin cambios). El resto usa el ancho fijo del bloque del motor. */
+export function randomValidNationalId(countryCode?: string | null): string {
+  if (!countryCode || countryCode.toUpperCase() === "CL") return randomValidRut();
+  const idBlock = resolveIdBlock(countryCode);
+  const idRead = resolveIdReadConfig(countryCode);
+  const body = Array.from({ length: idBlock.idDigits }, () => Math.floor(Math.random() * 10));
+  if (body[0] === 0) body[0] = 1 + Math.floor(Math.random() * 9); // sin cero a la izquierda
+  if (idBlock.checkDigits === 0 || !idRead.checkDigit) return body.join("");
+  const dv = idRead.checkDigit(body).map((d) => (d === 10 ? "K" : String(d))).join("");
+  return `${body.join("")}-${dv}`;
 }
 
 /** Respuestas aleatorias (índice de opción 0..numOptions-1) por pregunta. */

@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SHEET_W, SHEET_H, type SheetConfig } from "@/lib/sheet_layout";
 import {
-  renderSheet, randomValidRut, randomAnswers, randomPartialAnswers, safeColumns, allowedColumns,
+  renderSheet, randomValidNationalId, randomAnswers, randomPartialAnswers, safeColumns, allowedColumns,
   MIN_QUESTIONS, MAX_QUESTIONS, type Branding, type GroundTruthEntry, type SheetMarks,
 } from "@/lib/sheet_generator";
-import { validateRut, normalizeRut } from "@/lib/rut";
+import { resolveNationalId } from "@/lib/national_id";
+import { countryProfiles, resolveCountryProfile, resolveIdBlock } from "@/lib/country_profiles";
 import { SHEET_CODE_VERSION, type SheetCodeData } from "@/lib/sheet_code";
 import { isNativeApp, shareNativeImage } from "@/lib/native/capacitor";
 
@@ -45,6 +46,11 @@ export default function SheetPage() {
   const [numQuestions, setNumQuestions] = useState(20);
   const [numOptions, setNumOptions] = useState(5);
   const [numColumns, setNumColumns] = useState(1);
+  // Pais (decide el bloque de ID nacional a imprimir: RUT/DNI/CPF/CC/Cedula/CI).
+  // Manual en el generador libre; heredado del colegio cuando viene de ?quiz=<id>.
+  const [countryCode, setCountryCode] = useState("CL");
+  const countryProfile = resolveCountryProfile(countryCode);
+  const idBlock = resolveIdBlock(countryCode);
 
   // Branding
   const [title, setTitle] = useState("");
@@ -73,19 +79,19 @@ export default function SheetPage() {
   // Ensayo heredado via /sheet?quiz=<id>: la hoja toma su formato + clave + codigo.
   const [quizInfo, setQuizInfo] = useState<{ id: string; title: string; sheetCode: number | null; answerKey: string } | null>(null);
 
-  // Parsea la lista pegada (acepta "rut" o "rut,nombre,curso" por línea, salta
-  // encabezado). Devuelve RUTs válidos normalizados, sin duplicados.
+  // Parsea la lista pegada (acepta "id" o "id,nombre,curso" por línea, salta
+  // encabezado). Devuelve IDs válidos (segun el pais elegido) normalizados, sin duplicados.
   const parseRutList = (raw: string): string[] => {
     const out: string[] = [];
     const seen = new Set<string>();
     for (const line of raw.split(/\r?\n/)) {
       const first = line.split(",")[0]?.trim() ?? "";
-      if (!first || /rut/i.test(first)) continue; // vacío o encabezado
-      if (!validateRut(first)) continue;
-      const r = normalizeRut(first);
-      if (seen.has(r)) continue;
-      seen.add(r);
-      out.push(r);
+      if (!first || /rut|dni|cpf|cedula|c[eé]dula/i.test(first)) continue; // vacío o encabezado
+      const resolved = resolveNationalId(first, countryCode);
+      if (!resolved.valid) continue;
+      if (seen.has(resolved.normalized)) continue;
+      seen.add(resolved.normalized);
+      out.push(resolved.normalized);
     }
     return out;
   };
@@ -93,7 +99,7 @@ export default function SheetPage() {
   // Nº de preguntas que quedan auto-marcadas; el resto en blanco (marcado a mano).
   const effectiveMarkUpTo = partialMode ? Math.max(0, Math.min(markUpTo, numQuestions)) : numQuestions;
 
-  const cfg: SheetConfig = { numQuestions, numOptions, numColumns };
+  const cfg: SheetConfig = { numQuestions, numOptions, numColumns, idBlock };
   const branding: Branding = { title, school, logo };
   // Codigo de hoja: si viene de un ensayo, lleva su sheet_code (ata la hoja al
   // ensayo y habilita verificar "hoja correcta" al escanear).
@@ -144,6 +150,10 @@ export default function SheetPage() {
         setNumOptions(no);
         setNumColumns(safeColumns(nq, Number(q.num_columns) || 1));
         if (q.title) setTitle(String(q.title));
+        if (q.country_code) {
+          setCountryCode(String(q.country_code));
+          if (fillRut) setRut(randomValidNationalId(String(q.country_code)));
+        }
         setQuizInfo({ id: String(q.id), title: String(q.title ?? ""), sheetCode: q.sheet_code ?? null, answerKey: String(q.answer_key ?? "") });
       } catch { /* sin ensayo -> generador manual */ }
     })();
@@ -191,7 +201,7 @@ export default function SheetPage() {
     // En modo lista, los RUTs vienen del roster; en aleatorio, se generan.
     const ruts = rutMode === "list" ? parsedRuts : null;
     if (rutMode === "list" && (!ruts || ruts.length === 0)) {
-      alert("Pega al menos un RUT válido del curso (una fila por alumno).");
+      alert(`Pega al menos un ${countryProfile.studentIdLabel} válido del curso (una fila por alumno).`);
       return;
     }
     const count = ruts ? ruts.length : batchN;
@@ -205,8 +215,8 @@ export default function SheetPage() {
       if (ruts) {
         r = ruts[i - 1];
       } else {
-        r = randomValidRut();
-        while (usedRuts.has(r)) r = randomValidRut();
+        r = randomValidNationalId(countryCode);
+        while (usedRuts.has(r)) r = randomValidNationalId(countryCode);
         usedRuts.add(r);
       }
       const ans = partialMode
@@ -280,6 +290,14 @@ export default function SheetPage() {
               </div>
             )}
             <label className="block">
+              <span className="text-zinc-400">País (bloque de ID a imprimir)</span>
+              <select value={countryCode} disabled={!!quizInfo}
+                onChange={(e) => { setCountryCode(e.target.value); if (fillRut) setRut(randomValidNationalId(e.target.value)); }}
+                className={`${inputCls} disabled:opacity-50`}>
+                {countryProfiles.map((p) => <option key={p.code} value={p.code}>{p.flag} {p.countryName} ({p.studentIdLabel})</option>)}
+              </select>
+            </label>
+            <label className="block">
               <span className="text-zinc-400">N° de preguntas: <strong className="text-white">{numQuestions}</strong></span>
               <input type="range" min={MIN_QUESTIONS} max={MAX_QUESTIONS} value={numQuestions} disabled={!!quizInfo}
                 onChange={(e) => { const n = +e.target.value; setNumQuestions(n); setNumColumns(safeColumns(n, numColumns)); }}
@@ -314,16 +332,17 @@ export default function SheetPage() {
             {logo && <button onClick={() => setLogo(null)} className="text-xs text-red-400 hover:text-red-300">Quitar logo</button>}
           </section>
 
-          {/* Hoja patrón RUT */}
+          {/* Hoja patrón ID de referencia */}
           <section className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
             <label className="flex items-center gap-2 text-white font-semibold">
-              <input type="checkbox" checked={fillRut} onChange={(e) => setFillRut(e.target.checked)} />
-              Rellenar RUT de referencia (DV válido)
+              <input type="checkbox" checked={fillRut}
+                onChange={(e) => { setFillRut(e.target.checked); if (e.target.checked) setRut(randomValidNationalId(countryCode)); }} />
+              Rellenar {countryProfile.studentIdLabel} de referencia (válido)
             </label>
             {fillRut && (
-              <input value={rut} onChange={(e) => setRut(e.target.value.toUpperCase())} className={`${inputCls} font-mono`} placeholder="12345678-5" />
+              <input value={rut} onChange={(e) => setRut(e.target.value.toUpperCase())} className={`${inputCls} font-mono`} placeholder={countryProfile.studentIdExample} />
             )}
-            <p className="text-zinc-400 text-xs">Imprime una hoja con el RUT ya marcado para verificar el lector sin marcado a mano.</p>
+            <p className="text-zinc-400 text-xs">Imprime una hoja con el {countryProfile.studentIdLabel} ya marcado para verificar el lector sin marcado a mano.</p>
           </section>
 
           {/* Beta autollenado */}
