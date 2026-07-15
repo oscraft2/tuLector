@@ -43,7 +43,7 @@ usan `resolveCountryProfile` → el motor entra a bundles que no lo necesitan.
 
 ## P2 — Gaps funcionales que bloquean el uso real fuera de Chile
 
-### 2. `/consulta` público multi-país  *(el gap más importante para "usable por otros países")*
+### ✅ 2. `/consulta` público multi-país — CERRADO (`dea4fd3`, en producción)
 **Problema:** `src/app/consulta/page.tsx` + `src/app/api/consulta/route.ts` son
 100% RUT: UI con formato chileno, y el backend usa `canonicalRut()` → rechaza
 cualquier ID no-RUT con "RUT no válido". Hoy un apoderado de Brasil NO puede
