@@ -22,7 +22,7 @@ normalizado. Sin acción pendiente.
 
 ## P1 — Rápido y de bajo riesgo (recomendado hacer ya)
 
-### 1. Desacoplar `country_profiles.ts` del motor OMR
+### ✅ 1. Desacoplar `country_profiles.ts` del motor OMR — CERRADO (`a316e10`, en producción)
 **Problema:** `country_profiles.ts` importa `@/lib/omr` (~1400 líneas) solo por
 `resolveIdBlock`/`resolveIdReadConfig`, y lo importan `supabase_server.ts` (server,
 toda la app) y `AnswerKeyEditor.tsx` (cliente, form de crear ensayo) que **solo**
@@ -62,7 +62,7 @@ consultar por CPF.
 de un alumno de otro país de prueba. **Esfuerzo:** M. **Riesgo:** MEDIO (público,
 toca un lookup en vivo — probar Chile primero para descartar regresión).
 
-### 3. `api/search` interno por ID nacional
+### ✅ 3. `api/search` interno por ID nacional — CERRADO (`a316e10`, en producción)
 **Problema:** `src/app/api/search/route.ts` filtra por `canonicalRut` (además de
 nombre/`student_id`), inútil para IDs de otros países. Menos crítico porque ya cae
 a nombre/`student_id`.
@@ -112,6 +112,43 @@ modismos chilenos. **Esfuerzo:** L. **Riesgo:** BAJO pero mucha superficie tocad
   dígitos actual — fase explícitamente aparte desde el plan original.
 
 ---
+
+## Verificación del alta de un colegio nuevo (jul 15 2026, mismo día)
+
+Se recorrió el flujo de onboarding punta a punta para confirmar que un usuario
+nuevo puede realmente conectar su colegio a su país:
+
+- `dashboard/onboarding/page.tsx` renderiza los 7 perfiles como opciones (sin
+  filtro por `enabled`, campo que hoy no gatea nada — ver más abajo).
+- **Bug encontrado y corregido** (incluido en `a316e10`): el texto de ayuda bajo
+  el selector de país quedaba fijo en el mensaje de Chile (`resolveCountryProfile("CL")`
+  calculado una sola vez al montar) sin importar qué país el usuario eligiera —
+  confuso pero NO afectaba los datos guardados (el `value` del radio siempre fue
+  correcto). Corregido con estado reactivo.
+- `completeOnboarding` inserta `country_code` + `countryDefaults(country.code)`
+  (escala de notas) correctamente para los 7 países — el FK contra `countries`
+  ya no falla para ninguno (Brasil se agregó en la migración de la sesión previa).
+- `getDashboardContext()` resuelve `countryProfile` del `country_code` guardado
+  y lo expone a TODA la app (dashboard, settings, `/app/configuracion` nativo) —
+  confirmado que las 3 pantallas que muestran el perfil (`dashboard/page.tsx`,
+  `settings/page.tsx`, `app/configuracion/page.tsx`) ya leían del `countryProfile`
+  dinámico, sin hardcodear Chile.
+- `SeleccionarInstitucion` (autocompletar contra el registro RBD/MINEDU) sigue
+  siendo específico de Chile, pero SIEMPRE hay una vía manual ("Ingresar
+  manualmente") disponible sin importar el país elegido — no bloquea el alta,
+  solo no ofrece autocompletado para otros países (gap conocido, no arreglado:
+  agregar autocompletado por país sería un proyecto aparte, cada país tiene su
+  propio registro oficial o ninguno).
+- El campo `CountryProfile.enabled` existe en el tipo pero **no filtra nada en
+  ningún lado** (confirmado por grep) — es metadata muerta hoy. Si en el futuro
+  se quiere lanzar un país "en beta" sin mostrarlo aún, hay que cablear ese
+  filtro donde corresponda (onboarding + settings); hoy los 7 están 100% abiertos.
+
+**Conclusión: un usuario nuevo SÍ puede conectar su colegio a cualquiera de los
+7 países y queda funcional de punta a punta** (ID correcto en hojas/escaneo,
+escala de notas correcta, sistemas de evaluación propios, búsqueda de alumnos
+por su ID). Verificado con build de producción + `test:omr`, no solo lectura de
+código.
 
 ## Secuencia recomendada
 
