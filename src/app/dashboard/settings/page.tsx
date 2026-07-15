@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { StatusPill } from "@/components/AppShell";
 import { updateSchoolSettings } from "@/app/dashboard/actions";
@@ -8,6 +9,7 @@ import { DisconnectButton } from "@/components/dashboard/DisconnectButton";
 import { DeleteAccountButton } from "@/components/dashboard/DeleteAccountButton";
 import { LanguageSwitcher } from "@/components/dashboard/LanguageSwitcher";
 import { BiometricToggle } from "@/components/native/BiometricToggle";
+import { PortalLinkCard } from "@/components/dashboard/PortalLinkCard";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +19,11 @@ export default async function SettingsPage() {
   const initials = email.slice(0, 2).toUpperCase();
   const isOfficialSchool = !!school.rbd;
   const location = [school.city, school.region].filter(Boolean).join(", ") || "Sin ubicacion registrada";
+
+  const headersList = await headers();
+  const host = headersList.get("host") ?? "localhost:3000";
+  const proto = headersList.get("x-forwarded-proto") ?? "http";
+  const baseUrl = `${proto}://${host}`;
 
   return (
     <>
@@ -105,6 +112,10 @@ export default async function SettingsPage() {
               <ActionLink href="/app" label="Abrir app movil" description="Escanear y revisar" />
               <ActionLink href="/support" label="Soporte" description="Ayuda y contacto" />
             </div>
+          </SectionCard>
+
+          <SectionCard title="Portal de apoderados" description="Las familias pueden crear su propio acceso para ver el historial completo de resultados.">
+            <PortalLinkCard baseUrl={baseUrl} />
           </SectionCard>
 
           <SectionCard title="Seguridad" description="Acciones disponibles hoy para controlar acceso y cuenta.">

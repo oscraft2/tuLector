@@ -192,6 +192,9 @@ export default function ConsultaPage() {
           <p className="text-[11px] text-[#9ca3af]">
             TuLector · Resultados seguros para familias y alumnos
           </p>
+          <p className="mt-2 text-xs text-[#6b7280]">
+            ¿Prefieres no buscar cada vez? <Link href="/portal/auth" className="font-semibold text-[#07305f] hover:underline">Crea tu acceso de apoderado</Link>
+          </p>
         </div>
       </footer>
     </div>

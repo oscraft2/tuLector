@@ -257,8 +257,20 @@ export async function googleNativeSignIn(): Promise<string | null> {
     // Pasar scopes custom exige modificar MainActivity (no aplica aquí).
     const res = await SocialLogin.login({ provider: "google", options: {} });
     return res?.result?.idToken ?? null;
-  } catch {
-    return null; // cancelado por el usuario o sin cuenta Google en el dispositivo
+  } catch (err) {
+    // No lo tragues silencioso: "USER_CANCELLED" es el usuario cerrando el
+    // bottom-sheet, pero cualquier otro codigo (ej. DEVELOPER_ERROR /
+    // UNREGISTERED_ON_API_CONSOLE por falta del cliente OAuth "Android" con
+    // el SHA-1 de ESTE build en Google Cloud Console — ver docs/apk-plan.md)
+    // se veia identico a una cancelacion. Logueado para poder verlo con
+    // `adb logcat` o remote-debug en un build que falla para testers.
+    const code = (err as { code?: string } | undefined)?.code;
+    const msg = (err as Error | undefined)?.message;
+    if (code !== "USER_CANCELLED") {
+      // eslint-disable-next-line no-console
+      console.error("[googleNativeSignIn] fallo:", code, msg);
+    }
+    return null;
   }
 }
 
