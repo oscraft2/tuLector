@@ -8,7 +8,8 @@ import {
   MIN_QUESTIONS, MAX_QUESTIONS, type Branding, type GroundTruthEntry, type SheetMarks,
 } from "@/lib/sheet_generator";
 import { resolveNationalId } from "@/lib/national_id";
-import { countryProfiles, resolveCountryProfile, resolveIdBlock } from "@/lib/country_profiles";
+import { countryProfiles, resolveCountryProfile } from "@/lib/country_profiles";
+import { resolveIdBlock } from "@/lib/country_id_blocks";
 import { SHEET_CODE_VERSION, type SheetCodeData } from "@/lib/sheet_code";
 import { isNativeApp, shareNativeImage } from "@/lib/native/capacitor";
 

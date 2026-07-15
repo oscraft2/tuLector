@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDashboardContext } from "@/lib/supabase_server";
-import { canonicalRut } from "@/lib/rut";
+import { resolveNationalId } from "@/lib/national_id";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +26,11 @@ export async function GET(request: Request) {
   try {
     const { supabase, school } = await getDashboardContext();
     const like = `%${q}%`;
-    const rutNorm = canonicalRut(raw);
+    // Exacto por ID nacional canonico: antes solo Chile (canonicalRut), ahora
+    // usa el pais del colegio (resolveNationalId, ver national_id.ts) — ilike
+    // sobre rut/student_id ya buscaba por coincidencia parcial en cualquier
+    // pais (esas columnas guardan el ID normalizado sin importar el formato).
+    const rutNorm = resolveNationalId(raw, school.country_code ?? "CL").canonical;
     const studentFilters = [`name.ilike.${like}`, `rut.ilike.${like}`, `student_id.ilike.${like}`];
     if (rutNorm) studentFilters.push(`rut_normalized.eq.${rutNorm}`);
 

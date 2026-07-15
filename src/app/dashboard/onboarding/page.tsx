@@ -15,6 +15,10 @@ type Tab = "colegio" | "superior" | "personal";
 
 export default function OnboardingPage() {
   const initialCountry = resolveCountryProfile("CL");
+  // Reactivo al radio de pais: antes quedaba fijo en el texto de Chile sin
+  // importar que pais eligiera el usuario (bug de auditoria jul 15 2026).
+  const [countryCode, setCountryCode] = useState(initialCountry.code);
+  const selectedCountry = resolveCountryProfile(countryCode);
   const [selected, setSelected] = useState<{ item: Result; tab: Tab } | null>(null);
   const [isManual, setIsManual] = useState(false);
   const [name, setName] = useState("");
@@ -185,7 +189,11 @@ export default function OnboardingPage() {
               <div className="mt-3 grid gap-2 md:grid-cols-3">
                 {countryProfiles.map((country) => (
                   <label key={country.code} className="cursor-pointer">
-                    <input className="peer sr-only" type="radio" name="country_code" value={country.code} defaultChecked={country.code === initialCountry.code} />
+                    <input
+                      className="peer sr-only" type="radio" name="country_code" value={country.code}
+                      defaultChecked={country.code === initialCountry.code}
+                      onChange={() => setCountryCode(country.code)}
+                    />
                     <span className="block rounded-xl border border-[#d8dde3] bg-white p-3 transition peer-checked:border-2 peer-checked:border-[#07305f] peer-checked:bg-[#eef6ff]">
                       <span className="text-2xl" aria-hidden="true">{country.flag}</span>
                       <span className="mt-2 block text-sm font-semibold text-[#111827]">{country.countryName}</span>
@@ -194,7 +202,7 @@ export default function OnboardingPage() {
                   </label>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-[#5b6472]">{initialCountry.onboardingHelper}</p>
+              <p className="mt-2 text-xs text-[#5b6472]">{selectedCountry.onboardingHelper}</p>
             </fieldset>
 
             {/* Dirección si es colegio o superior */}

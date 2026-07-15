@@ -7,7 +7,7 @@ import { drawSheet, type Ctx2D } from "@/lib/sheet_render";
 import { computeRutDV } from "@/lib/omr";
 import { SHEET_W, type SheetConfig } from "@/lib/sheet_layout";
 import { type SheetCodeData } from "@/lib/sheet_code";
-import { resolveIdBlock, resolveIdReadConfig } from "@/lib/country_profiles";
+import { resolveIdBlock, resolveIdReadConfig } from "@/lib/country_id_blocks";
 
 export interface Branding {
   title?: string;     // título del ensayo

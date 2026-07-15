@@ -10,7 +10,7 @@ import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H, rutColX, rutRowY, RUT_COLS, RU
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
 import { APP_VERSION } from "@/lib/version";
 import { safeColumns, allowedColumns } from "@/lib/sheet_generator";
-import { resolveIdReadConfig } from "@/lib/country_profiles";
+import { resolveIdReadConfig } from "@/lib/country_id_blocks";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
 type ScanSyncState = "idle" | "saving" | "saved" | "review" | "error" | "queued";
