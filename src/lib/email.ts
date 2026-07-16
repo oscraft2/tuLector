@@ -227,6 +227,56 @@ const STATIC_TEMPLATES: Record<
       text: "Comprobante N° {{receipt_number}} - TuLector SpA. Fecha: {{order_date}}. Servicio: {{item_description}}. Periodo: {{billing_period}}. Monto: {{amount}}. Medio de pago: {{payment_method}}. Transaccion: {{transaction_id}}. Facturado a: {{legal_name}} (RUT {{tax_id}}), {{business_activity}}, {{address_line}}, {{region_name}}/{{commune}}. Institucion: {{school_name}}. Este comprobante no reemplaza boleta o factura tributaria. Dashboard: {{dashboard_link}}",
     },
   },
+  newsletter_confirm: {
+    "es-CL": {
+      subject: "Recibimos tu solicitud - TuLector",
+      html: `
+        <div style="font-family: sans-serif; padding: 20px; color: #111827; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px;">
+          <h2 style="color: #07305f; font-size: 20px;">¡Gracias por tu interés!</h2>
+          <p>Recibimos tu solicitud de información sobre TuLector{{name_greeting}}. Nuestro equipo la va a revisar y te vamos a contactar a la brevedad.</p>
+          <p>Mientras tanto, puedes conocer más sobre la plataforma:</p>
+          <div style="margin: 30px 0; text-align: center;">
+            <a href="{{info_link}}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Ver más</a>
+          </div>
+          <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+          <p style="font-size: 12px; color: #9ca3af; text-align: center;">TuLector OMR Engine & Platform · Chile / Latinoamérica</p>
+        </div>
+      `,
+      text: "Recibimos tu solicitud de informacion sobre TuLector{{name_greeting}}. Te contactaremos a la brevedad. Conoce mas en: {{info_link}}",
+    },
+    en: {
+      subject: "We received your request - TuLector",
+      html: `
+        <div style="font-family: sans-serif; padding: 20px; color: #111827; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px;">
+          <h2 style="color: #07305f; font-size: 20px;">Thanks for your interest!</h2>
+          <p>We received your request for information about TuLector{{name_greeting}}. Our team will review it and reach out shortly.</p>
+          <p>In the meantime, learn more about the platform:</p>
+          <div style="margin: 30px 0; text-align: center;">
+            <a href="{{info_link}}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Learn more</a>
+          </div>
+          <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+          <p style="font-size: 12px; color: #9ca3af; text-align: center;">TuLector OMR Engine & Platform</p>
+        </div>
+      `,
+      text: "We received your request for information about TuLector{{name_greeting}}. We'll reach out shortly. Learn more at: {{info_link}}",
+    },
+    "pt-BR": {
+      subject: "Recebemos sua solicitação - TuLector",
+      html: `
+        <div style="font-family: sans-serif; padding: 20px; color: #111827; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px;">
+          <h2 style="color: #07305f; font-size: 20px;">Obrigado pelo seu interesse!</h2>
+          <p>Recebemos sua solicitação de informações sobre o TuLector{{name_greeting}}. Nossa equipe vai analisá-la e entrar em contato em breve.</p>
+          <p>Enquanto isso, conheça mais sobre a plataforma:</p>
+          <div style="margin: 30px 0; text-align: center;">
+            <a href="{{info_link}}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Saiba mais</a>
+          </div>
+          <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+          <p style="font-size: 12px; color: #9ca3af; text-align: center;">TuLector OMR Engine & Platform</p>
+        </div>
+      `,
+      text: "Recebemos sua solicitacao de informacoes sobre o TuLector{{name_greeting}}. Entraremos em contato em breve. Saiba mais em: {{info_link}}",
+    },
+  },
   payment_failed: {
     "es-CL": {
       subject: "Pago no completado - TuLector",

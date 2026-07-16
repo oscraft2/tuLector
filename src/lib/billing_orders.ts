@@ -1,5 +1,6 @@
 import "server-only";
 import type { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { resolveLocaleForCountry } from "@/lib/country_profiles";
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
 
@@ -36,7 +37,7 @@ type BillingOrder = {
 type PaidOrderResult = {
   alreadyProcessed: boolean;
   order: BillingOrder;
-  school: { id: string; name: string; scans_limit: number | null; plan: string | null };
+  school: { id: string; name: string; scans_limit: number | null; plan: string | null; country_code: string | null };
   extraScans: number;
   targetPlan: string | null;
 };
@@ -112,7 +113,7 @@ export async function markOrderPaidAndApplyEntitlement(admin: AdminClient, order
 
   const { data: school, error: schoolError } = await admin
     .from("schools")
-    .select("id, name, scans_limit, plan")
+    .select("id, name, scans_limit, plan, country_code")
     .eq("id", order.school_id)
     .single();
 
@@ -256,7 +257,7 @@ export async function sendOrderReceiptIfNeeded(
 ): Promise<ReceiptSendResult> {
   const { data: orderData, error: orderError } = await admin
     .from("orders")
-    .select("*, schools:school_id ( name )")
+    .select("*, schools:school_id ( name, country_code )")
     .eq("id", orderId)
     .maybeSingle();
 
@@ -264,8 +265,10 @@ export async function sendOrderReceiptIfNeeded(
     return { sent: false, receiptNumber: "", alreadySent: false, error: "Orden no encontrada" };
   }
 
-  const order = orderData as BillingOrder & { schools: { name: string } | { name: string }[] | null };
-  const schoolName = Array.isArray(order.schools) ? order.schools[0]?.name : order.schools?.name;
+  type OrderSchool = { name: string; country_code: string | null };
+  const order = orderData as BillingOrder & { schools: OrderSchool | OrderSchool[] | null };
+  const schoolRow = Array.isArray(order.schools) ? order.schools[0] : order.schools;
+  const schoolName = schoolRow?.name;
   if (!schoolName) {
     return { sent: false, receiptNumber: "", alreadySent: false, error: "Colegio no encontrado" };
   }
@@ -306,13 +309,14 @@ export async function sendOrderReceiptIfNeeded(
   }
 
   const { sendTemplatedEmail } = await import("./email");
+  const locale = resolveLocaleForCountry(schoolRow?.country_code);
   let lastError: string | undefined;
 
   for (const email of emails) {
     const result = await sendTemplatedEmail({
       to: email,
       templateKey: "order_receipt",
-      locale: "es-CL",
+      locale,
       variables: variables as unknown as Record<string, string | number>,
     });
     if (!result.success) {
@@ -336,4 +340,89 @@ export async function sendOrderReceiptIfNeeded(
   }
 
   return { sent: true, receiptNumber, alreadySent: false };
+}
+
+export type PaymentFailedNotifyResult = { sent: boolean; error?: string };
+
+/**
+ * Avisa a los admins del colegio que un pago fue RECHAZADO explicitamente
+ * (no simplemente pendiente/en proceso). No muta `orders` -- el pago no se
+ * marca como pagado, la orden sigue pendiente para un reintento real. Sin
+ * proteccion anti-duplicado (a diferencia de sendOrderReceiptIfNeeded): un
+ * reintento del webhook de la pasarela podria reenviar este aviso; se acepta
+ * ese riesgo menor (a lo sumo 2 avisos de "no se pudo cobrar", no confunde
+ * como si fuera un doble cobro) en vez de sumar una migracion nueva solo
+ * para este caso.
+ */
+export async function notifyPaymentFailed(
+  admin: AdminClient,
+  orderId: string,
+  gatewayLabel: string,
+  statusLabel: string,
+  siteUrl: string,
+): Promise<PaymentFailedNotifyResult> {
+  const { data: orderData, error: orderError } = await admin
+    .from("orders")
+    .select("*, schools:school_id ( name, country_code )")
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (orderError || !orderData) {
+    return { sent: false, error: "Orden no encontrada" };
+  }
+
+  type OrderSchool = { name: string; country_code: string | null };
+  const order = orderData as BillingOrder & { schools: OrderSchool | OrderSchool[] | null };
+  const schoolRow = Array.isArray(order.schools) ? order.schools[0] : order.schools;
+  if (!schoolRow?.name) {
+    return { sent: false, error: "Colegio no encontrado" };
+  }
+
+  const { data: members } = await admin
+    .from("school_members")
+    .select("user_id")
+    .eq("school_id", order.school_id)
+    .eq("role", "admin");
+
+  if (!members || members.length === 0) {
+    return { sent: false, error: "No hay administradores para notificar" };
+  }
+
+  const adminUserIds = members.map((m) => m.user_id);
+  const { data: usersData } = await admin.auth.admin.listUsers();
+  const emails = (usersData?.users ?? [])
+    .filter((u) => adminUserIds.includes(u.id) && u.email)
+    .map((u) => u.email!);
+
+  if (emails.length === 0) {
+    return { sent: false, error: "No hay correos de administradores" };
+  }
+
+  const itemDescription = order.type === "plan" ? "Actualizacion de plan" : `Paquete de ${order.scans_added ?? 0} escaneos`;
+  const orderCurrency = String(order.currency || "clp").toUpperCase();
+  const amount = `$${(Number(order.amount_cents ?? 0) / 100).toLocaleString("es-CL")} ${orderCurrency}`;
+  const locale = resolveLocaleForCountry(schoolRow.country_code);
+
+  const { sendTemplatedEmail } = await import("./email");
+  let lastError: string | undefined;
+  for (const email of emails) {
+    const result = await sendTemplatedEmail({
+      to: email,
+      templateKey: "payment_failed",
+      locale,
+      variables: {
+        school_name: schoolRow.name,
+        item_description: itemDescription,
+        amount,
+        status_label: statusLabel,
+        billing_link: `${siteUrl}/dashboard/billing`,
+      },
+    });
+    if (!result.success) {
+      lastError = result.error;
+      console.warn(`[billing_orders] fallo aviso de pago rechazado a ${email}:`, result.error);
+    }
+  }
+
+  return lastError ? { sent: false, error: lastError } : { sent: true };
 }

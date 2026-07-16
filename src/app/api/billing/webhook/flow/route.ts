@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getFlowPaymentStatus } from "@/lib/flow";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { sendTemplatedEmail } from "@/lib/email";
-import { markOrderPaidAndApplyEntitlement, sendOrderReceiptIfNeeded } from "@/lib/billing_orders";
+import { resolveLocaleForCountry } from "@/lib/country_profiles";
+import { markOrderPaidAndApplyEntitlement, sendOrderReceiptIfNeeded, notifyPaymentFailed } from "@/lib/billing_orders";
 
 export async function POST(request: Request) {
   try {
@@ -16,14 +17,20 @@ export async function POST(request: Request) {
 
     // 1. Fetch real status from Flow to prevent spoofing
     const payment = await getFlowPaymentStatus(token);
+    const admin = createSupabaseAdminClient();
 
     if (payment.status !== 2) {
       console.log(`[flow_webhook] pago no aprobado (status: ${payment.status}) para orden: ${payment.commerceOrder}`);
+      // 3=rechazado explicito -> avisar. 1=pendiente y 4=anulado quedan
+      // silenciosos (no son "pago no completado" en el mismo sentido).
+      if (payment.status === 3) {
+        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+        await notifyPaymentFailed(admin, payment.commerceOrder, "Flow (Chile)", "Rechazado", siteUrl);
+      }
       return NextResponse.json({ status: "processed", detail: "pago no aprobado" });
     }
 
     const orderId = payment.commerceOrder;
-    const admin = createSupabaseAdminClient();
     const result = await markOrderPaidAndApplyEntitlement(admin, orderId, {
       expectedAmountCents: Math.round(payment.amount * 100),
       expectedCurrency: "clp",
@@ -31,6 +38,12 @@ export async function POST(request: Request) {
       gatewayPaymentId: token,
       billingPeriodMonths: 12,
     });
+
+    // Reintento del webhook para un pago ya procesado: no reenviar el correo
+    // de confirmacion (antes se reenviaba siempre, ver auditoria de correo).
+    if (result.alreadyProcessed) {
+      return NextResponse.json({ status: "already_processed" });
+    }
 
     const { order, school, extraScans, targetPlan } = result;
     const orderCurrency = String(order.currency || "clp").toUpperCase();
@@ -53,12 +66,13 @@ export async function POST(request: Request) {
 
         const formattedAmount = `$${(Number(order.amount_cents ?? 0) / 100).toLocaleString("es-CL")} ${orderCurrency}`;
         const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+        const locale = resolveLocaleForCountry(school.country_code);
 
         for (const email of emails) {
           await sendTemplatedEmail({
             to: email,
-            templateKey: result.alreadyProcessed ? "payment_success" : "payment_success",
-            locale: "es-CL",
+            templateKey: "payment_success",
+            locale,
             variables: {
               school_name: school.name,
               plan_or_pack: planOrPack,

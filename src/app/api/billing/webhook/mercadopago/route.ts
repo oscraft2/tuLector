@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getMercadoPagoPayment } from "@/lib/mercadopago";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { sendTemplatedEmail } from "@/lib/email";
-import { markOrderPaidAndApplyEntitlement } from "@/lib/billing_orders";
+import { resolveLocaleForCountry } from "@/lib/country_profiles";
+import { markOrderPaidAndApplyEntitlement, sendOrderReceiptIfNeeded, notifyPaymentFailed } from "@/lib/billing_orders";
 
 export async function POST(request: Request) {
   try {
@@ -30,14 +31,20 @@ export async function POST(request: Request) {
 
     // 1. Fetch real payment details from MercadoPago
     const payment = await getMercadoPagoPayment(paymentId);
+    const admin = createSupabaseAdminClient();
 
     if (payment.status !== "approved") {
       console.log(`[mp_webhook] pago no aprobado (status: ${payment.status}) para ID: ${paymentId}`);
+      // "rejected" explicito -> avisar. "pending"/otros quedan silenciosos
+      // (no son "pago no completado" en el mismo sentido).
+      if (payment.status === "rejected" && payment.externalReference) {
+        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+        await notifyPaymentFailed(admin, payment.externalReference, "MercadoPago", "Rechazado", siteUrl);
+      }
       return NextResponse.json({ status: "processed", detail: `pago no aprobado: ${payment.status}` });
     }
 
     const orderId = payment.externalReference;
-    const admin = createSupabaseAdminClient();
     const result = await markOrderPaidAndApplyEntitlement(admin, orderId, {
       expectedAmountCents: Math.round(payment.amount * 100),
       billingPeriodMonths: 12,
@@ -68,12 +75,13 @@ export async function POST(request: Request) {
 
         const formattedAmount = `${(Number(order.amount_cents ?? 0) / 100).toFixed(2)} ${orderCurrency}`;
         const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+        const locale = resolveLocaleForCountry(school.country_code);
 
         for (const email of emails) {
           await sendTemplatedEmail({
             to: email,
             templateKey: "payment_success",
-            locale: "es-CL", // Default to es-CL
+            locale,
             variables: {
               school_name: school.name,
               plan_or_pack: planOrPack,
@@ -83,6 +91,14 @@ export async function POST(request: Request) {
               dashboard_link: `${siteUrl}/dashboard`,
             },
           });
+        }
+
+        // Enviar comprobante formal solo si aun no se ha enviado (antes solo
+        // lo hacia el webhook de Flow -- asimetria detectada en la auditoria
+        // de correo, un colegio pagando por MercadoPago nunca lo recibia).
+        const receiptResult = await sendOrderReceiptIfNeeded(admin, orderId, planOrPack, "MercadoPago", siteUrl);
+        if (!receiptResult.sent && !receiptResult.alreadySent) {
+          console.warn("[mp_webhook] no se pudo enviar comprobante:", receiptResult.error);
         }
       }
     }

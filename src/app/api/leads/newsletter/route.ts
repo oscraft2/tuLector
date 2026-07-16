@@ -2,8 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { publicLocales, type PublicLocale } from "@/lib/public_i18n";
 import { normalizeRut, validateRut } from "@/lib/rut";
+import { sendTemplatedEmail } from "@/lib/email";
+import type { DashboardLocale } from "@/locales";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Locale del sitio publico (es/pt/en) -> locale que espera sendTemplatedEmail
+// (es-CL/en/pt-BR, ver src/locales). Mapeo propio y chico: distinto del
+// legacyToNew interno de public_i18n.ts, que resuelve textos del sitio
+// marketing (otro catalogo), no plantillas de correo.
+const NEWSLETTER_EMAIL_LOCALE: Record<PublicLocale, DashboardLocale> = { es: "es-CL", pt: "pt-BR", en: "en" };
 
 function cleanText(value: unknown, maxLength: number) {
   const text = String(value ?? "").replace(/[\u0000-\u001F\u007F]/g, " ").trim();
@@ -95,6 +103,23 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error("[contact_leads] upsert failed", error);
       return NextResponse.json({ error: "No pudimos registrar tu solicitud. Intenta nuevamente." }, { status: 500 });
+    }
+
+    // Confirmacion simple (no doble opt-in): el lead ya quedo guardado, un
+    // fallo de correo no debe bloquear la respuesta al usuario.
+    try {
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+      await sendTemplatedEmail({
+        to: email,
+        templateKey: "newsletter_confirm",
+        locale: NEWSLETTER_EMAIL_LOCALE[locale],
+        variables: {
+          name_greeting: name ? `, ${name}` : "",
+          info_link: `${siteUrl}/precios`,
+        },
+      });
+    } catch (emailError) {
+      console.warn("[contact_leads] fallo el correo de confirmacion:", emailError);
     }
 
     return NextResponse.json({ ok: true });
