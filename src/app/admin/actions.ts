@@ -18,6 +18,199 @@ export async function updateSchoolPlan(formData: FormData) {
   revalidatePath("/admin/schools");
 }
 
+export async function updateSchoolStatus(formData: FormData) {
+  const { user, role, admin } = await requirePlatformContext(["platform_admin", "finance", "support"]);
+  const schoolId = String(formData.get("school_id") ?? "");
+  const status = String(formData.get("status") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+  const allowed = new Set(["active", "paused", "inactive"]);
+
+  if (!schoolId || !allowed.has(status) || !reason) {
+    throw new Error("Colegio, estado y motivo son obligatorios.");
+  }
+
+  const { error } = await admin.from("schools").update({ status, updated_at: new Date().toISOString() }).eq("id", schoolId);
+  if (error) throw new Error(`Error al actualizar estado: ${error.message}`);
+
+  await writeAuditLog({
+    actorUserId: user.id,
+    actorRole: role,
+    schoolId,
+    targetType: "school",
+    targetId: schoolId,
+    action: "school.status_update",
+    reason,
+    metadata: { status },
+  });
+
+  revalidatePath(`/admin/schools/${schoolId}`);
+  revalidatePath("/admin/schools");
+}
+
+export async function saveSiteConfig(formData: FormData) {
+  const { user, role, admin } = await requirePlatformContext(["platform_admin"]);
+  const key = String(formData.get("key") ?? "").trim();
+  const enabled = formData.get("enabled") === "on";
+
+  if (!key) throw new Error("Falta la llave de configuracion.");
+
+  let payload: Record<string, unknown>;
+  if (key === "whatsapp_button") {
+    payload = {
+      phone: String(formData.get("phone") ?? "").trim(),
+      default_message: String(formData.get("default_message") ?? "").trim(),
+      position: formData.get("position") === "bottom-left" ? "bottom-left" : "bottom-right",
+    };
+  } else if (key === "banner_home") {
+    const variant = String(formData.get("variant") ?? "info");
+    payload = {
+      text: String(formData.get("text") ?? "").trim(),
+      link_url: String(formData.get("link_url") ?? "").trim(),
+      link_label: String(formData.get("link_label") ?? "").trim(),
+      variant: variant === "warning" || variant === "promo" ? variant : "info",
+    };
+  } else {
+    throw new Error("Llave de configuracion desconocida.");
+  }
+
+  const { error } = await admin.from("site_config").upsert({
+    key,
+    enabled,
+    payload,
+    updated_by: user.id,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "key" });
+
+  if (error) throw new Error(`Error al guardar configuracion: ${error.message}`);
+
+  await writeAuditLog({
+    actorUserId: user.id,
+    actorRole: role,
+    targetType: "site_config",
+    targetId: key,
+    action: "site_config.update",
+    reason: "Cambio desde /admin/settings",
+    metadata: { key, enabled },
+  });
+
+  revalidatePath("/admin/settings");
+  revalidatePath("/", "layout");
+}
+
+export async function reviewExportRequest(formData: FormData) {
+  const { user, role, admin } = await requirePlatformContext(["platform_admin", "support"]);
+  const requestId = String(formData.get("request_id") ?? "");
+  const decision = String(formData.get("decision") ?? "");
+  const allowed = new Set(["approved", "rejected", "completed"]);
+
+  if (!requestId || !allowed.has(decision)) throw new Error("Solicitud o decision invalida.");
+
+  const { data: request, error: fetchError } = await admin
+    .from("export_requests")
+    .select("school_id, request_type")
+    .eq("id", requestId)
+    .single();
+  if (fetchError || !request) throw new Error("Solicitud no encontrada.");
+
+  const { error } = await admin
+    .from("export_requests")
+    .update({ status: decision, reviewed_by: user.id, reviewed_at: new Date().toISOString() })
+    .eq("id", requestId);
+  if (error) throw new Error(`Error al actualizar solicitud: ${error.message}`);
+
+  await writeAuditLog({
+    actorUserId: user.id,
+    actorRole: role,
+    schoolId: request.school_id,
+    targetType: "export_request",
+    targetId: requestId,
+    action: "export_request.review",
+    reason: `Decision: ${decision}`,
+    metadata: { decision, request_type: request.request_type },
+  });
+
+  revalidatePath("/admin/legal");
+}
+
+export async function updateSupportTicket(formData: FormData) {
+  const { user, role, admin } = await requirePlatformContext(["platform_admin", "support"]);
+  const ticketId = String(formData.get("ticket_id") ?? "");
+  const status = String(formData.get("status") ?? "");
+  const priority = String(formData.get("priority") ?? "");
+  const allowedStatus = new Set(["open", "pending", "resolved", "closed"]);
+  const allowedPriority = new Set(["low", "normal", "high", "urgent"]);
+
+  if (!ticketId || !allowedStatus.has(status) || !allowedPriority.has(priority)) {
+    throw new Error("Ticket, estado o prioridad invalidos.");
+  }
+
+  const { error } = await admin
+    .from("support_tickets")
+    .update({ status, priority, updated_at: new Date().toISOString() })
+    .eq("id", ticketId);
+  if (error) throw new Error(`Error al actualizar ticket: ${error.message}`);
+
+  await writeAuditLog({
+    actorUserId: user.id,
+    actorRole: role,
+    targetType: "support_ticket",
+    targetId: ticketId,
+    action: "support_ticket.update",
+    reason: `Estado: ${status}, prioridad: ${priority}`,
+    metadata: { status, priority },
+  });
+
+  revalidatePath("/admin/support");
+}
+
+export async function assignSupportTicket(formData: FormData) {
+  const { user, role, admin } = await requirePlatformContext(["platform_admin", "support"]);
+  const ticketId = String(formData.get("ticket_id") ?? "");
+  const assignedTo = String(formData.get("assigned_to") ?? "").trim();
+
+  if (!ticketId) throw new Error("Falta el ticket.");
+
+  const { error } = await admin
+    .from("support_tickets")
+    .update({ assigned_to: assignedTo || null, updated_at: new Date().toISOString() })
+    .eq("id", ticketId);
+  if (error) throw new Error(`Error al asignar ticket: ${error.message}`);
+
+  await writeAuditLog({
+    actorUserId: user.id,
+    actorRole: role,
+    targetType: "support_ticket",
+    targetId: ticketId,
+    action: "support_ticket.assign",
+    reason: assignedTo ? `Asignado a ${assignedTo}` : "Desasignado",
+    metadata: { assignedTo },
+  });
+
+  revalidatePath("/admin/support");
+}
+
+export async function addSupportTicketNote(formData: FormData) {
+  const { user, role, admin } = await requirePlatformContext(["platform_admin", "support"]);
+  const ticketId = String(formData.get("ticket_id") ?? "");
+  const note = String(formData.get("note") ?? "").trim();
+
+  if (!ticketId || !note) throw new Error("Falta el ticket o la nota.");
+
+  const { error } = await admin.from("support_ticket_notes").insert({ ticket_id: ticketId, author_id: user.id, note });
+  if (error) throw new Error(`Error al agregar nota: ${error.message}`);
+
+  await writeAuditLog({
+    actorUserId: user.id,
+    actorRole: role,
+    targetType: "support_ticket",
+    targetId: ticketId,
+    action: "support_ticket.note",
+    reason: "Nota interna agregada",
+  });
+
+  revalidatePath("/admin/support");
+}
+
 export async function toggleFeatureFlag(formData: FormData) {
   const { user, role, admin } = await requirePlatformContext(["platform_admin"]);
   const key = String(formData.get("key") ?? "");

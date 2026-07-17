@@ -9,6 +9,7 @@ const adminNav = [
   ["/admin/marketing", "Marketing"],
   ["/admin/support", "Soporte"],
   ["/admin/flags", "Flags"],
+  ["/admin/settings", "Config. del sitio"],
   ["/admin/legal", "Legal"],
   ["/admin/observability", "Observabilidad"],
   ["/admin/dataset", "Dataset"],
