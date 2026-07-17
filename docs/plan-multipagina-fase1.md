@@ -1,9 +1,31 @@
 # Plan: Multipágina (Fase 1) — cablear assembleMultipageResult
 
-> Reconstruido jul 2026: este plan se diseñó en una sesión de planificación y
-> quedó pausado a pedido del usuario para priorizar otro trabajo (sistema de
-> correo). Se guarda aquí (en vez de en el archivo de plan efímero de la
-> sesión) para que no se pierda entre sesiones. **No ejecutado todavía.**
+> **✅ IMPLEMENTADO (jul 2026, commit `78b8ee1`, pusheado a `master`/producción).**
+> Todo el diseño de este documento se ejecutó tal cual, con un ajuste
+> encontrado sobre la marcha (ver abajo). Verificado con build de producción
+> OK, `test:omr` 23/23 (motor intacto), y una prueba sintética end-to-end real
+> (ensayo de 150 preguntas, 2 hojas escaneadas con el motor real en orden
+> INVERTIDO → 150/150 respuestas reconstruidas correctamente).
+>
+> **Pendiente real: la migración `supabase/migrations/20260716000000_paper_pages.sql`
+> está commiteada al repo pero NO aplicada a la base de datos de producción**
+> (`supabase db push` no se corrió — se pide confirmación explícita, regla
+> vigente del proyecto). El código tiene degradación elegante mientras tanto:
+> si la tabla no existe, un escaneo multipágina cae a "revisión manual" en vez
+> de error 500 (`isMissingTableError`, mismo patrón que `isMissingColumnError`).
+> Sin la migración aplicada, la feature está "presente pero inerte" — un
+> profesor podría crear y ver un ensayo de 250 preguntas, pero escanearlo no
+> completará el ensamblado hasta aplicar la migración.
+>
+> **Ajuste de diseño encontrado durante la implementación** (no estaba en el
+> plan original): todas las páginas de un ensayo multipágina usan el MISMO
+> grid fijo de `MAX_QUESTIONS` (100), incluida la última (con filas de
+> burbujas sin usar) — no un grid recortado a su cantidad real de preguntas.
+> Motivo: `/scan` lee con una config ESTÁTICA por ensayo (no sabe qué página
+> tiene delante de la cámara hasta decodificar el código de hoja, que ocurre
+> DESPUÉS de aplicar la grilla de lectura) — si el tamaño de grid variara
+> entre páginas, la última se leería mal. Verificado con la prueba sintética
+> de 150 preguntas (página 2 con 50 preguntas reales sobre un grid de 100).
 
 ## Contexto
 
@@ -166,6 +188,23 @@ vigente del proyecto).
   guardada. Faltan: {missingPages.join(', ')}.". Reusa el mismo banner
   condicional que ya pinta `saved`/`review`/`queued` (un color nuevo, sin
   rediseño).
+
+## Pendientes reales encontrados en la auditoría post-implementación (jul 2026)
+
+Ninguno bloquea el uso — todos son mejoras de robustez/UX para cuando la
+feature se use a escala real:
+
+1. **Vista "en progreso" en el dashboard** (el gap más importante): hoy un
+   ensayo multipágina a medio escanear vive solo en `paper_pages`, invisible
+   para el profesor — no hay forma de ver "al alumno X le falta la página 2".
+2. **Sin límite de vida** para páginas parciales abandonadas (sin TTL/limpieza
+   si un alumno nunca completa el ensayo).
+3. **`incrementScansUsed` no es atómico** (read-then-write) — dos páginas
+   escaneadas casi simultáneamente podrían perder un conteo de cuota. Riesgo
+   bajo (un profesor escanea de a una página desde un solo teléfono).
+4. **El generador "beta" (autollenado masivo) sigue sin soportar multipágina**
+   — deshabilitado a propósito en la UI, sin impacto en producción real, mismo
+   ítem que ya estaba "fuera de alcance" en el plan original.
 
 ## Explícitamente fuera de este pase
 
