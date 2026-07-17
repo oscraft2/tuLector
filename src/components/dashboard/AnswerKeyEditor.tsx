@@ -3,6 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE, optionLabelsFor } from "@/lib/quiz_constraints";
 import { resolveCountryProfile } from "@/lib/country_profiles";
+import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
 
 export type EvaluationType = "custom" | "paes" | "simce";
 
@@ -77,7 +78,6 @@ export function AnswerKeyEditor({
     .filter((char) => allowed.has(char))
     .join("");
   const valid = clean.length === questionCount;
-  const preview = useMemo(() => Array.from({ length: questionCount }, (_, i) => clean[i] ?? "-"), [clean, questionCount]);
 
   return (
     <div className="space-y-4">
@@ -239,10 +239,8 @@ export function AnswerKeyEditor({
       <p className={valid ? "mt-2 text-xs text-[#4b5563]" : "mt-2 text-xs font-semibold text-[#b45309]"}>
         {clean.length}/{questionCount} respuestas validas {labels}.
       </p>
-      <div className="mt-3 grid grid-cols-5 gap-1 sm:grid-cols-10" aria-label="Vista de clave">
-        {preview.map((answer, index) => (
-          <span key={index} className="rounded border border-[#e6e8eb] bg-[#f8f9fb] px-2 py-1 text-center text-xs font-semibold">{index + 1}:{answer}</span>
-        ))}
+      <div className="mt-3">
+        <AnswerKeyGrid answerKey={clean} numQuestions={questionCount} />
       </div>
     </div>
   );

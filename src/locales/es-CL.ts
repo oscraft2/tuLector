@@ -1,6 +1,6 @@
 export const esCL = {
   dashboard: "Dashboard",
-  quizzes: "Ensayos",
+  quizzes: "Evaluaciones",
   students: "Alumnos",
   papers: "Lecturas app",
   results: "Resultados",

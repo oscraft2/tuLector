@@ -181,13 +181,18 @@ export const getDashboardContext = cache(async function getDashboardContext() {
     role: m.role,
   }));
 
+  const countryProfile = resolveCountryProfile((school as DashboardSchool).country_code);
+
   return {
     supabase,
     user,
     member: membership as DashboardMember,
     school: school as DashboardSchool,
-    countryProfile: resolveCountryProfile((school as DashboardSchool).country_code),
-    locale: ((profile?.locale as DashboardLocale | undefined) ?? "es-CL"),
+    countryProfile,
+    // El idioma manual del usuario (profiles.locale) siempre gana si existe;
+    // sin eleccion manual, hereda el idioma recomendado del pais del colegio
+    // en vez de forzar "es-CL" a todos (ej. Brasil ya ve pt-BR por defecto).
+    locale: ((profile?.locale as DashboardLocale | undefined) ?? countryProfile.locale),
     isAdmin: membership.role === "admin",
     userSchools,
   };

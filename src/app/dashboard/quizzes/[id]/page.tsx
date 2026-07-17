@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { QuizStats } from "@/components/dashboard/QuizStats";
 import { canonicalRut } from "@/lib/rut";
 import { PrintButton } from "@/components/dashboard/PrintButton";
+import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
 
 export const dynamic = "force-dynamic";
 
@@ -104,8 +105,11 @@ export default async function QuizDetailPage({ params }: PageProps) {
         </section>
         <section className="rounded-md border border-[#e1e5ea] bg-white p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div><h2 className="text-xl font-semibold">Clave</h2><p className="mt-1 font-mono text-sm tracking-wider text-[#5b6472]">{quiz.answer_key}</p></div>
+            <h2 className="text-xl font-semibold">Clave</h2>
             <div className="flex flex-col gap-2 sm:flex-row"><Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold">Generar hoja</Link><form action={startScanForQuiz}><input type="hidden" name="quiz_id" value={quiz.id} /><button className="w-full rounded-md bg-[#07305f] px-4 py-2 text-sm font-semibold text-white sm:w-auto">Abrir lector</button></form><PrintButton label="Imprimir" className="rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold text-[#111827] hover:bg-gray-50" /></div>
+          </div>
+          <div className="mt-4">
+            <AnswerKeyGrid answerKey={String(quiz.answer_key ?? "")} numQuestions={Number(quiz.num_questions) || 0} />
           </div>
         </section>
 
