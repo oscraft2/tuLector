@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
 import { localeHref } from "@/lib/public_i18n";
@@ -32,6 +33,15 @@ const PRODUCT_IMAGES = {
  * logo/cerrar -> RegionSelector -> acordeon Producto (con thumbs reales) ->
  * acordeon Soluciones -> links planos -> CTAs sticky. Scroll-lock del body
  * con cleanup; ESC cierra; cualquier navegacion cierra.
+ *
+ * Se renderiza via createPortal a document.body: PublicHeader tiene
+ * backdrop-blur, y cualquier ancestro con filter/backdrop-filter se
+ * convierte en el containing block de sus descendientes position:fixed
+ * (spec CSS). Sin el portal, este panel/overlay quedaban encogidos a la
+ * altura del <header> (~146px) y desplazados fuera del viewport en vez de
+ * cubrir toda la pantalla -- bug real encontrado y verificado en vivo
+ * (drawer.offsetParent === header) al auditar "se pierde la funcionalidad
+ * en movil".
  */
 export function MobileDrawer({ open, onClose, currentLocale, whatsapp }: MobileDrawerProps) {
   const [section, setSection] = useState<"producto" | "soluciones" | null>("producto");
@@ -72,7 +82,7 @@ export function MobileDrawer({ open, onClose, currentLocale, whatsapp }: MobileD
     { href: localeHref("/security", currentLocale), label: copy.security },
   ];
 
-  return (
+  return createPortal(
     <>
       <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm tl-anim-fade lg:hidden" onClick={onClose} aria-hidden="true" />
       <aside
@@ -181,6 +191,7 @@ export function MobileDrawer({ open, onClose, currentLocale, whatsapp }: MobileD
           </div>
         </div>
       </aside>
-    </>
+    </>,
+    document.body,
   );
 }
