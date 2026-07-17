@@ -65,9 +65,11 @@ export default async function SettingsPage() {
             <form action={updateSchoolSettings} className="grid gap-3">
               <FieldInput name="name" label="Nombre" defaultValue={school.name} readOnly={isOfficialSchool || !isAdmin} />
               <FieldInput name="subdomain" label="Subdominio" defaultValue={school.subdomain ?? ""} readOnly={!isAdmin} />
-              <FieldInput name="rbd" label="RBD" defaultValue={school.rbd ?? ""} readOnly={isOfficialSchool || !isAdmin} />
-              <FieldInput name="region" label="Region" defaultValue={school.region ?? ""} readOnly={isOfficialSchool || !isAdmin} />
-              <FieldInput name="city" label="Ciudad" defaultValue={school.city ?? ""} readOnly={isOfficialSchool || !isAdmin} />
+              {countryProfile.code === "CL" && (
+                <FieldInput name="rbd" label="RBD" defaultValue={school.rbd ?? ""} readOnly={isOfficialSchool || !isAdmin} />
+              )}
+              <FieldInput name="region" label={countryProfile.adminDivisionLabel} defaultValue={school.region ?? ""} readOnly={isOfficialSchool || !isAdmin} />
+              <FieldInput name="city" label={countryProfile.localityLabel} defaultValue={school.city ?? ""} readOnly={isOfficialSchool || !isAdmin} />
 
               <label className="text-sm font-semibold">
                 Pais / perfil

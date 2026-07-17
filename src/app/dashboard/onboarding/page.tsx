@@ -161,7 +161,7 @@ export default function OnboardingPage() {
                   />
                 </label>
 
-                {isManual && institucionTipo === "colegio" && (
+                {isManual && institucionTipo === "colegio" && selectedCountry.code === "CL" && (
                   <label className="text-sm font-semibold block mt-2">
                     RBD (Opcional)
                     <input
@@ -209,24 +209,24 @@ export default function OnboardingPage() {
             {institucionTipo !== "personal" && (
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="text-sm font-semibold">
-                  Región
+                  {selectedCountry.adminDivisionLabel}
                   <input
                     readOnly={!isManual}
                     value={region}
                     onChange={(e) => setRegion(e.target.value)}
                     className={`mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal ${!isManual ? "bg-[#f3f4f6] text-[#6b7280]" : "bg-white text-[#0b1220]"}`}
-                    placeholder={!isManual ? "Se completará automáticamente" : "Ej. Metropolitana"}
+                    placeholder={!isManual ? "Se completará automáticamente" : `Ej. ${selectedCountry.adminDivisionExample}`}
                     tabIndex={!isManual ? -1 : undefined}
                   />
                 </label>
                 <label className="text-sm font-semibold">
-                  Comuna / Ciudad
+                  {selectedCountry.localityLabel}
                   <input
                     readOnly={!isManual}
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
                     className={`mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal ${!isManual ? "bg-[#f3f4f6] text-[#6b7280]" : "bg-white text-[#0b1220]"}`}
-                    placeholder={!isManual ? "Se completará automáticamente" : "Ej. Santiago"}
+                    placeholder={!isManual ? "Se completará automáticamente" : `Ej. ${selectedCountry.localityExample}`}
                     tabIndex={!isManual ? -1 : undefined}
                   />
                 </label>

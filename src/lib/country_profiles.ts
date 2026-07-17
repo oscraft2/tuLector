@@ -13,6 +13,10 @@ export type CountryProfile = {
   timezone: string;
   studentIdLabel: string;
   studentIdExample: string;
+  adminDivisionLabel: string;
+  adminDivisionExample: string;
+  localityLabel: string;
+  localityExample: string;
   grading: {
     min: number;
     max: number;
@@ -39,6 +43,10 @@ export const countryProfiles: readonly CountryProfile[] = [
     timezone: "America/Santiago",
     studentIdLabel: "RUT",
     studentIdExample: "12.345.678-9",
+    adminDivisionLabel: "Región",
+    adminDivisionExample: "Metropolitana",
+    localityLabel: "Comuna",
+    localityExample: "Santiago",
     grading: {
       min: 1,
       max: 7,
@@ -63,6 +71,10 @@ export const countryProfiles: readonly CountryProfile[] = [
     timezone: "America/Argentina/Buenos_Aires",
     studentIdLabel: "DNI",
     studentIdExample: "12.345.678",
+    adminDivisionLabel: "Provincia",
+    adminDivisionExample: "Buenos Aires",
+    localityLabel: "Localidad",
+    localityExample: "La Plata",
     grading: {
       min: 1,
       max: 10,
@@ -87,6 +99,10 @@ export const countryProfiles: readonly CountryProfile[] = [
     timezone: "America/Sao_Paulo",
     studentIdLabel: "CPF",
     studentIdExample: "123.456.789-00",
+    adminDivisionLabel: "Estado",
+    adminDivisionExample: "São Paulo",
+    localityLabel: "Cidade",
+    localityExample: "São Paulo",
     grading: {
       min: 0,
       max: 10,
@@ -111,6 +127,10 @@ export const countryProfiles: readonly CountryProfile[] = [
     timezone: "America/Lima",
     studentIdLabel: "DNI",
     studentIdExample: "12345678",
+    adminDivisionLabel: "Departamento",
+    adminDivisionExample: "Lima",
+    localityLabel: "Provincia",
+    localityExample: "Lima",
     grading: {
       min: 0,
       max: 20,
@@ -135,6 +155,10 @@ export const countryProfiles: readonly CountryProfile[] = [
     timezone: "America/Bogota",
     studentIdLabel: "CC / TI",
     studentIdExample: "1234567890",
+    adminDivisionLabel: "Departamento",
+    adminDivisionExample: "Cundinamarca",
+    localityLabel: "Municipio",
+    localityExample: "Bogotá",
     grading: {
       min: 0,
       max: 100,
@@ -159,6 +183,10 @@ export const countryProfiles: readonly CountryProfile[] = [
     timezone: "America/Guayaquil",
     studentIdLabel: "Cedula",
     studentIdExample: "1712345678",
+    adminDivisionLabel: "Provincia",
+    adminDivisionExample: "Pichincha",
+    localityLabel: "Cantón",
+    localityExample: "Quito",
     grading: {
       min: 0,
       max: 10,
@@ -183,6 +211,10 @@ export const countryProfiles: readonly CountryProfile[] = [
     timezone: "America/Montevideo",
     studentIdLabel: "CI",
     studentIdExample: "1.234.567-8",
+    adminDivisionLabel: "Departamento",
+    adminDivisionExample: "Montevideo",
+    localityLabel: "Localidad",
+    localityExample: "Montevideo",
     grading: {
       min: 1,
       max: 12,
