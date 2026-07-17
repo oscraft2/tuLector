@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { assertSchoolAdmin, getDashboardContext } from "@/lib/supabase_server";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { createFlowPayment, getFlowConfig } from "@/lib/flow";
+import { createDlocalPayment, getDlocalConfig } from "@/lib/dlocal";
 import { canonicalRut } from "@/lib/rut";
+import { resolveCountryIdFormat, validateNationalIdFormat, normalizeNationalId } from "@/lib/national_id";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 import {
   readBillingDetailsPayload,
@@ -10,6 +12,15 @@ import {
   resolveBillingCatalogItem,
   type ChileanBillingDetails,
 } from "@/lib/billing_catalog";
+
+type LatamBillingDetails = {
+  legalName: string;
+  email: string;
+  phone: string | null;
+  document: string | null;
+  documentType: string | null;
+  country: string;
+};
 
 function cleanText(value: unknown, maxLength: number) {
   return String(value ?? "").trim().replace(/\s+/g, " ").slice(0, maxLength);
@@ -61,6 +72,41 @@ async function parseChileanBillingDetails(
   };
 }
 
+/**
+ * Datos de facturacion para el resto de LatAm (via dLocal): sin RUT/comuna
+ * chilena -- solo institucion, correo y (si el usuario lo informa) su
+ * documento nacional, validado con el mismo catalogo que usa el login de
+ * apoderados (src/lib/national_id.ts). El documento es opcional aca: dLocal
+ * puede pedirlo el mismo en su pagina de pago segun el metodo elegido.
+ */
+function parseLatamBillingDetails(
+  payload: Record<string, unknown>,
+  accountEmail: string,
+  countryCode: string,
+): LatamBillingDetails | null {
+  const legalName = cleanText(payload.legalName ?? payload.legal_name ?? payload.institution, 160);
+  const phone = cleanText(payload.phone, 40) || null;
+  const documentInput = cleanText(payload.taxId ?? payload.tax_id ?? payload.document, 20);
+
+  if (legalName.length < 3 || !accountEmail) return null;
+
+  const idFormat = resolveCountryIdFormat(countryCode);
+  let document: string | null = null;
+  if (documentInput) {
+    if (idFormat?.regex && !validateNationalIdFormat(documentInput, countryCode)) return null;
+    document = normalizeNationalId(documentInput);
+  }
+
+  return {
+    legalName,
+    email: accountEmail,
+    phone,
+    document,
+    documentType: idFormat?.idLabel ?? null,
+    country: countryCode.toUpperCase(),
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const { school, user, isAdmin } = await getDashboardContext();
@@ -83,16 +129,8 @@ export async function POST(request: Request) {
     }
 
     const item = resolveBillingCatalogItem(input, school.country_code);
-    if (item.gateway !== "flow") {
+    if (item.gateway !== "flow" && item.gateway !== "dlocal") {
       return NextResponse.json({ error: "La pasarela para este pais aun no esta habilitada. Contactanos para activar pagos institucionales." }, { status: 501 });
-    }
-
-    const flowConfig = getFlowConfig();
-    if (!flowConfig.configured && process.env.NODE_ENV === "production") {
-      return NextResponse.json({ error: "Flow no esta configurado para pagos reales." }, { status: 503 });
-    }
-    if (flowConfig.sandbox && process.env.NODE_ENV === "production") {
-      return NextResponse.json({ error: "Flow sandbox no esta permitido en produccion." }, { status: 503 });
     }
 
     const admin = createSupabaseAdminClient();
@@ -101,9 +139,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Tu cuenta no tiene un correo valido para iniciar el pago." }, { status: 422 });
     }
 
-    const billingDetails = await parseChileanBillingDetails(admin, readBillingDetailsPayload(payload), accountEmail);
-    if (!billingDetails) {
-      return NextResponse.json({ error: "Completa datos de facturacion validos para Chile." }, { status: 422 });
+    let billingDetails: ChileanBillingDetails | LatamBillingDetails | null;
+    if (item.gateway === "flow") {
+      const flowConfig = getFlowConfig();
+      if (!flowConfig.configured && process.env.NODE_ENV === "production") {
+        return NextResponse.json({ error: "Flow no esta configurado para pagos reales." }, { status: 503 });
+      }
+      if (flowConfig.sandbox && process.env.NODE_ENV === "production") {
+        return NextResponse.json({ error: "Flow sandbox no esta permitido en produccion." }, { status: 503 });
+      }
+      billingDetails = await parseChileanBillingDetails(admin, readBillingDetailsPayload(payload), accountEmail);
+      if (!billingDetails) {
+        return NextResponse.json({ error: "Completa datos de facturacion validos para Chile." }, { status: 422 });
+      }
+    } else {
+      const dlocalConfig = getDlocalConfig();
+      if (!dlocalConfig.configured && process.env.NODE_ENV === "production") {
+        return NextResponse.json({ error: "dLocal no esta configurado para pagos reales." }, { status: 503 });
+      }
+      if (dlocalConfig.sandbox && process.env.NODE_ENV === "production") {
+        return NextResponse.json({ error: "dLocal sandbox no esta permitido en produccion." }, { status: 503 });
+      }
+      billingDetails = parseLatamBillingDetails(readBillingDetailsPayload(payload), accountEmail, school.country_code || "GLOBAL");
+      if (!billingDetails) {
+        return NextResponse.json({ error: "Completa el nombre de tu institucion para continuar." }, { status: 422 });
+      }
     }
 
     let orderInsert = await admin
@@ -144,24 +204,44 @@ export async function POST(request: Request) {
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
-    let redirectUrl = "";
-    let sessionToken = "";
+    let redirectUrl: string;
+    let sessionToken: string;
 
-    const flowResult = await createFlowPayment({
-      amount: item.amount,
-      email: accountEmail,
-      subject: item.description,
-      commerceOrder: order.id,
-      urlConfirmation: `${siteUrl}/api/billing/webhook/flow`,
-      urlReturn: `${siteUrl}/dashboard/billing?order_id=${order.id}`,
-    });
-    redirectUrl = flowResult.url;
-    sessionToken = flowResult.token;
+    if (item.gateway === "flow") {
+      const flowResult = await createFlowPayment({
+        amount: item.amount,
+        email: accountEmail,
+        subject: item.description,
+        commerceOrder: order.id,
+        urlConfirmation: `${siteUrl}/api/billing/webhook/flow`,
+        urlReturn: `${siteUrl}/dashboard/billing?order_id=${order.id}`,
+      });
+      redirectUrl = flowResult.url;
+      sessionToken = flowResult.token;
+    } else {
+      const latamDetails = billingDetails as LatamBillingDetails;
+      const dlocalResult = await createDlocalPayment({
+        amount: item.amount,
+        currency: item.currency,
+        country: latamDetails.country,
+        payerEmail: accountEmail,
+        payerName: latamDetails.legalName,
+        payerDocument: latamDetails.document,
+        payerDocumentType: latamDetails.documentType,
+        orderId: order.id,
+        description: item.description,
+        notificationUrl: `${siteUrl}/api/billing/webhook/dlocal`,
+        successUrl: `${siteUrl}/dashboard/billing?order_id=${order.id}`,
+      });
+      redirectUrl = dlocalResult.url;
+      sessionToken = dlocalResult.paymentId;
+    }
 
     await admin
       .from("orders")
       .update({
         stripe_checkout_session_id: sessionToken,
+        gateway: item.gateway,
       })
       .eq("id", order.id);
 

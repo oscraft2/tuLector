@@ -1,3 +1,11 @@
+/**
+ * @deprecated Reemplazado por src/lib/dlocal.ts (ver docs/dlocal-pasarela-unificada.md).
+ * Ningun checkout invoca ya createMercadoPagoPreference (src/app/api/billing/checkout/route.ts
+ * solo usa flow/dlocal) -- este archivo y su webhook (api/billing/webhook/mercadopago)
+ * quedan huerfanos pero funcionales, sin eliminar todavia por si queda algun webhook
+ * activo configurado en el dashboard de MercadoPago apuntando aca. No usar para
+ * checkouts nuevos.
+ */
 export interface MercadoPagoPreferenceOptions {
   title: string;
   unitPrice: number;

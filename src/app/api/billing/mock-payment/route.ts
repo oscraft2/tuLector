@@ -38,6 +38,14 @@ export async function GET(request: Request) {
       await fetch(`${siteUrl}/api/billing/webhook/mercadopago?${query.toString()}`, {
         method: "POST",
       });
+    } else if (gateway === "dlocal") {
+      // Trigger our own dLocal webhook locally
+      const paymentId = `${token}_orderId_${orderId}`;
+      await fetch(`${siteUrl}/api/billing/webhook/dlocal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: paymentId }),
+      });
     } else {
       const admin = createSupabaseAdminClient();
       await markOrderPaidAndApplyEntitlement(admin, orderId);

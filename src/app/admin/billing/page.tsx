@@ -20,6 +20,7 @@ export default async function BillingAdminPage() {
         scans_added,
         amount_cents,
         currency,
+        gateway,
         paid_at,
         created_at,
         school_id,
@@ -39,7 +40,15 @@ export default async function BillingAdminPage() {
   const totalOrdersCount = orders?.length ?? 0;
   const paidOrdersCount = paidOrders.length;
 
-  // Group earnings by currency
+  const GATEWAY_LABELS: Record<string, string> = {
+    flow: "Flow (Chile)",
+    dlocal: "dLocal (LatAm)",
+    mercadopago: "MercadoPago (legado)",
+    stripe: "Stripe (legado)",
+  };
+  const gatewayLabel = (gateway: string | null) => GATEWAY_LABELS[gateway ?? ""] ?? "Sin registrar";
+
+  // Group earnings by currency (para totales financieros reales)
   const earningsByCurrency: Record<string, number> = {};
   for (const o of paidOrders) {
     const cur = (o.currency || "usd").toUpperCase();
@@ -54,25 +63,30 @@ export default async function BillingAdminPage() {
     return `$${val.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`;
   };
 
-  // Convert to summary string for a single KPI
   const clpTotal = earningsByCurrency["CLP"] || 0;
-  const usdTotal = earningsByCurrency["USD"] || 0;
-  const mxnTotal = earningsByCurrency["MXN"] || 0;
-  const brlTotal = earningsByCurrency["BRL"] || 0;
+
+  // Ingresos agrupados por pasarela REAL (orders.gateway), no adivinados por moneda
+  const paidByGateway = new Map<string, number>();
+  for (const o of paidOrders) {
+    const key = o.gateway ?? "(sin registrar)";
+    paidByGateway.set(key, (paidByGateway.get(key) ?? 0) + 1);
+  }
+  const dlocalPaidCount = paidByGateway.get("dlocal") ?? 0;
+  const legacyPaidCount = (paidByGateway.get("mercadopago") ?? 0) + (paidByGateway.get("stripe") ?? 0);
 
   return (
     <AdminShell
       active="/admin/billing"
       title="Facturación e Ingresos"
-      description="Monitoreo de ingresos recurrentes, facturas, tasas de conversión de pasarelas locales (Flow, MercadoPago) e IVA Chile 19%."
+      description="Monitoreo de ingresos recurrentes, facturas, tasas de conversión de pasarelas locales (Flow en Chile, dLocal en el resto de LatAm) e IVA Chile 19%."
     >
       <div className="space-y-6">
         {/* Financial KPI Cards */}
         <KPIGrid>
           <KPI label="Suscripciones Activas" value={activeSubs ?? 0} detail="Planes Pro/School" />
-          <KPI label="Ingresos Chile (Flow)" value={formatCurrency(clpTotal, "CLP")} detail={`${paidOrders.filter(o => o.currency === "clp").length} pagos`} />
-          <KPI label="Ingresos LATAM (MercadoPago)" value={`${formatCurrency(mxnTotal, "MXN")} / ${formatCurrency(brlTotal, "BRL")}`} detail="Pesos MX / Reales BR" />
-          <KPI label="Ingresos Stripe (Global)" value={formatCurrency(usdTotal, "USD")} detail="Resto del mundo" />
+          <KPI label="Ingresos Chile (Flow)" value={formatCurrency(clpTotal, "CLP")} detail={`${paidByGateway.get("flow") ?? 0} pagos`} />
+          <KPI label="Ingresos dLocal (LatAm)" value={dlocalPaidCount} detail="Pagos confirmados vía dLocal" />
+          <KPI label="Otros / sin pasarela activa" value={legacyPaidCount} detail="MercadoPago/Stripe (legado, sin checkout activo)" />
         </KPIGrid>
 
         {/* VAT / Impuestos Info Box */}
@@ -81,12 +95,12 @@ export default async function BillingAdminPage() {
             <div>
               <h2 className="text-base font-semibold">Cumplimiento Tributario & Pasarelas</h2>
               <p className="mt-1 text-sm text-[#5b6472]">
-                Los pagos en pesos chilenos (CLP) vía Flow incluyen el **19% de IVA (Ley de Impuestos a Servicios Digitales en Chile)**. Los pagos de MercadoPago y Stripe en dólares o monedas locales se concilian según el origen tributario del tenant.
+                Los pagos en pesos chilenos (CLP) vía Flow incluyen el **19% de IVA (Ley de Impuestos a Servicios Digitales en Chile)**. El resto de LatAm se cobra vía dLocal y se concilia según el origen tributario del tenant.
               </p>
             </div>
             <div className="flex gap-2">
               <span className="rounded bg-[#f0fdf4] px-2.5 py-1 text-xs font-semibold text-green-800 border border-green-200">Flow Prod OK</span>
-              <span className="rounded bg-[#f0fdf4] px-2.5 py-1 text-xs font-semibold text-green-800 border border-green-200">MercadoPago OK</span>
+              <span className="rounded bg-[#fffbeb] px-2.5 py-1 text-xs font-semibold text-amber-800 border border-amber-200">dLocal pendiente de activar</span>
             </div>
           </div>
         </section>
@@ -103,11 +117,7 @@ export default async function BillingAdminPage() {
               const date = new Date(order.created_at).toLocaleString("es-CL");
               const isPaid = order.status === "paid";
               const isVoid = order.status === "void" || order.status === "manual_review";
-              
-              // Guess gateway from currency/amount metadata or stripe id
-              const isFlow = order.currency === "clp";
-              const isMP = ["mxn", "brl", "cop"].includes(order.currency || "");
-              const gatewayName = isFlow ? "Flow (Chile)" : isMP ? "MercadoPago" : "Stripe";
+              const gatewayName = gatewayLabel(order.gateway ?? null);
 
               return (
                 <tr key={order.id} className="border-b border-[#eef0f3] last:border-0 text-sm">

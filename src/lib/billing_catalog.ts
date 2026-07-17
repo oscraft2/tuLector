@@ -1,5 +1,5 @@
-export type BillingCountry = "CL" | "MX" | "BR" | "CO" | "AR" | "PE" | "GLOBAL";
-export type BillingGateway = "flow" | "mercadopago" | "stripe";
+export type BillingCountry = "CL" | "MX" | "BR" | "CO" | "AR" | "PE" | "EC" | "UY" | "GLOBAL";
+export type BillingGateway = "flow" | "dlocal" | "mercadopago" | "stripe";
 export type PaidPlan = "pro" | "school";
 export type BillingCheckoutInput = { type: "plan"; plan: PaidPlan };
 
@@ -38,6 +38,8 @@ const PLAN_PRICES: Record<BillingCountry, Record<PaidPlan, number>> = {
   CO: { pro: 99000, school: 490000 },
   AR: { pro: 25, school: 120 },
   PE: { pro: 25, school: 120 },
+  EC: { pro: 25, school: 120 },
+  UY: { pro: 25, school: 120 },
   GLOBAL: { pro: 25, school: 120 },
 };
 
@@ -48,19 +50,25 @@ const CURRENCIES: Record<BillingCountry, string> = {
   CO: "cop",
   AR: "usd",
   PE: "usd",
+  EC: "usd",
+  UY: "usd",
   GLOBAL: "usd",
 };
 
+// Paises soportados por el motor multi-pais (src/lib/country_profiles.ts: CL, AR, BR,
+// PE, CO, EC, UY) mas MX, que aunque aun no tiene onboarding de dashboard activo, ya
+// tiene paginas publicas/SEO propias (src/i18n/messages.ts) anunciando precios en MXN
+// - no se retira del catalogo de precios para no dejar esas paginas prometiendo un
+// pais que no factura.
 export function resolveBillingCountry(countryCode: string | null | undefined): BillingCountry {
   const code = String(countryCode || "CL").toUpperCase();
-  if (code === "CL" || code === "MX" || code === "BR" || code === "CO" || code === "AR" || code === "PE") return code;
+  if (code === "CL" || code === "MX" || code === "BR" || code === "CO" || code === "AR" || code === "PE" || code === "EC" || code === "UY") return code;
   return "GLOBAL";
 }
 
 export function gatewayForCountry(country: BillingCountry): BillingGateway {
   if (country === "CL") return "flow";
-  if (country === "MX" || country === "BR" || country === "CO" || country === "AR" || country === "PE") return "mercadopago";
-  return "stripe";
+  return "dlocal";
 }
 
 export function parseBillingCheckoutInput(payload: unknown): BillingCheckoutInput | null {
