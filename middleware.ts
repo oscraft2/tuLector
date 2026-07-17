@@ -6,6 +6,24 @@ const allowedAdminRoles = new Set(["platform_admin", "support", "finance", "mark
 
 const localePrefixes = ["es-MX", "es-PE", "es-AR", "pt-BR", "es-CL"];
 
+// Pais (ISO 3166-1 alfa-2) -> locale de marketing. Vercel agrega este header
+// automaticamente por geolocalizacion de IP en produccion (gratis, sin
+// pedirle permiso al visitante -- a diferencia de la Geolocation API del
+// navegador, que requiere un popup de permiso y la mayoria la rechaza). En
+// local/preview sin el header, cae al Accept-Language de siempre.
+const countryToLocale: Record<string, string> = {
+  AR: "es-AR",
+  MX: "es-MX",
+  PE: "es-PE",
+  BR: "pt-BR",
+  CL: "es-CL",
+};
+
+function detectFromGeo(countryHeader: string | null): string | null {
+  if (!countryHeader) return null;
+  return countryToLocale[countryHeader.toUpperCase()] ?? null;
+}
+
 function detectFromAccept(accept: string): string | null {
   const langs = accept.split(",").map((l) => l.split(";")[0].trim().toLowerCase());
   for (const lang of langs) {
@@ -33,8 +51,12 @@ export async function middleware(request: NextRequest) {
       response.cookies.set("tulector-locale", cookieLocale, { maxAge: 60 * 60 * 24 * 365, path: "/" });
       return response;
     }
+    // Geolocalizacion real por IP (donde esta navegando de verdad) antes que
+    // el idioma del navegador (que puede no coincidir, ej. SO en ingles
+    // navegando desde Argentina).
+    const geoDetected = detectFromGeo(request.headers.get("x-vercel-ip-country"));
     const accept = request.headers.get("accept-language") ?? "";
-    const detected = detectFromAccept(accept);
+    const detected = geoDetected ?? detectFromAccept(accept);
     if (detected) {
       const url = new URL(`/${detected}`, request.url);
       url.search = searchParams.toString();

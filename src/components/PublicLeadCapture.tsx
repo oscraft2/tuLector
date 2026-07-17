@@ -3,22 +3,30 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { localizedHref, publicCopy, type PublicLocale } from "@/lib/public_i18n";
+import { localeHref, newLocaleToLegacy } from "@/lib/public_i18n";
+import { locales, defaultLocale, localeToCountry, type Locale } from "@/i18n/config";
+import { messages } from "@/i18n/messages";
 
 type SubmitState = "idle" | "loading" | "success" | "error";
 
 type PublicLeadCaptureProps = {
-  locale?: PublicLocale;
+  currentLocale?: string;
 };
 
-export function PublicLeadCapture({ locale = "es" }: PublicLeadCaptureProps) {
-  const copy = publicCopy[locale].footer.newsletter;
+export function PublicLeadCapture({ currentLocale }: PublicLeadCaptureProps) {
+  const activeLocale = locales.includes(currentLocale as Locale) ? (currentLocale as Locale) : defaultLocale;
+  // Copy y pais por default sacados del locale real por pais (bug real
+  // encontrado en uso: un visitante en /es-AR o /es-PE veia "Chile"
+  // precompletado en el campo de pais del formulario de contacto, porque
+  // esto usaba el mismo puente viejo de 3 idiomas que ya se corrigio en
+  // PublicHeader/PublicFooter -- ver esos componentes para el mismo patron).
+  const copy = messages[activeLocale].footer.newsletter;
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [institution, setInstitution] = useState("");
   const [institutionalRut, setInstitutionalRut] = useState("");
   const [phone, setPhone] = useState("");
-  const [country, setCountry] = useState(locale === "pt" ? "Brasil" : locale === "en" ? "International" : "Chile");
+  const [country, setCountry] = useState(localeToCountry[activeLocale]);
   const [consentMarketing, setConsentMarketing] = useState(true);
   const [website, setWebsite] = useState("");
   const [state, setState] = useState<SubmitState>("idle");
@@ -41,7 +49,12 @@ export function PublicLeadCapture({ locale = "es" }: PublicLeadCaptureProps) {
           institutionalRut,
           phone,
           country,
-          locale,
+          // api/leads/newsletter espera el bucket VIEJO (es/en/pt, ver
+          // src/lib/public_i18n.ts) -- distinto del locale rico por pais que
+          // ya se uso arriba para el copy/pais default. Sin este mapeo el
+          // endpoint rechazaria "es-AR" y caeria a "es" igual, pero es mas
+          // claro dejarlo explicito.
+          locale: newLocaleToLegacy(activeLocale),
           consentMarketing,
           website,
           source: typeof window !== "undefined" ? window.location.pathname : "/",
@@ -216,7 +229,7 @@ export function PublicLeadCapture({ locale = "es" }: PublicLeadCaptureProps) {
 
                 <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]">
                   <Link
-                    href={localizedHref("/auth?mode=register", locale)}
+                    href={localeHref("/auth?mode=register", activeLocale)}
                     className="inline-flex min-h-11 items-center justify-center rounded-lg bg-[#123b5d] px-5 text-sm font-bold text-white transition hover:bg-[#0f2f49]"
                   >
                     {copy.primaryAction}

@@ -39,7 +39,7 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
 
   return (
     <main className="min-h-screen bg-white text-[#111827]">
-      <PublicHeader locale={legacyLocale} currentLocale={validLocale} />
+      <PublicHeader currentLocale={validLocale} />
 
       <section className="mx-auto grid max-w-7xl items-center gap-8 px-5 pb-12 pt-8 md:px-8 md:py-14 lg:min-h-[calc(100vh-105px)] lg:grid-cols-[0.82fr_1.18fr] lg:gap-10">
         <div className="max-w-xl">
@@ -116,7 +116,7 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
 
       <WorkflowShowcase locale={legacyLocale} />
 
-      <PublicFooter locale={legacyLocale} />
+      <PublicFooter currentLocale={validLocale} />
     </main>
   );
 }

@@ -3,8 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { AR, BR, CL, CO, GB, MX, PE } from "country-flag-icons/react/3x2";
-import { publicCopy, publicLocales, type PublicLocale, type Locale, localeHref } from "@/lib/public_i18n";
-import { locales } from "@/i18n/config";
+import { type PublicLocale, type Locale } from "@/lib/public_i18n";
+import { locales, defaultLocale } from "@/i18n/config";
+import { messages } from "@/i18n/messages";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
 
 type PublicHeaderProps = {
@@ -30,8 +31,14 @@ const newLocaleLabels: Record<string, string> = {
   "es-CL": "Chile",
 };
 
-export function PublicHeader({ locale = "es", currentLocale }: PublicHeaderProps) {
-  const copy = publicCopy[locale].nav;
+export function PublicHeader({ currentLocale }: PublicHeaderProps) {
+  const activeNewLocale = locales.includes(currentLocale as Locale) ? (currentLocale as Locale) : defaultLocale;
+  // Copy del nav (incluido el tagline del topbar) sacado DIRECTO del locale
+  // real por pais (messages[activeNewLocale]), no del puente viejo de 3
+  // idiomas (publicCopy["es"], que colapsaba TODOS los paises hispanos a
+  // texto de Chile -- ej. Argentina mostraba "Corrige ensayos PAES..." en
+  // vez de su propio "Corrige examenes CBC...". Bug real encontrado en uso).
+  const copy = messages[activeNewLocale].nav;
   const [open, setOpen] = useState(false);
   const navItems = [
     { href: "/scan", label: copy.scan },
@@ -39,8 +46,6 @@ export function PublicHeader({ locale = "es", currentLocale }: PublicHeaderProps
     { href: "/security", label: copy.security },
     { href: "/support", label: copy.support },
   ];
-
-  const activeNewLocale = currentLocale ?? "es-MX";
 
   return (
     <header className="sticky top-0 z-30 border-b border-[#dfe5e2] bg-white/95 backdrop-blur">

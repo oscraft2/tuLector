@@ -3,21 +3,27 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { localeLabels, localizedHref, publicCopy, publicLocales, type PublicLocale } from "@/lib/public_i18n";
+import { localeHref } from "@/lib/public_i18n";
+import { locales, defaultLocale, localeToCountry, type Locale } from "@/i18n/config";
+import { messages } from "@/i18n/messages";
 import { PublicLeadCapture } from "@/components/PublicLeadCapture";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
 
 type PublicFooterProps = {
-  locale?: PublicLocale;
+  currentLocale?: string;
 };
 
-export function PublicFooter({ locale = "es" }: PublicFooterProps) {
-  const copy = publicCopy[locale].footer;
+export function PublicFooter({ currentLocale }: PublicFooterProps) {
+  const locale = locales.includes(currentLocale as Locale) ? (currentLocale as Locale) : defaultLocale;
+  // Copy sacado DIRECTO del locale real por pais (mismo fix que PublicHeader:
+  // antes usaba el puente viejo de 3 idiomas, que colapsaba todo el espanol
+  // a contenido de Chile).
+  const copy = messages[locale].footer;
   const year = new Date().getFullYear();
 
   return (
     <>
-      <PublicLeadCapture locale={locale} />
+      <PublicLeadCapture currentLocale={locale} />
       <footer className="border-t border-[#dfe5e2] bg-[#f8faf9] text-[#4b5563]">
         <div className="mx-auto max-w-7xl px-5 py-7 md:px-8 md:py-10 lg:py-12">
           <div className="mb-10 hidden gap-5 rounded-xl border border-[#dfe5e2] bg-white p-5 shadow-sm md:grid md:grid-cols-[1fr_auto] md:items-center md:p-6">
@@ -28,13 +34,13 @@ export function PublicFooter({ locale = "es" }: PublicFooterProps) {
             </div>
             <div className="flex flex-col gap-2 sm:flex-row md:justify-end">
               <Link
-                href={localizedHref("/auth?mode=register", locale)}
+                href={localeHref("/auth?mode=register", locale)}
                 className="inline-flex min-h-11 items-center justify-center rounded-lg bg-[#123b5d] px-5 text-sm font-bold text-white transition hover:bg-[#0f2f49] active:scale-[0.99]"
               >
                 {copy.cta.primary}
               </Link>
               <Link
-                href={localizedHref("/scan", locale)}
+                href={localeHref("/scan", locale)}
                 className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#cfd8d4] bg-white px-5 text-sm font-bold text-[#111827] transition hover:border-[#aebbb5] hover:bg-[#f7f8f6] active:scale-[0.99]"
               >
                 {copy.cta.secondary}
@@ -44,7 +50,7 @@ export function PublicFooter({ locale = "es" }: PublicFooterProps) {
 
           <div className="grid gap-7 lg:grid-cols-[1.1fr_2fr] lg:gap-10">
             <div className="max-w-none">
-              <TuLectorLogo href={localizedHref("/", locale)} />
+              <TuLectorLogo href={localeHref("/", locale)} />
               <p className="mt-3 text-sm leading-6 md:mt-4">{copy.tagline}</p>
               <p className="mt-3 text-sm font-medium text-[#111827] md:mt-4">{copy.location}</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
@@ -97,16 +103,16 @@ export function PublicFooter({ locale = "es" }: PublicFooterProps) {
             <div>
               <h2 className="hidden text-xs font-bold uppercase tracking-[0.12em] text-[#6b7280] md:block">{copy.language}</h2>
               <div className="flex flex-wrap gap-x-3 gap-y-2 text-xs font-bold md:mt-3 md:gap-2">
-                {publicLocales.map((item) => (
+                {locales.map((item) => (
                   <Link
                     key={item}
-                    href={localizedHref("/", item)}
+                    href={localeHref("/", item)}
                     aria-current={item === locale ? "page" : undefined}
                     className={item === locale
                       ? "text-[#111827] md:rounded-full md:bg-[#111827] md:px-3 md:py-1.5 md:text-white"
                       : "text-[#6b7280] hover:text-[#111827] md:rounded-full md:border md:border-[#dfe5e2] md:bg-white md:px-3 md:py-1.5"}
                   >
-                    {localeLabels[item]}
+                    {localeToCountry[item]}
                   </Link>
                 ))}
               </div>
@@ -115,10 +121,10 @@ export function PublicFooter({ locale = "es" }: PublicFooterProps) {
             <div className="text-xs text-[#6b7280] md:text-right">
               <p>© {year} TuLector. {copy.copyright}</p>
               <div className="mt-2 flex flex-wrap gap-x-3 gap-y-2 md:mt-3 md:justify-end md:gap-4">
-                <Link href={localizedHref("/terms", locale)} className="hover:text-[#111827]">{copy.legal}</Link>
-                <Link href={localizedHref("/privacy", locale)} className="hover:text-[#111827]">{copy.dataProtection}</Link>
-                <Link href={localizedHref("/security", locale)} className="hover:text-[#111827]">{copy.securityLink}</Link>
-                <Link href={localizedHref("/data-request", locale)} className="hover:text-[#111827] md:hidden">Datos</Link>
+                <Link href={localeHref("/terms", locale)} className="hover:text-[#111827]">{copy.legal}</Link>
+                <Link href={localeHref("/privacy", locale)} className="hover:text-[#111827]">{copy.dataProtection}</Link>
+                <Link href={localeHref("/security", locale)} className="hover:text-[#111827]">{copy.securityLink}</Link>
+                <Link href={localeHref("/data-request", locale)} className="hover:text-[#111827] md:hidden">Datos</Link>
               </div>
             </div>
           </div>
@@ -135,7 +141,7 @@ function FooterColumn({
 }: {
   title: string;
   links: readonly { href: string; label: string }[];
-  locale: PublicLocale;
+  locale: Locale;
 }) {
   return (
     <div>
@@ -143,7 +149,7 @@ function FooterColumn({
       <ul className="mt-4 space-y-3">
         {links.map((link) => (
           <li key={link.href}>
-            <Link href={localizedHref(link.href, locale)} className="text-sm font-medium text-[#5f6b66] hover:text-[#111827]">
+            <Link href={localeHref(link.href, locale)} className="text-sm font-medium text-[#5f6b66] hover:text-[#111827]">
               {link.label}
             </Link>
           </li>
@@ -161,7 +167,7 @@ function MobileFooterGroup({
 }: {
   title: string;
   links: readonly { href: string; label: string }[];
-  locale: PublicLocale;
+  locale: Locale;
   initialOpen?: boolean;
 }) {
   const [open, setOpen] = useState(initialOpen);
@@ -181,7 +187,7 @@ function MobileFooterGroup({
         <ul className="grid gap-2 pb-3">
           {links.slice(0, 4).map((link) => (
             <li key={link.href}>
-              <Link href={localizedHref(link.href, locale)} className="text-sm font-medium text-[#5f6b66] hover:text-[#111827]">
+              <Link href={localeHref(link.href, locale)} className="text-sm font-medium text-[#5f6b66] hover:text-[#111827]">
                 {link.label}
               </Link>
             </li>

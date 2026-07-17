@@ -5,7 +5,6 @@ import { PublicHeader } from "@/components/PublicHeader";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { locales, defaultLocale, type Locale } from "@/i18n/config";
 import { messages } from "@/i18n/messages";
-import { newLocaleToLegacy } from "@/lib/public_i18n";
 
 const siteUrl = "https://tulector.app";
 
@@ -31,11 +30,10 @@ export default async function ParaPreuniversitarios({ params }: { params: Promis
   const { locale } = await params;
   const validLocale = locales.includes(locale as Locale) ? (locale as Locale) : defaultLocale;
   const copy = messages[validLocale as Locale];
-  const legacyLocale = newLocaleToLegacy(locale);
 
   return (
     <main className="min-h-screen bg-white text-[#111827]">
-      <PublicHeader locale={legacyLocale} currentLocale={validLocale} />
+      <PublicHeader currentLocale={validLocale} />
 
       <section className="mx-auto max-w-7xl px-5 pb-6 pt-6 md:px-8">
         <Breadcrumbs items={[
@@ -113,7 +111,7 @@ export default async function ParaPreuniversitarios({ params }: { params: Promis
         </div>
       </section>
 
-      <PublicFooter locale={legacyLocale} />
+      <PublicFooter currentLocale={validLocale} />
     </main>
   );
 }

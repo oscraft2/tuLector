@@ -6,7 +6,6 @@ import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { JsonLd } from "@/components/JsonLd";
 import { locales, defaultLocale, type Locale } from "@/i18n/config";
 import { messages } from "@/i18n/messages";
-import { newLocaleToLegacy } from "@/lib/public_i18n";
 import { articleContent } from "@/lib/recursos_content";
 
 const siteUrl = "https://tulector.app";
@@ -46,7 +45,6 @@ export default async function Articulo({ params }: { params: Promise<{ locale: s
 
   const validLocale = locales.includes(locale as Locale) ? (locale as Locale) : defaultLocale;
   const copy = messages[validLocale as Locale];
-  const legacyLocale = newLocaleToLegacy(locale);
 
   const publishedAt = "2026-01-15T12:00:00Z";
   const modifiedAt = "2026-06-01T12:00:00Z";
@@ -71,7 +69,7 @@ export default async function Articulo({ params }: { params: Promise<{ locale: s
 
   return (
     <main className="min-h-screen bg-white text-[#111827]">
-      <PublicHeader locale={legacyLocale} currentLocale={validLocale} />
+      <PublicHeader currentLocale={validLocale} />
 
       <article className="mx-auto max-w-4xl px-5 pb-14 pt-6 md:px-8 md:pb-20">
         <Breadcrumbs items={[
@@ -129,7 +127,7 @@ export default async function Articulo({ params }: { params: Promise<{ locale: s
         </section>
       </article>
 
-      <PublicFooter locale={legacyLocale} />
+      <PublicFooter currentLocale={validLocale} />
     </main>
   );
 }

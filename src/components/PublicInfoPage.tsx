@@ -35,7 +35,7 @@ export function PublicInfoPage({ pageKey, locale, currentLocale }: PublicInfoPag
           Esta informacion es una base operativa de producto y no reemplaza una revision legal formal. Para contratos institucionales, tratamiento de datos de estudiantes o despliegues internacionales, TuLector debe validar el documento con asesoria legal local.
         </div>
       </section>
-      <PublicFooter locale={locale} />
+      <PublicFooter currentLocale={currentLocale} />
     </main>
   );
 }
