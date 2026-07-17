@@ -1,5 +1,5 @@
 import { PublicFooter } from "@/components/PublicFooter";
-import { PublicHeader } from "@/components/PublicHeader";
+import { PublicHeaderServer } from "@/components/PublicHeaderServer";
 import type { PublicLocale } from "@/lib/public_i18n";
 import type { PublicPageKey } from "@/lib/public_pages";
 import { publicPages } from "@/lib/public_pages";
@@ -15,7 +15,7 @@ export function PublicInfoPage({ pageKey, locale, currentLocale }: PublicInfoPag
 
   return (
     <main className="min-h-screen bg-white text-[#111827]" style={{ fontFamily: '"Source Sans 3", "Noto Sans", "Segoe UI", Arial, sans-serif' }}>
-      <PublicHeader locale={locale} currentLocale={currentLocale} />
+      <PublicHeaderServer locale={locale} currentLocale={currentLocale} />
       <section className="mx-auto max-w-4xl px-5 py-14 md:px-8 md:py-20">
         <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#2f6f5e]">{copy.eyebrow}</p>
         <h1 className="mt-5 max-w-3xl text-4xl font-semibold tracking-tight md:text-6xl">{copy.title}</h1>

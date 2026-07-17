@@ -17,6 +17,26 @@ export interface Messages {
       claim: string;
       compactClaim: string;
     };
+    pricing: string;
+    resources: string;
+    whatsapp: string;
+    whatsappMessage: string;
+    productMenu: {
+      title: string;
+      scan: { label: string; desc: string };
+      sheet: { label: string; desc: string };
+      features: { label: string; desc: string };
+      pricing: { label: string; desc: string };
+      featured: { badge: string; title: string; body: string; cta: string };
+    };
+    solutionsMenu: {
+      title: string;
+      schools: { label: string; desc: string };
+      teachers: { label: string; desc: string };
+      prep: { label: string; desc: string };
+    };
+    region: { label: string };
+    geoBanner: { text: string; cta: string; dismiss: string };
   };
   home: {
     eyebrow: string;
@@ -169,6 +189,26 @@ export const messages: Record<Locale, Messages> = {
       menu: "Abrir menu",
       close: "Cerrar menu",
       topbar: { region: "Chile", claim: "Corrige ensayos PAES, simulacros y pruebas en minutos", compactClaim: "Corrige pruebas PAES en minutos" },
+      pricing: "Precios",
+      resources: "Recursos",
+      whatsapp: "WhatsApp",
+      whatsappMessage: "Hola, quiero informacion sobre TuLector",
+      productMenu: {
+        title: "Producto",
+        scan: { label: "Probar lector", desc: "Escanea hojas con la camara, gratis y sin instalar nada." },
+        sheet: { label: "Hojas imprimibles", desc: "Genera tu hoja de respuestas y descargala en PDF." },
+        features: { label: "Funcionalidades", desc: "Lector OMR, dashboard, exportacion y modo offline." },
+        pricing: { label: "Precios", desc: "Planes desde $0. Valores en CLP." },
+        featured: { badge: "Listo para PAES", title: "Simulacros con resultados en terreno", body: "Implementa TuLector en tu preuniversitario o colegio.", cta: "Ver soluciones" },
+      },
+      solutionsMenu: {
+        title: "Soluciones",
+        schools: { label: "Para colegios", desc: "Lectura optica y analisis para todo el establecimiento." },
+        teachers: { label: "Para docentes", desc: "Corrige ensayos PAES y controles en 2 minutos." },
+        prep: { label: "Para preuniversitarios", desc: "Simulacros PAES con resultados inmediatos." },
+      },
+      region: { label: "Mercado e idioma" },
+      geoBanner: { text: "Parece que estas en {country}.", cta: "Ver la version para {country}", dismiss: "Cerrar aviso" },
     },
     home: {
       eyebrow: "Correccion de ensayos PAES",
@@ -285,6 +325,26 @@ export const messages: Record<Locale, Messages> = {
       menu: "Abrir menu",
       close: "Cerrar menu",
       topbar: { region: "Mexico", claim: "Corrige examenes EXANI, simulacros y pruebas en minutos", compactClaim: "Corrige examenes EXANI en minutos" },
+      pricing: "Precios",
+      resources: "Recursos",
+      whatsapp: "WhatsApp",
+      whatsappMessage: "Hola, quiero informacion sobre TuLector",
+      productMenu: {
+        title: "Producto",
+        scan: { label: "Probar lector", desc: "Escanea hojas con la camara, gratis y sin instalar nada." },
+        sheet: { label: "Hojas imprimibles", desc: "Genera tu hoja de respuestas y descargala en PDF." },
+        features: { label: "Funcionalidades", desc: "Lector OMR, dashboard, exportacion y modo offline." },
+        pricing: { label: "Precios", desc: "Planes desde $0. Valores en MXN." },
+        featured: { badge: "Listo para EXANI", title: "Simulacros con resultados en terreno", body: "Implementa TuLector en tu preuniversitario o colegio.", cta: "Ver soluciones" },
+      },
+      solutionsMenu: {
+        title: "Soluciones",
+        schools: { label: "Para colegios", desc: "Lectura optica y analisis para todo el establecimiento." },
+        teachers: { label: "Para docentes", desc: "Corrige examenes EXANI y controles en 2 minutos." },
+        prep: { label: "Para preuniversitarios", desc: "Simulacros EXANI con resultados inmediatos." },
+      },
+      region: { label: "Mercado e idioma" },
+      geoBanner: { text: "Parece que estas en {country}.", cta: "Ver la version para {country}", dismiss: "Cerrar aviso" },
     },
     home: {
       eyebrow: "Correccion de examenes EXANI",
@@ -401,6 +461,26 @@ export const messages: Record<Locale, Messages> = {
       menu: "Abrir menu",
       close: "Cerrar menu",
       topbar: { region: "Peru", claim: "Corrige examenes ECE, simulacros y pruebas en minutos", compactClaim: "Corrige examenes ECE en minutos" },
+      pricing: "Precios",
+      resources: "Recursos",
+      whatsapp: "WhatsApp",
+      whatsappMessage: "Hola, quiero informacion sobre TuLector",
+      productMenu: {
+        title: "Producto",
+        scan: { label: "Probar lector", desc: "Escanea hojas con la camara, gratis y sin instalar nada." },
+        sheet: { label: "Hojas imprimibles", desc: "Genera tu hoja de respuestas y descargala en PDF." },
+        features: { label: "Funcionalidades", desc: "Lector OMR, dashboard, exportacion y modo offline." },
+        pricing: { label: "Precios", desc: "Planes desde $0. Valores en USD." },
+        featured: { badge: "Listo para ECE", title: "Simulacros con resultados en terreno", body: "Implementa TuLector en tu preuniversitario o colegio.", cta: "Ver soluciones" },
+      },
+      solutionsMenu: {
+        title: "Soluciones",
+        schools: { label: "Para colegios", desc: "Lectura optica y analisis para todo el establecimiento." },
+        teachers: { label: "Para docentes", desc: "Corrige examenes ECE y controles en 2 minutos." },
+        prep: { label: "Para preuniversitarios", desc: "Simulacros de admision con resultados inmediatos." },
+      },
+      region: { label: "Mercado e idioma" },
+      geoBanner: { text: "Parece que estas en {country}.", cta: "Ver la version para {country}", dismiss: "Cerrar aviso" },
     },
     home: {
       eyebrow: "Correccion de examenes ECE y admision",
@@ -517,6 +597,26 @@ export const messages: Record<Locale, Messages> = {
       menu: "Abrir menu",
       close: "Cerrar menu",
       topbar: { region: "Argentina", claim: "Corrige examenes CBC, simulacros y pruebas en minutos", compactClaim: "Corrige examenes CBC en minutos" },
+      pricing: "Precios",
+      resources: "Recursos",
+      whatsapp: "WhatsApp",
+      whatsappMessage: "Hola, quiero informacion sobre TuLector",
+      productMenu: {
+        title: "Producto",
+        scan: { label: "Probar lector", desc: "Escanea hojas con la camara, gratis y sin instalar nada." },
+        sheet: { label: "Hojas imprimibles", desc: "Genera tu hoja de respuestas y descargala en PDF." },
+        features: { label: "Funcionalidades", desc: "Lector OMR, dashboard, exportacion y modo offline." },
+        pricing: { label: "Precios", desc: "Planes desde $0. Valores en USD." },
+        featured: { badge: "Listo para el CBC", title: "Simulacros con resultados en terreno", body: "Implementa TuLector en tu preuniversitario o colegio.", cta: "Ver soluciones" },
+      },
+      solutionsMenu: {
+        title: "Soluciones",
+        schools: { label: "Para colegios", desc: "Lectura optica y analisis para todo el establecimiento." },
+        teachers: { label: "Para docentes", desc: "Corrige examenes CBC y controles en 2 minutos." },
+        prep: { label: "Para preuniversitarios", desc: "Simulacros CBC UBA con resultados inmediatos." },
+      },
+      region: { label: "Mercado e idioma" },
+      geoBanner: { text: "Parece que estas en {country}.", cta: "Ver la version para {country}", dismiss: "Cerrar aviso" },
     },
     home: {
       eyebrow: "Correccion de examenes CBC e ingreso",
@@ -633,6 +733,26 @@ export const messages: Record<Locale, Messages> = {
       menu: "Abrir menu",
       close: "Fechar menu",
       topbar: { region: "Brasil", claim: "Corrija simulados ENEM, vestibulares e provas em minutos", compactClaim: "Corrija simulados ENEM em minutos" },
+      pricing: "Precos",
+      resources: "Recursos",
+      whatsapp: "WhatsApp",
+      whatsappMessage: "Ola, quero informacoes sobre o TuLector",
+      productMenu: {
+        title: "Produto",
+        scan: { label: "Testar leitor", desc: "Escaneie folhas com a camera, gratis e sem instalar nada." },
+        sheet: { label: "Folhas imprimiveis", desc: "Gere sua folha de respostas e baixe em PDF." },
+        features: { label: "Funcionalidades", desc: "Leitor OMR, dashboard, exportacao e modo offline." },
+        pricing: { label: "Precos", desc: "Planos a partir de R$ 0. Valores em reais." },
+        featured: { badge: "Pronto para o ENEM", title: "Simulados com resultados em campo", body: "Implemente o TuLector no seu cursinho ou escola.", cta: "Ver solucoes" },
+      },
+      solutionsMenu: {
+        title: "Solucoes",
+        schools: { label: "Para escolas", desc: "Leitura otica e analise para toda a instituicao." },
+        teachers: { label: "Para professores", desc: "Corrija simulados ENEM e provas em 2 minutos." },
+        prep: { label: "Para cursinhos", desc: "Simulados ENEM com resultados imediatos." },
+      },
+      region: { label: "Mercado e idioma" },
+      geoBanner: { text: "Parece que voce esta em {country}.", cta: "Ver a versao para {country}", dismiss: "Fechar aviso" },
     },
     home: {
       eyebrow: "Correcao de simulados ENEM",

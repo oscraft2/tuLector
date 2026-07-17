@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PublicFooter } from "@/components/PublicFooter";
-import { PublicHeader } from "@/components/PublicHeader";
+import { PublicHeaderServer } from "@/components/PublicHeaderServer";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { JsonLd } from "@/components/JsonLd";
 import { locales, defaultLocale, type Locale } from "@/i18n/config";
@@ -54,7 +54,7 @@ export default async function Precios({ params }: { params: Promise<{ locale: st
 
   return (
     <main className="min-h-screen bg-white text-[#111827]">
-      <PublicHeader currentLocale={validLocale} />
+      <PublicHeaderServer currentLocale={validLocale} />
 
       <section className="mx-auto max-w-7xl px-5 pb-6 pt-6 md:px-8">
         <Breadcrumbs items={[

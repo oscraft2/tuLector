@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PublicFooter } from "@/components/PublicFooter";
-import { PublicHeader } from "@/components/PublicHeader";
+import { PublicHeaderServer } from "@/components/PublicHeaderServer";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { locales, defaultLocale, type Locale } from "@/i18n/config";
 import { messages } from "@/i18n/messages";
@@ -60,7 +60,7 @@ export default async function Features({ params }: { params: Promise<{ locale: s
 
   return (
     <main className="min-h-screen bg-white text-[#111827]">
-      <PublicHeader currentLocale={validLocale} />
+      <PublicHeaderServer currentLocale={validLocale} />
 
       <section className="mx-auto max-w-7xl px-5 pb-6 pt-6 md:px-8">
         <Breadcrumbs items={[

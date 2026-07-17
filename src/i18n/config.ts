@@ -22,3 +22,17 @@ export const localeToContact: Record<Locale, string> = {
   "pt-BR": "vendas-br@tulector.app",
   "es-CL": "ventas-cl@tulector.app",
 };
+export const localeToLanguage: Record<Locale, string> = {
+  "es-MX": "Espanol",
+  "es-PE": "Espanol",
+  "es-AR": "Espanol",
+  "pt-BR": "Portugues",
+  "es-CL": "Espanol",
+};
+export const localeToCurrencySymbol: Record<Locale, string> = {
+  "es-MX": "$",
+  "es-PE": "S/",
+  "es-AR": "$",
+  "pt-BR": "R$",
+  "es-CL": "$",
+};
