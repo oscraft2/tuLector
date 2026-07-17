@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
-import { QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE, optionLabelsFor } from "@/lib/quiz_constraints";
+import { useMemo, useState, useEffect, useRef } from "react";
+import { QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE, optionLabelsFor, extractAnswerLetters } from "@/lib/quiz_constraints";
 import { resolveCountryProfile } from "@/lib/country_profiles";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
 
@@ -32,6 +32,9 @@ export function AnswerKeyEditor({
   const [value, setValue] = useState(defaultValue.toUpperCase());
   const [questionCount, setQuestionCount] = useState(questions);
   const [optionCount, setOptionCount] = useState(defaultOptions);
+  const [allowPartial, setAllowPartial] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Pre-fill question/option count when evalType or variant changes.
   // Campos SIEMPRE editables (el profesor puede ajustar el N° de preguntas).
@@ -72,12 +75,59 @@ export function AnswerKeyEditor({
 
   const labels = optionLabelsFor(optionCount);
   const allowed = useMemo(() => new Set(labels.split("")), [labels]);
-  const clean = value
-    .toUpperCase()
-    .split("")
-    .filter((char) => allowed.has(char))
-    .join("");
-  const valid = clean.length === questionCount;
+  // "slots": representacion posicional de la clave, siempre exactamente
+  // questionCount caracteres, cada uno una letra valida o "-" (pregunta
+  // todavia sin responder). Se deriva del texto libre (value) tomando solo
+  // caracteres validos en orden y rellenando con "-" -- typear sigue
+  // funcionando igual que antes (llena secuencial desde la pregunta 1); la
+  // grilla edita una posicion puntual reescribiendo value completo.
+  const slots = useMemo(() => {
+    const chars = value
+      .toUpperCase()
+      .split("")
+      .filter((char) => allowed.has(char) || char === "-")
+      .slice(0, questionCount);
+    while (chars.length < questionCount) chars.push("-");
+    return chars.join("");
+  }, [value, allowed, questionCount]);
+  const filledCount = slots.split("").filter((char) => char !== "-").length;
+  const valid = filledCount === questionCount;
+
+  function handleGridAnswerChange(index: number, letter: string) {
+    const chars = slots.split("");
+    chars[index] = letter || "-";
+    setValue(chars.join(""));
+  }
+
+  async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setFileError(null);
+    try {
+      let letters = "";
+      if (/\.(xlsx|xls)$/i.test(file.name)) {
+        const XLSX = await import("xlsx");
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: "array" });
+        const firstSheet = workbook.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[firstSheet], { header: 1 });
+        const flattened = rows.map((row) => (Array.isArray(row) ? row.join(" ") : "")).join(" ");
+        letters = extractAnswerLetters(flattened, optionCount);
+      } else {
+        const text = await file.text();
+        letters = extractAnswerLetters(text, optionCount);
+      }
+      if (!letters) {
+        setFileError("No se encontraron letras validas en el archivo.");
+      } else {
+        setValue(letters);
+      }
+    } catch {
+      setFileError("No se pudo leer el archivo. Prueba con CSV, TXT o XLSX.");
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -226,22 +276,55 @@ export function AnswerKeyEditor({
 
       <input type="hidden" name="option_labels" value={labels.split("").join(",")} />
       <label className="block text-sm font-semibold text-[#111827]" htmlFor={name}>Clave de respuestas</label>
-      <input
-        id={name}
-        name={name}
-        value={value}
-        onChange={(event) => setValue(event.target.value.toUpperCase())}
-        className="mt-2 w-full rounded-md border border-[#d8dde3] bg-white px-3 py-2 text-sm text-[#111827] outline-none focus:border-[#111827]"
-        placeholder="ABCDEABCDEABCDEABCDE"
-        aria-invalid={!valid}
-      />
-      <input type="hidden" name={`${name}_clean`} value={clean} />
-      <p className={valid ? "mt-2 text-xs text-[#4b5563]" : "mt-2 text-xs font-semibold text-[#b45309]"}>
-        {clean.length}/{questionCount} respuestas validas {labels}.
-      </p>
+      <p className="mt-1 text-xs text-[#6b7280]">Marca las respuestas directo en la grilla, tipea la clave completa, o subela desde un archivo.</p>
+
       <div className="mt-3">
-        <AnswerKeyGrid answerKey={clean} numQuestions={questionCount} />
+        <AnswerKeyGrid
+          answerKey={slots}
+          numQuestions={questionCount}
+          optionLabels={labels}
+          onAnswerChange={handleGridAnswerChange}
+        />
       </div>
+
+      <details className="mt-3 rounded-md border border-[#eef0f3]">
+        <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-[#4b5563]">Pegar clave completa o subir archivo</summary>
+        <div className="space-y-3 border-t border-[#eef0f3] p-3">
+          <input
+            id={name}
+            name={name}
+            value={value}
+            onChange={(event) => setValue(event.target.value.toUpperCase())}
+            className="w-full rounded-md border border-[#d8dde3] bg-white px-3 py-2 text-sm text-[#111827] outline-none focus:border-[#111827]"
+            placeholder="ABCDEABCDEABCDEABCDE"
+            aria-invalid={!valid}
+          />
+          <div>
+            <label className="text-xs font-semibold text-[#4b5563]">
+              Subir desde archivo (CSV, TXT o XLSX)
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.txt,.xlsx,.xls"
+                onChange={handleFileUpload}
+                className="mt-1 block w-full text-xs file:mr-3 file:rounded-md file:border file:border-[#cfd6df] file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-semibold hover:file:bg-[#f4f6f8]"
+              />
+            </label>
+            {fileError && <p className="mt-1 text-xs font-semibold text-[#b45309]">{fileError}</p>}
+          </div>
+        </div>
+      </details>
+
+      <input type="hidden" name={`${name}_clean`} value={slots} />
+      <label className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#4b5563]">
+        <input type="checkbox" name="allow_partial_key" checked={allowPartial} onChange={(event) => setAllowPartial(event.target.checked)} />
+        Completar la clave más tarde
+      </label>
+      <p className={valid || allowPartial ? "mt-2 text-xs text-[#4b5563]" : "mt-2 text-xs font-semibold text-[#b45309]"}>
+        {allowPartial
+          ? `${filledCount}/${questionCount} respuestas cargadas — podrás completar el resto despues desde "Editar".`
+          : `${filledCount}/${questionCount} respuestas validas ${labels}.`}
+      </p>
     </div>
   );
 }

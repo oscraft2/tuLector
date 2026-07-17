@@ -39,3 +39,56 @@ export function normalizeAnswerKeyForOptions(input: FormDataEntryValue | string 
     .filter((char) => allowed.has(char))
     .join("");
 }
+
+/**
+ * Igual que normalizeAnswerKeyForOptions, pero preserva la POSICION de cada
+ * pregunta usando "-" como placeholder de "todavia sin responder" en vez de
+ * descartar caracteres invalidos (lo que colapsaria/correria el resto de la
+ * clave). Usado por el flujo "completar la clave mas tarde": el resultado
+ * siempre mide exactamente numQuestions caracteres, cada uno una letra
+ * valida o "-". Una posicion "-" nunca cuenta como correcta al corregir
+ * (ver answerKeyAt/finalizeGrading), es un placeholder seguro.
+ */
+export function normalizeAnswerKeySlots(
+  input: FormDataEntryValue | string | null | undefined,
+  numOptions: number,
+  numQuestions: number,
+): string {
+  const allowed = new Set(optionLabelsFor(numOptions).split(""));
+  const chars = String(input ?? "")
+    .toUpperCase()
+    .split("")
+    .filter((char) => allowed.has(char) || char === "-")
+    .slice(0, numQuestions);
+  while (chars.length < numQuestions) chars.push("-");
+  return chars.join("");
+}
+
+/**
+ * Extrae, en orden, todas las letras validas (segun numOptions) que
+ * aparezcan en un texto libre -- usado para poblar la clave desde un
+ * archivo CSV/TXT pegado o subido, o desde el volcado celda-por-celda de un
+ * archivo Excel. Tokeniza por separadores (coma/espacio/salto de linea/etc)
+ * en vez de escanear letra por letra: un token de un solo caracter valido
+ * se toma tal cual; un token numerico (nro de pregunta) se ignora; un token
+ * compuesto ENTERO por letras validas sin separador (ej "ABCD" pegado) se
+ * expande caracter a caracter; cualquier otro token (ej encabezados como
+ * "Pregunta"/"Respuesta", que tienen letras fuera del set) se descarta
+ * completo -- evita que una "A" suelta dentro de una palabra de encabezado
+ * contamine la clave (bug real encontrado probando con headers CSV/XLSX).
+ */
+export function extractAnswerLetters(text: string, numOptions: number): string {
+  const allowed = new Set(optionLabelsFor(numOptions).split(""));
+  const tokens = text.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  const letters: string[] = [];
+  for (const token of tokens) {
+    if (token.length === 1) {
+      if (allowed.has(token)) letters.push(token);
+    } else if (/^[0-9]+$/.test(token)) {
+      continue;
+    } else if (token.split("").every((char) => allowed.has(char))) {
+      letters.push(...token.split(""));
+    }
+  }
+  return letters.join("");
+}

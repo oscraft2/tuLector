@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDashboardContext } from "@/lib/supabase_server";
-import { calculateGrade } from "@/lib/latam";
+import { computeQuizScore } from "@/lib/grading";
 import { resolveNationalId } from "@/lib/national_id";
 import { isMissingColumnError, isMissingTableError } from "@/lib/supabase_errors";
 import { sendPushToSchool } from "@/lib/push_server";
@@ -59,18 +59,6 @@ function normalizeAnswers(value: unknown): ScanAnswer[] {
     answers.push(answer);
   }
   return answers.sort((a, b) => a.q - b.q);
-}
-
-function answerKeyAt(answerKey: string, index: number) {
-  return answerKey.replace(/[^A-Za-z]/g, "").toUpperCase()[index] ?? "";
-}
-
-function equivalentScore(evaluationType: string | null | undefined, score: number, total: number) {
-  if (total <= 0) return null;
-  const pct = score / total;
-  if (evaluationType === "paes") return Math.round(100 + pct * 900);
-  if (evaluationType === "simce") return Math.round(100 + pct * 300);
-  return Math.round(pct * 100);
 }
 
 function trimDataUrl(value: string | null | undefined) {
@@ -197,20 +185,7 @@ async function finalizeGrading(
   extras: { sheetIdRead: number | null; photo: string | null | undefined; nameImg: string | null | undefined; countryCode: string },
 ) {
   const { supabase, user, school } = ctx;
-  const total = Number(quiz.num_questions ?? answers.length);
-  const score = answers.reduce((sum, answer) => {
-    const expected = answerKeyAt(String(quiz.answer_key ?? ""), answer.q - 1);
-    return sum + (answer.a !== "-" && answer.a === expected ? 1 : 0);
-  }, 0);
-  const gradeResult = calculateGrade(score, total, extras.countryCode, {
-    gradeScale: {
-      min: school.grading_scale_min ?? 1.0,
-      max: school.grading_scale_max ?? 7.0,
-    },
-    passingGrade: school.passing_grade ?? 4.0,
-    exigencia: (quiz.exigencia as number | undefined) ?? school.exigencia ?? 0.60,
-  });
-  const eqScore = equivalentScore(quiz.evaluation_type, score, total);
+  const { score, total, grade, passing, equivalentScore: eqScore } = computeQuizScore(quiz, answers, school, extras.countryCode);
   const expectedSheetCode = typeof quiz.sheet_code === "number" ? quiz.sheet_code : null;
   const sheetMismatch = extras.sheetIdRead !== null && expectedSheetCode !== null && extras.sheetIdRead !== expectedSheetCode;
 
@@ -242,7 +217,7 @@ async function finalizeGrading(
     image_url: trimDataUrl(extras.photo),
     name_img_url: trimDataUrl(extras.nameImg),
     status,
-    grade: gradeResult.grade,
+    grade,
     equivalent_score: eqScore,
     scanned_at: scannedAt,
     corrected_answers: [],
@@ -312,8 +287,8 @@ async function finalizeGrading(
       paper_id: paperId,
       raw_score: score,
       total_questions: total,
-      calculated_grade: gradeResult.grade,
-      passing: gradeResult.passing,
+      calculated_grade: grade,
+      passing,
       graded_at: scannedAt,
     }, { onConflict: "school_id,student_code,quiz_id" });
   }
@@ -321,7 +296,7 @@ async function finalizeGrading(
   return {
     action, paperId, status, matchedStudent, studentName,
     studentCode: studentCode || null, studentRutNorm,
-    score, total, grade: gradeResult.grade, equivalentScore: eqScore,
+    score, total, grade, equivalentScore: eqScore,
     sheetMismatch: sheetMismatch ? { read: extras.sheetIdRead, expected: expectedSheetCode } : undefined,
   };
 }

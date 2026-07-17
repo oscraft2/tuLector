@@ -24,8 +24,14 @@ type QuizRow = {
   course_id?: string | null;
   num_questions: number | null;
   options_per_question: number | null;
+  answer_key: string | null;
   created_at: string;
 };
+
+function isKeyIncomplete(quiz: Pick<QuizRow, "answer_key" | "num_questions">) {
+  const key = String(quiz.answer_key ?? "");
+  return key.includes("-") || key.length < Number(quiz.num_questions ?? 0);
+}
 
 type CourseRow = { id: string; name: string; grade: string | null };
 
@@ -34,13 +40,13 @@ export default async function QuizzesPage() {
   const t = getDashboardMessages(locale);
 
   const [quizzesResult, { data: courses }] = await Promise.all([
-    supabase.from("quizzes").select("id,title,subject,grade,course_id,num_questions,options_per_question,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false }),
+    supabase.from("quizzes").select("id,title,subject,grade,course_id,num_questions,options_per_question,answer_key,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false }),
     supabase.from("courses").select("id,name,grade").order("name"),
   ]);
 
   let quizzesData: unknown = quizzesResult.data;
   if (quizzesResult.error && isMissingColumnError(quizzesResult.error, "course_id")) {
-    const fallbackResult = await supabase.from("quizzes").select("id,title,subject,grade,num_questions,options_per_question,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false });
+    const fallbackResult = await supabase.from("quizzes").select("id,title,subject,grade,num_questions,options_per_question,answer_key,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false });
     quizzesData = fallbackResult.data;
   }
 
@@ -79,6 +85,9 @@ export default async function QuizzesPage() {
                 <Link href={`/dashboard/quizzes/${quiz.id}`} className="hover:underline text-[#07305f]">
                   {quiz.title}
                 </Link>
+                {isKeyIncomplete(quiz) && (
+                  <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Clave incompleta</span>
+                )}
               </td>
               <td className="px-5 py-4 text-[#5b6472]">{quiz.subject ?? "-"}</td>
               <td className="px-5 py-4">
@@ -123,6 +132,9 @@ export default async function QuizzesPage() {
           renderMobileRow={(quiz) => (
             <article key={quiz.id} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
               <Link href={`/dashboard/quizzes/${quiz.id}`} className="block text-base font-semibold text-[#07305f] hover:underline">{quiz.title}</Link>
+              {isKeyIncomplete(quiz) && (
+                <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Clave incompleta</span>
+              )}
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[#5b6472]">
                 <p><span className="font-semibold text-[#111827]">Asignatura:</span> {quiz.subject ?? "-"}</p>
                 <p><span className="font-semibold text-[#111827]">Curso:</span> {courseLabel(quiz, courseNameById)}</p>

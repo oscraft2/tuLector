@@ -13,6 +13,7 @@ import {
   QUIZ_MAX_QUESTIONS_MULTIPAGE,
   QUIZ_MIN_QUESTIONS,
   normalizeAnswerKeyForOptions,
+  normalizeAnswerKeySlots,
   normalizeQuestionCount,
   normalizeQuizOptions,
   optionLabelsFor,
@@ -21,6 +22,7 @@ import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
 import { suggestColumns } from "@/lib/sheet_generator";
 import { sendTemplatedEmail } from "@/lib/email";
 import { calculateGrade } from "@/lib/latam";
+import { computeQuizScore } from "@/lib/grading";
 import type { DashboardSchool } from "@/lib/supabase_server";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 
@@ -65,13 +67,17 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     }
     const numQuestions = normalizeQuestionCount(formData.get("num_questions"));
     const numOptions = normalizeQuizOptions(formData.get("options_per_question"));
-    const answerKey = normalizeAnswerKeyForOptions(formData.get("answer_key_clean") ?? formData.get("answer_key"), numOptions);
+    const allowPartial = formData.get("allow_partial_key") === "on";
+    const rawAnswerKey = formData.get("answer_key_clean") ?? formData.get("answer_key");
+    const answerKey = allowPartial
+      ? normalizeAnswerKeySlots(rawAnswerKey, numOptions, numQuestions)
+      : normalizeAnswerKeyForOptions(rawAnswerKey, numOptions);
     const evalType = String(formData.get("evaluation_type") ?? "custom");
     const evalVariant = String(formData.get("evaluation_variant") ?? "") || null;
     const rawExigencia = formData.get("exigencia");
     const exigencia = rawExigencia ? Math.max(0, Math.min(1, Number(rawExigencia) || 0.60)) : null;
     if (!title) throw new Error("Ingresa un titulo para el ensayo.");
-    if (answerKey.length !== numQuestions) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
+    if (!allowPartial && answerKey.length !== numQuestions) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
 
     // N. de columnas derivado del tamano de UNA pagina (sobre seguro validado
     // por test:omr, ver sheet_generator.allowedColumns), no del total del
@@ -117,6 +123,131 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     return actionSuccess("Ensayo creado", `"${title}" quedo listo para generar su hoja.`, "✓");
   } catch (error) {
     return actionError(error, "No se pudo crear el ensayo");
+  }
+}
+
+/**
+ * Edita un ensayo ya creado (titulo, preguntas, opciones, clave de
+ * respuestas, etc). Si la clave/preguntas/opciones cambian y el ensayo ya
+ * tiene hojas escaneadas (`papers`), recalcula automaticamente el
+ * score/nota de cada una contra la clave nueva (ya se guarda `papers.answers`
+ * cruda por alumno) usando el mismo `computeQuizScore` que el escaneo en
+ * vivo (`src/lib/grading.ts`) -- una sola formula de puntaje para ambos
+ * caminos. La confirmacion explicita de que esto va a pasar la hace la UI
+ * (ConfirmDialog) antes de enviar el form.
+ */
+export async function updateQuiz(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  try {
+    const { supabase, school } = await getDashboardContext();
+    const id = String(formData.get("id") ?? "");
+    if (!id) throw new Error("Falta el ensayo a editar.");
+
+    const { data: existing, error: existingError } = await supabase
+      .from("quizzes")
+      .select("*")
+      .eq("id", id)
+      .eq("school_id", school.id)
+      .single();
+    if (existingError || !existing) throw new Error("Ensayo no encontrado.");
+
+    const title = String(formData.get("title") ?? "").trim();
+    const requestedQuestions = Number(formData.get("num_questions") ?? 20);
+    const requestedOptions = Number(formData.get("options_per_question") ?? 5);
+    if (!Number.isInteger(requestedQuestions) || requestedQuestions < QUIZ_MIN_QUESTIONS || requestedQuestions > QUIZ_MAX_QUESTIONS_MULTIPAGE) {
+      throw new Error(`El lector movil soporta entre ${QUIZ_MIN_QUESTIONS} y ${QUIZ_MAX_QUESTIONS_MULTIPAGE} preguntas (mas de ${QUIZ_MAX_QUESTIONS} se reparten en varias hojas).`);
+    }
+    if (!QUIZ_ALLOWED_OPTIONS.includes(requestedOptions as (typeof QUIZ_ALLOWED_OPTIONS)[number])) {
+      throw new Error("El lector movil soporta 3, 4 o 5 opciones.");
+    }
+    const numQuestions = normalizeQuestionCount(formData.get("num_questions"));
+    const numOptions = normalizeQuizOptions(formData.get("options_per_question"));
+    const allowPartial = formData.get("allow_partial_key") === "on";
+    const rawAnswerKey = formData.get("answer_key_clean") ?? formData.get("answer_key");
+    const answerKey = allowPartial
+      ? normalizeAnswerKeySlots(rawAnswerKey, numOptions, numQuestions)
+      : normalizeAnswerKeyForOptions(rawAnswerKey, numOptions);
+    if (!title) throw new Error("Ingresa un titulo para el ensayo.");
+    if (!allowPartial && answerKey.length !== numQuestions) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
+
+    const numColumns = suggestColumns(Math.min(numQuestions, QUIZ_MAX_QUESTIONS));
+    const evalType = String(formData.get("evaluation_type") ?? "custom");
+    const evalVariant = String(formData.get("evaluation_variant") ?? "") || null;
+    const rawExigencia = formData.get("exigencia");
+    const exigencia = rawExigencia ? Math.max(0, Math.min(1, Number(rawExigencia) || 0.60)) : null;
+    const grade = String(formData.get("grade") ?? "") || null;
+    const courseId = grade ? await findOrCreateCourse(supabase, school.id, grade) : existing.course_id ?? null;
+
+    const updatePayload = {
+      title,
+      num_questions: numQuestions,
+      options_per_question: numOptions,
+      num_columns: numColumns,
+      option_labels: optionLabelsFor(numOptions).split("").join(","),
+      answer_key: answerKey,
+      subject: String(formData.get("subject") ?? "") || null,
+      grade,
+      course_id: courseId,
+      evaluation_type: evalType,
+      evaluation_variant: evalVariant,
+      updated_at: new Date().toISOString(),
+      ...(exigencia !== null ? { exigencia } : {}),
+    };
+
+    const keyChanged = String(existing.answer_key ?? "") !== answerKey;
+    const structureChanged = existing.num_questions !== numQuestions || existing.options_per_question !== numOptions;
+
+    let { error: updateError } = await supabase.from("quizzes").update(updatePayload).eq("id", id);
+    if (updateError && isMissingColumnError(updateError, "course_id")) {
+      updateError = (await supabase.from("quizzes").update(withoutCourseId(updatePayload)).eq("id", id)).error;
+    }
+    if (updateError) throw new Error(updateError.message);
+
+    let recorrected = 0;
+    if (keyChanged || structureChanged) {
+      const updatedQuiz = { ...existing, ...updatePayload };
+      const { data: papers } = await supabase
+        .from("papers")
+        .select("id, answers, student_rut_norm")
+        .eq("quiz_id", id);
+
+      if (papers && papers.length > 0) {
+        const countryCode = school.country_code ?? "CL";
+        const scannedAt = new Date().toISOString();
+        for (const paper of papers) {
+          const answers = Array.isArray(paper.answers) ? (paper.answers as { q: number; a: string }[]) : [];
+          const result = computeQuizScore(updatedQuiz, answers, school, countryCode);
+          await supabase
+            .from("papers")
+            .update({ score: result.score, total: result.total, grade: result.grade, equivalent_score: result.equivalentScore })
+            .eq("id", paper.id);
+          if (paper.student_rut_norm) {
+            await supabase.from("grade_records").upsert({
+              school_id: school.id,
+              student_code: paper.student_rut_norm,
+              quiz_id: id,
+              paper_id: paper.id,
+              raw_score: result.score,
+              total_questions: result.total,
+              calculated_grade: result.grade,
+              passing: result.passing,
+              graded_at: scannedAt,
+            }, { onConflict: "school_id,student_code,quiz_id" });
+          }
+          recorrected++;
+        }
+      }
+    }
+
+    revalidatePath("/dashboard/quizzes");
+    revalidatePath(`/dashboard/quizzes/${id}`);
+    revalidatePath("/app/scan");
+    return actionSuccess(
+      "Ensayo actualizado",
+      recorrected > 0 ? `"${title}" quedo actualizado. Se recalcularon ${recorrected} hoja(s) ya escaneada(s).` : `"${title}" quedo actualizado.`,
+      "✓",
+    );
+  } catch (error) {
+    return actionError(error, "No se pudo actualizar el ensayo");
   }
 }
 
