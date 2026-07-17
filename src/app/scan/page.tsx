@@ -11,9 +11,10 @@ import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from
 import { APP_VERSION } from "@/lib/version";
 import { safeColumns, allowedColumns } from "@/lib/sheet_generator";
 import { resolveIdReadConfig } from "@/lib/country_id_blocks";
+import { QUIZ_MAX_QUESTIONS } from "@/lib/quiz_constraints";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
-type ScanSyncState = "idle" | "saving" | "saved" | "review" | "error" | "queued";
+type ScanSyncState = "idle" | "saving" | "saved" | "review" | "error" | "queued" | "partial";
 
 // ─── Laplacian focus detector ─────
 function isFrameSharp(imageData: ImageData): number {
@@ -226,7 +227,13 @@ export default function ScanPage() {
      const arr = parseKey(String(data.answer_key));
      if (arr.length > 0) setAnswerKey(arr);
     }
-    const nextQuestions = Number(data.num_questions || 20);
+    // Multipagina (Fase 1): el grid de lectura es SIEMPRE de 1 pagina (max
+    // MAX_QUESTIONS_PER_PAGE) -- /scan usa una config estatica para todo el
+    // ensayo, no sabe que pagina tiene delante hasta leer el codigo de hoja
+    // (que se decodifica DESPUES de aplicar la grilla). Un ensayo de 250
+    // preguntas se lee igual que uno de 100: cada hoja fisica trae come mucho
+    // MAX_QUESTIONS_PER_PAGE filas. Ver docs/plan-multipagina-fase1.md.
+    const nextQuestions = Math.min(Number(data.num_questions || 20), QUIZ_MAX_QUESTIONS);
     const nextOptions = Number(data.options_per_question || 5);
     // Nº de columnas del ENSAYO (Fase 2); si no viene, cae a la heuristica de antes.
     const nextColumns = safeColumns(nextQuestions, Number(data.num_columns) || (nextQuestions > 30 ? 2 : 1));
@@ -291,6 +298,27 @@ export default function ScanPage() {
     if (!response.ok) throw new Error(payload?.error || "No se pudo guardar");
     const scoreLabel = `${payload.score ?? "-"}/${payload.total ?? config.numQuestions}`;
     const quotaNote = payload.quota?.warning ? ` ⚠ ${payload.quota.warning}` : "";
+    const multipage = payload.multipage as { complete: boolean; page?: number; pagesTotal?: number; missingPages?: number[]; reason?: string } | undefined;
+    // Multipagina (Fase 1): esta pagina no se pudo procesar -- nada se
+    // guardo, a revision manual. reason="tabla_pendiente" = degradacion
+    // elegante si la migracion de paper_pages aun no se aplico en produccion.
+    if (multipage?.reason) {
+     setSyncState("review");
+     setSyncMessage(
+      multipage.reason === "sin_id" ? "No se detecto el ID del alumno en esta hoja -> no se pudo ubicar la pagina del ensayo."
+      : multipage.reason === "sin_codigo_hoja" ? "No se pudo leer el codigo de la hoja -> no se pudo ubicar la pagina del ensayo."
+      : "El ensayo multipágina aún no está habilitado en el servidor. Avisa al administrador."
+     );
+     return;
+    }
+    // Pagina guardada, esperando el resto del ensayo multipagina.
+    if (multipage && !multipage.complete) {
+     setSyncState("partial");
+     const missing = Array.isArray(multipage.missingPages) && multipage.missingPages.length ? multipage.missingPages.join(", ") : "-";
+     setSyncMessage(`Página ${multipage.page} de ${multipage.pagesTotal} guardada. Faltan páginas: ${missing}.${quotaNote}`);
+     return;
+    }
+    const multipageNote = multipage?.complete ? ` (ensayo completo, ${multipage.pagesTotal} páginas)` : "";
     const sheetMismatch = payload.sheetMismatch;
     if (sheetMismatch && typeof sheetMismatch.read === "number" && typeof sheetMismatch.expected === "number") {
      setSyncState("review");
@@ -299,10 +327,10 @@ export default function ScanPage() {
     }
     if (payload.status === "manual_review") {
      setSyncState("review");
-     setSyncMessage(`Guardado para revision (${scoreLabel}). ${payload.studentCode ? "Alumno sin identificar." : "RUT no detectado."}${quotaNote}`);
+     setSyncMessage(`Guardado para revision (${scoreLabel})${multipageNote}. ${payload.studentCode ? "Alumno sin identificar." : "RUT no detectado."}${quotaNote}`);
     } else {
      setSyncState("saved");
-     setSyncMessage(`Sincronizado en dashboard (${scoreLabel}).${quotaNote}`);
+     setSyncMessage(`Sincronizado en dashboard (${scoreLabel})${multipageNote}.${quotaNote}`);
     }
    } catch (err) {
     // Si el error es de red (no conectado), encolar para sincronizar después
@@ -1145,7 +1173,7 @@ export default function ScanPage() {
           )}
 
           {syncState !== "idle" && (
-           <div className={`mb-4 rounded-2xl border px-3 py-2 text-[10px] font-bold ${syncState === "saved" ? "border-green-500/30 bg-green-500/10 text-green-300" : syncState === "review" ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : syncState === "queued" ? "border-orange-500/30 bg-orange-500/10 text-orange-200" : syncState === "saving" ? "border-sky-500/30 bg-sky-500/10 text-sky-200" : "border-red-500/30 bg-red-500/10 text-red-200"}`}>
+           <div className={`mb-4 rounded-2xl border px-3 py-2 text-[10px] font-bold ${syncState === "saved" ? "border-green-500/30 bg-green-500/10 text-green-300" : syncState === "partial" ? "border-blue-500/30 bg-blue-500/10 text-blue-200" : syncState === "review" ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : syncState === "queued" ? "border-orange-500/30 bg-orange-500/10 text-orange-200" : syncState === "saving" ? "border-sky-500/30 bg-sky-500/10 text-sky-200" : "border-red-500/30 bg-red-500/10 text-red-200"}`}>
             {syncMessage}
            </div>
           )}

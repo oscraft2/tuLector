@@ -7,9 +7,13 @@ import { createQuiz } from "@/app/dashboard/actions";
 import { AnswerKeyEditor } from "@/components/dashboard/AnswerKeyEditor";
 import { ActionFeedbackDialog } from "@/components/dashboard/ActionFeedbackDialog";
 import { SubmitButton } from "@/components/dashboard/SubmitButton";
-import { QUIZ_MAX_QUESTIONS } from "@/lib/quiz_constraints";
+import { QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE } from "@/lib/quiz_constraints";
+import { resolveCountryProfile } from "@/lib/country_profiles";
 
-const CHILEAN_SUBJECTS = [
+// Lista de materias de secundaria comunes a la region (no exclusiva de un
+// pais); el termino "Base Curricular" del label SI es especifico de Chile,
+// por eso el titulo del campo se ajusta segun el pais (ver mas abajo).
+const SUBJECTS = [
   "Lengua y Literatura",
   "Matemática",
   "Historia, Geografía y Ciencias Sociales",
@@ -33,6 +37,10 @@ export function QuizCreateForm({ courses, countryCode = "CL" }: { courses: Cours
   const [state, formAction] = useActionState(createQuiz, initialState);
   const formRef = useRef<HTMLFormElement>(null);
   const noCourses = courses.length === 0;
+  const countryProfile = resolveCountryProfile(countryCode);
+  const isChile = countryProfile.code === "CL";
+  const exigenciaOptions = [0.5, 0.55, 0.6, 0.65, 0.7];
+  const defaultExigencia = countryProfile.grading.exigencia;
 
   useEffect(() => {
     if (state.status === "success") formRef.current?.reset();
@@ -56,10 +64,10 @@ export function QuizCreateForm({ courses, countryCode = "CL" }: { courses: Cours
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-sm font-semibold">
-              Asignatura (Base Curricular)
+              {isChile ? "Asignatura (Base Curricular)" : "Asignatura"}
               <select name="subject" required className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-2 py-2 font-normal text-sm">
                 <option value="">Selecciona materia</option>
-                {CHILEAN_SUBJECTS.map((s) => (
+                {SUBJECTS.map((s) => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
@@ -86,18 +94,21 @@ export function QuizCreateForm({ courses, countryCode = "CL" }: { courses: Cours
 
           <label className="block text-sm font-semibold">
             Exigencia
-            <select name="exigencia" defaultValue="0.60" className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-2 py-2 font-normal text-sm">
-              <option value="0.50">50% — Mas exigente (nota 4.0 con la mitad)</option>
-              <option value="0.55">55%</option>
-              <option value="0.60">60% — Estandar chileno</option>
-              <option value="0.65">65%</option>
-              <option value="0.70">70% — Muy exigente</option>
+            <select name="exigencia" defaultValue={String(defaultExigencia)} className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-2 py-2 font-normal text-sm">
+              {exigenciaOptions.map((pct) => (
+                <option key={pct} value={pct}>
+                  {Math.round(pct * 100)}%{pct === defaultExigencia ? ` — Estandar ${countryProfile.countryName}` : ""}
+                </option>
+              ))}
             </select>
-            <span className="mt-1 block text-[10px] text-[#5b6472]">Porcentaje de acierto minimo para obtener nota 4.0. No afecta puntajes PAES/SIMCE.</span>
+            <span className="mt-1 block text-[10px] text-[#5b6472]">
+              Porcentaje de acierto minimo para obtener nota {countryProfile.grading.passing} (escala {countryProfile.grading.min}-{countryProfile.grading.max}).
+              {isChile && " No afecta puntajes PAES/SIMCE."}
+            </span>
           </label>
 
           <p className="text-xs text-[#5b6472]">
-            Formatos compatibles con el lector móvil: hasta {QUIZ_MAX_QUESTIONS} preguntas y 3, 4 o 5 opciones.
+            Formatos compatibles con el lector móvil: hasta {QUIZ_MAX_QUESTIONS} preguntas por hoja (hasta {QUIZ_MAX_QUESTIONS_MULTIPAGE} repartidas en varias hojas) y 3, 4 o 5 opciones.
           </p>
 
           <SubmitButton

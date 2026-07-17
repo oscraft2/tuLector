@@ -10,6 +10,7 @@ import { resolveNationalId } from "@/lib/national_id";
 import {
   QUIZ_ALLOWED_OPTIONS,
   QUIZ_MAX_QUESTIONS,
+  QUIZ_MAX_QUESTIONS_MULTIPAGE,
   QUIZ_MIN_QUESTIONS,
   normalizeAnswerKeyForOptions,
   normalizeQuestionCount,
@@ -56,8 +57,8 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     const title = String(formData.get("title") ?? "").trim();
     const requestedQuestions = Number(formData.get("num_questions") ?? 20);
     const requestedOptions = Number(formData.get("options_per_question") ?? 5);
-    if (!Number.isInteger(requestedQuestions) || requestedQuestions < QUIZ_MIN_QUESTIONS || requestedQuestions > QUIZ_MAX_QUESTIONS) {
-      throw new Error(`El lector movil soporta entre ${QUIZ_MIN_QUESTIONS} y ${QUIZ_MAX_QUESTIONS} preguntas.`);
+    if (!Number.isInteger(requestedQuestions) || requestedQuestions < QUIZ_MIN_QUESTIONS || requestedQuestions > QUIZ_MAX_QUESTIONS_MULTIPAGE) {
+      throw new Error(`El lector movil soporta entre ${QUIZ_MIN_QUESTIONS} y ${QUIZ_MAX_QUESTIONS_MULTIPAGE} preguntas (mas de ${QUIZ_MAX_QUESTIONS} se reparten en varias hojas).`);
     }
     if (!QUIZ_ALLOWED_OPTIONS.includes(requestedOptions as (typeof QUIZ_ALLOWED_OPTIONS)[number])) {
       throw new Error("El lector movil soporta 3, 4 o 5 opciones.");
@@ -72,9 +73,13 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     if (!title) throw new Error("Ingresa un titulo para el ensayo.");
     if (answerKey.length !== numQuestions) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
 
-    // N. de columnas derivado (sobre seguro validado por test:omr, ver
-    // sheet_generator.allowedColumns) + sheet_code correlativo (con reintento anti-colision).
-    const numColumns = suggestColumns(numQuestions);
+    // N. de columnas derivado del tamano de UNA pagina (sobre seguro validado
+    // por test:omr, ver sheet_generator.allowedColumns), no del total del
+    // ensayo -- un ensayo multipagina de 250 preguntas se imprime/lee en
+    // paginas de 100, cada una con su propio nº de columnas (bug real: antes
+    // se derivaba del total, que para >100 preguntas cae fuera del sobre
+    // seguro y da una config invalida). Ver docs/plan-multipagina-fase1.md.
+    const numColumns = suggestColumns(Math.min(numQuestions, QUIZ_MAX_QUESTIONS));
     const SHEET_CODE_MAX = 0xfffff; // 1.048.575
     const baseCode = await nextSheetCode(supabase, school.id);
     const grade = String(formData.get("grade") ?? "") || null;
@@ -144,7 +149,7 @@ export async function duplicateQuiz(_prevState: DashboardActionState, formData: 
       title: `${data.title} copia`,
       num_questions: data.num_questions,
       options_per_question: data.options_per_question,
-      num_columns: data.num_columns ?? suggestColumns(Number(data.num_questions)),
+      num_columns: data.num_columns ?? suggestColumns(Math.min(Number(data.num_questions), QUIZ_MAX_QUESTIONS)),
       sheet_code: sheetCode,
       option_labels: data.option_labels,
       answer_key: data.answer_key,

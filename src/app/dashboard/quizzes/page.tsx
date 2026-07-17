@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { QuizCreateForm } from "@/components/dashboard/QuizCreateForm";
 import { ActionButton } from "@/components/dashboard/ActionButton";
 import { isMissingColumnError } from "@/lib/supabase_errors";
+import { resolveCountryProfile } from "@/lib/country_profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,12 @@ export default async function QuizzesPage() {
   const courseList = (courses ?? []) as CourseRow[];
   const quizzes = (quizzesData ?? []) as unknown as QuizRow[];
   const courseNameById = new Map(courseList.map((course) => [course.id, course.name]));
+  const countryProfile = resolveCountryProfile(school.country_code ?? "CL");
+  // El texto de ayuda no puede nombrar PAES/SIMCE (Chile) para un colegio de
+  // otro pais -- usa los sistemas de evaluacion reales de su perfil.
+  const evaluationHint = countryProfile.code === "CL"
+    ? "personalizada, PAES o SIMCE"
+    : `personalizada o ${countryProfile.evaluationSystems.map((s) => s.replace(/_/g, " ")).join("/")}`;
 
   return (
     <>
@@ -56,7 +63,7 @@ export default async function QuizzesPage() {
         {/* Left Column: Create Quiz Form (cliente: toast + estado "Creando…") */}
         {quizzes.length === 0 && (
           <p className="rounded-md border border-blue-100 bg-blue-50/50 px-4 py-3 text-sm text-blue-800">
-            Un ensayo define las preguntas, la clave de respuestas y el tipo de evaluacion (personalizada, PAES o SIMCE). Al crearlo podras generar su hoja imprimible y escanearla desde la app movil.
+            Un ensayo define las preguntas, la clave de respuestas y el tipo de evaluacion ({evaluationHint}). Al crearlo podras generar su hoja imprimible y escanearla desde la app movil.
           </p>
         )}
         <QuizCreateForm courses={courseList} countryCode={school.country_code ?? "CL"} />

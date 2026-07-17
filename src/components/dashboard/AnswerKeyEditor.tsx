@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-import { QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, optionLabelsFor } from "@/lib/quiz_constraints";
+import { QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE, optionLabelsFor } from "@/lib/quiz_constraints";
 import { resolveCountryProfile } from "@/lib/country_profiles";
 
 export type EvaluationType = "custom" | "paes" | "simce";
@@ -163,11 +163,14 @@ export function AnswerKeyEditor({
               name="num_questions"
               type="number"
               min="1"
-              max={QUIZ_MAX_QUESTIONS}
+              max={QUIZ_MAX_QUESTIONS_MULTIPAGE}
               value={questionCount}
-              onChange={(event) => setQuestionCount(Math.max(1, Math.min(QUIZ_MAX_QUESTIONS, Number(event.target.value) || 1)))}
+              onChange={(event) => setQuestionCount(Math.max(1, Math.min(QUIZ_MAX_QUESTIONS_MULTIPAGE, Number(event.target.value) || 1)))}
               className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal"
             />
+            {questionCount > QUIZ_MAX_QUESTIONS && (
+              <span className="mt-1 block text-[10px] text-[#5b6472]">Se imprime en {Math.ceil(questionCount / QUIZ_MAX_QUESTIONS)} hojas (max {QUIZ_MAX_QUESTIONS} preguntas por hoja).</span>
+            )}
           </label>
           <label className="text-sm font-semibold">
             Opciones

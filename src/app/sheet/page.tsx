@@ -5,12 +5,12 @@ import Link from "next/link";
 import { SHEET_W, SHEET_H, type SheetConfig } from "@/lib/sheet_layout";
 import {
   renderSheet, randomValidNationalId, randomAnswers, randomPartialAnswers, safeColumns, allowedColumns,
-  MIN_QUESTIONS, MAX_QUESTIONS, type Branding, type GroundTruthEntry, type SheetMarks,
+  paginateQuiz, MIN_QUESTIONS, MAX_QUESTIONS, type Branding, type GroundTruthEntry, type SheetMarks, type QuizPage,
 } from "@/lib/sheet_generator";
 import { resolveNationalId } from "@/lib/national_id";
 import { countryProfiles, resolveCountryProfile } from "@/lib/country_profiles";
 import { resolveIdBlock } from "@/lib/country_id_blocks";
-import { SHEET_CODE_VERSION, type SheetCodeData } from "@/lib/sheet_code";
+import { SHEET_CODE_VERSION, SHEET_COUNTRY_CODES, type SheetCodeData } from "@/lib/sheet_code";
 import { isNativeApp, shareNativeImage } from "@/lib/native/capacitor";
 
 const DEFAULT_TEST_RUT = "12345678-5";
@@ -100,15 +100,49 @@ export default function SheetPage() {
   // Nº de preguntas que quedan auto-marcadas; el resto en blanco (marcado a mano).
   const effectiveMarkUpTo = partialMode ? Math.max(0, Math.min(markUpTo, numQuestions)) : numQuestions;
 
-  const cfg: SheetConfig = { numQuestions, numOptions, numColumns, idBlock };
-  const branding: Branding = { title, school, logo };
-  // Codigo de hoja: si viene de un ensayo, lleva su sheet_code (ata la hoja al
-  // ensayo y habilita verificar "hoja correcta" al escanear).
-  const sheetCode: SheetCodeData | undefined =
-    quizInfo && quizInfo.sheetCode != null
-      ? { version: SHEET_CODE_VERSION, sheetId: quizInfo.sheetCode, page: 1, pagesTotal: 1 }
-      : undefined;
-  const marks: SheetMarks = { ...(fillRut ? { rut, filled: true } : {}), ...(sheetCode ? { code: sheetCode } : {}) };
+  // Multipagina (Fase 1, ver docs/plan-multipagina-fase1.md): un ensayo de
+  // mas de MAX_QUESTIONS preguntas se reparte en N hojas de tamano fijo, cada
+  // una impresa/leida como hoja independiente (motor sin cambios). Con 1 sola
+  // pagina (el caso de hoy) `pages` tiene 1 elemento igual al total -> cero
+  // cambio de comportamiento.
+  const pages: QuizPage[] = paginateQuiz(numQuestions);
+  const isMultipage = pages.length > 1;
+  const countryIdx = Math.max(0, SHEET_COUNTRY_CODES.indexOf(countryCode as (typeof SHEET_COUNTRY_CODES)[number]));
+
+  // IMPORTANTE: en multipagina, TODAS las paginas usan el mismo grid FIJO
+  // (MAX_QUESTIONS) -- incluida la ultima, aunque le sobren filas de burbujas
+  // sin usar. /scan lee con una config ESTATICA por ensayo (no sabe que
+  // pagina tiene delante de la camara hasta leer el codigo de hoja, que se
+  // decodifica DESPUES de aplicar la grilla de lectura) -- si el tamano de
+  // grid variara entre paginas, la ultima pagina se leeria mal. Con 1 sola
+  // pagina (pages.length===1, el caso de hoy) se usa el tamano real pedido,
+  // sin cambio de comportamiento. Ver docs/plan-multipagina-fase1.md.
+  const pageGridSize = isMultipage ? MAX_QUESTIONS : numQuestions;
+  // Recibe QuizPage por consistencia con marksForPage/brandingForPage (se
+  // llaman las 3 juntas por pagina), aunque el grid ya no varia por pagina.
+  const cfgForPage = (_p: QuizPage): SheetConfig => ({
+    numQuestions: pageGridSize,
+    numOptions,
+    numColumns: safeColumns(pageGridSize, numColumns),
+    idBlock,
+  });
+  const marksForPage = (p: QuizPage): SheetMarks => ({
+    ...(fillRut ? { rut, filled: true } : {}),
+    ...(quizInfo && quizInfo.sheetCode != null
+      ? { code: { version: SHEET_CODE_VERSION, country: countryIdx, sheetId: quizInfo.sheetCode, page: p.page, pagesTotal: pages.length } as SheetCodeData }
+      : {}),
+  });
+  const brandingForPage = (p: QuizPage): Branding => ({
+    title, school, logo,
+    ...(isMultipage ? { pageInfo: `Página ${p.page} de ${pages.length} — Preguntas ${p.from}–${p.to}` } : {}),
+  });
+
+  // Config/marcas/branding de la PRIMERA pagina: usados por la vista previa,
+  // "Descargar PNG" y "Compartir" (solo esas dos exportan una unica imagen;
+  // con varias paginas hay que usar "Descargar PDF", que si exporta todas).
+  const cfg: SheetConfig = cfgForPage(pages[0] ?? { page: 1, from: 1, to: numQuestions, count: numQuestions });
+  const marks: SheetMarks = marksForPage(pages[0] ?? { page: 1, from: 1, to: numQuestions, count: numQuestions });
+  const branding: Branding = brandingForPage(pages[0] ?? { page: 1, from: 1, to: numQuestions, count: numQuestions });
 
   // Sincroniza la config con el escáner: /scan la lee de localStorage para leer
   // la hoja con el MISMO nº de preguntas/opciones/columnas que se imprimió.
@@ -134,7 +168,7 @@ export default function SheetPage() {
     const ctx = canvas.getContext("2d");
     if (ctx) renderSheet(ctx, marks, cfg, branding);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numQuestions, numOptions, numColumns, title, school, logo, fillRut, rut, quizInfo]);
+  }, [numQuestions, numOptions, numColumns, countryCode, title, school, logo, fillRut, rut, quizInfo]);
 
   // Carga el ensayo desde ?quiz=<id> y hace que la hoja HEREDE su formato + codigo.
   useEffect(() => {
@@ -149,7 +183,10 @@ export default function SheetPage() {
         const no = Number(q.options_per_question) || 5;
         setNumQuestions(nq);
         setNumOptions(no);
-        setNumColumns(safeColumns(nq, Number(q.num_columns) || 1));
+        // Columnas por PAGINA (max MAX_QUESTIONS), no por el total del ensayo
+        // -- para un ensayo multipagina, num_columns describe una hoja de
+        // 100 preguntas como maximo, no las 250 que pueda tener el total.
+        setNumColumns(safeColumns(Math.min(nq, MAX_QUESTIONS), Number(q.num_columns) || 1));
         if (q.title) setTitle(String(q.title));
         if (q.country_code) {
           setCountryCode(String(q.country_code));
@@ -167,7 +204,8 @@ export default function SheetPage() {
     img.src = URL.createObjectURL(file);
   };
 
-  /** Renderiza una hoja a dataURL PNG (2x para nitidez de impresión). */
+  /** Renderiza una hoja a dataURL PNG (2x para nitidez de impresión). Usa la
+   *  config/branding de la PAGINA 1 (ver comentario mas arriba). */
   const renderToDataUrl = (m: SheetMarks) => {
     const c = document.createElement("canvas");
     c.width = SHEET_W * 2; c.height = SHEET_H * 2;
@@ -177,7 +215,23 @@ export default function SheetPage() {
     return c.toDataURL("image/png");
   };
 
-  const pdfOne = () => exportPdf([renderToDataUrl(marks)], fillRut ? `hoja_tulector_${rut}.pdf` : "hoja_tulector.pdf");
+  /** Renderiza UNA pagina especifica (multipagina) a dataURL PNG. */
+  const renderPageToDataUrl = (p: QuizPage) => {
+    const c = document.createElement("canvas");
+    c.width = SHEET_W * 2; c.height = SHEET_H * 2;
+    const ctx = c.getContext("2d")!;
+    ctx.scale(2, 2);
+    renderSheet(ctx, marksForPage(p), cfgForPage(p), brandingForPage(p));
+    return c.toDataURL("image/png");
+  };
+
+  // Multipagina: exporta las N hojas como un solo PDF de N paginas (exportPdf
+  // ya soporta multi-pagina, se reusa sin cambios). 1 pagina -> comportamiento
+  // identico al de siempre.
+  const pdfOne = () => exportPdf(
+    pages.map((p) => renderPageToDataUrl(p)),
+    fillRut ? `hoja_tulector_${rut}.pdf` : "hoja_tulector.pdf",
+  );
 
   const downloadPNG = () => {
     const a = document.createElement("a");
@@ -223,7 +277,7 @@ export default function SheetPage() {
       const ans = partialMode
         ? randomPartialAnswers(numQuestions, numOptions, effectiveMarkUpTo)
         : randomAnswers(numQuestions, numOptions);
-      urls.push(renderToDataUrl({ rut: r, answers: ans, filled: true, ...(sheetCode ? { code: sheetCode } : {}) }));
+      urls.push(renderToDataUrl({ rut: r, answers: ans, filled: true, ...(marks.code ? { code: marks.code } : {}) }));
       // La verdad-terreno solo cubre lo AUTO-marcado (1..markedUpTo); lo demás se
       // marca a mano y se evalua contra la clave real del ensayo, no contra este JSON.
       truth.push({ index: i, rut: r, answers: ans.slice(0, effectiveMarkUpTo).map((a) => LABELS[a]) });
@@ -263,19 +317,25 @@ export default function SheetPage() {
             <canvas ref={previewRef} className="w-full h-auto block" style={{ aspectRatio: `${SHEET_W}/${SHEET_H}` }} />
           </div>
           <div className="flex gap-2">
-            <button onClick={downloadPNG} className="flex-1 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm font-semibold hover:bg-zinc-700">
+            <button onClick={downloadPNG} disabled={isMultipage} title={isMultipage ? "PNG solo exporta la pagina 1 — usa Descargar PDF para las N hojas" : undefined}
+              className="flex-1 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm font-semibold hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed">
               Descargar PNG
             </button>
             <button onClick={pdfOne} className="flex-1 py-2 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500">
-              Descargar PDF
+              Descargar PDF{isMultipage ? ` (${pages.length} hojas)` : ""}
             </button>
             {native && (
-              <button onClick={shareNative} disabled={sharing}
-                className="flex-1 py-2 bg-indigo-600 rounded-lg text-sm font-semibold hover:bg-indigo-500 disabled:opacity-50">
+              <button onClick={shareNative} disabled={sharing || isMultipage} title={isMultipage ? "Compartir solo envia la pagina 1 — usa Descargar PDF para las N hojas" : undefined}
+                className="flex-1 py-2 bg-indigo-600 rounded-lg text-sm font-semibold hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed">
                 {sharing ? "Compartiendo..." : "Compartir"}
               </button>
             )}
           </div>
+          {isMultipage && (
+            <p className="text-xs text-amber-400">
+              ⚠ Este ensayo tiene {numQuestions} preguntas → se imprime en {pages.length} hojas (cada una con su propio bloque de ID, se pueden escanear en cualquier orden). Usa <strong>Descargar PDF</strong> para obtener las {pages.length} páginas.
+            </p>
+          )}
         </div>
 
         {/* Controles */}
@@ -312,13 +372,17 @@ export default function SheetPage() {
                 </select>
               </label>
               <label className="flex-1">
-                <span className="text-zinc-400">Columnas</span>
+                <span className="text-zinc-400">Columnas{isMultipage ? " (por hoja)" : ""}</span>
                 <select value={numColumns} disabled={!!quizInfo} onChange={(e) => setNumColumns(+e.target.value)} className={inputCls}>
-                  {allowedColumns(numQuestions).map((n) => <option key={n} value={n}>{n} columna{n > 1 ? "s" : ""}</option>)}
+                  {/* Columnas de UNA hoja (max MAX_QUESTIONS), no del total del ensayo. */}
+                  {allowedColumns(Math.min(numQuestions, MAX_QUESTIONS)).map((n) => <option key={n} value={n}>{n} columna{n > 1 ? "s" : ""}</option>)}
                 </select>
               </label>
             </div>
-            <p className="text-xs text-zinc-500">Rango validado: <strong className="text-zinc-300">{MIN_QUESTIONS}–{MAX_QUESTIONS}</strong> preguntas · 1 col ≤40 · 2 col 12–50 · 3 col 18–90 · 4 col 21–100. Toda config aquí lee 100% (guard <code>test:omr</code>).</p>
+            <p className="text-xs text-zinc-500">
+              Rango validado por hoja: <strong className="text-zinc-300">{MIN_QUESTIONS}–{MAX_QUESTIONS}</strong> preguntas · 1 col ≤40 · 2 col 12–50 · 3 col 18–90 · 4 col 21–100. Toda config aquí lee 100% (guard <code>test:omr</code>).
+              {isMultipage && ` Con más de ${MAX_QUESTIONS} preguntas se reparte en varias hojas.`}
+            </p>
           </section>
 
           {/* Branding */}
@@ -346,13 +410,17 @@ export default function SheetPage() {
             <p className="text-zinc-400 text-xs">Imprime una hoja con el {countryProfile.studentIdLabel} ya marcado para verificar el lector sin marcado a mano.</p>
           </section>
 
-          {/* Beta autollenado */}
+          {/* Beta autollenado -- NO soporta multipagina todavia (ver docs/plan-multipagina-fase1.md) */}
           <section className="bg-indigo-950/40 border border-indigo-800/60 rounded-xl p-4 space-y-3">
             <h3 className="font-bold text-white">🧪 Beta — pruebas masivas (ideal vs real)</h3>
-            <p className="text-zinc-400 text-xs">
-              Genera hojas autollenadas (RUT + respuestas) + un archivo de
-              <strong className="text-white"> verdad-terreno</strong> (JSON). Imprime, escanea y contrasta. Ver <code>docs/plan-pruebas-lector.md</code>.
-            </p>
+            {isMultipage ? (
+              <p className="text-amber-400 text-xs">⚠ El autollenado masivo todavía no soporta ensayos multipágina. Usa <strong>Descargar PDF</strong> arriba para las hojas reales.</p>
+            ) : (
+              <p className="text-zinc-400 text-xs">
+                Genera hojas autollenadas (RUT + respuestas) + un archivo de
+                <strong className="text-white"> verdad-terreno</strong> (JSON). Imprime, escanea y contrasta. Ver <code>docs/plan-pruebas-lector.md</code>.
+              </p>
+            )}
 
             {/* Origen de los RUTs */}
             <div className="flex gap-2 text-xs">
@@ -396,7 +464,7 @@ export default function SheetPage() {
               </label>
             )}
 
-            <button onClick={generateBatch} disabled={busy || (rutMode === "list" && parsedRuts.length === 0)}
+            <button onClick={generateBatch} disabled={busy || isMultipage || (rutMode === "list" && parsedRuts.length === 0)}
               className="w-full py-2.5 bg-indigo-600 rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-50">
               {busy
                 ? "Generando PDF…"

@@ -13,6 +13,7 @@ export interface Branding {
   title?: string;     // título del ensayo
   school?: string;    // nombre del colegio
   logo?: HTMLImageElement | null; // logo (opcional)
+  pageInfo?: string;  // "Página 2 de 3 — Preguntas 101–200" (multipágina, opcional)
 }
 
 export interface SheetMarks {
@@ -47,6 +48,11 @@ export function drawBranding(ctx: CanvasRenderingContext2D, b: Branding): void {
   if (b.school) {
     ctx.font = "14px sans-serif";
     ctx.fillText(b.school.slice(0, 70), SHEET_W / 2, 42);
+  }
+  if (b.pageInfo) {
+    ctx.textAlign = "right";
+    ctx.font = "bold 11px sans-serif";
+    ctx.fillText(b.pageInfo, SHEET_W - 20, 14);
   }
   ctx.restore();
   void SAFE_TOP;
@@ -135,4 +141,29 @@ export interface GroundTruthEntry {
   index: number;   // 1..N
   rut: string;     // clave de emparejamiento con scan_logs
   answers: string[]; // letras ("A".."E")
+}
+
+export interface QuizPage {
+  page: number;    // 1-indexado
+  from: number;    // primera pregunta GLOBAL de esta pagina (1-indexada)
+  to: number;      // ultima pregunta GLOBAL de esta pagina (inclusive)
+  count: number;   // to - from + 1
+}
+
+/**
+ * Reparte un ensayo de N preguntas en paginas de tamano fijo (MAX_QUESTIONS,
+ * el mismo sobre validado por test:omr). Para 1 pagina devuelve un array de
+ * 1 elemento (from=1, to=numQuestions) -- el caso de hoy, sin multipagina.
+ * Ver docs/plan-multipagina-fase1.md: cada pagina se imprime/lee como hoja
+ * fisicamente independiente de MAX_QUESTIONS preguntas, sin tocar el motor.
+ */
+export function paginateQuiz(numQuestions: number): QuizPage[] {
+  const total = Math.max(0, Math.floor(numQuestions));
+  if (total <= 0) return [];
+  const pagesTotal = Math.max(1, Math.ceil(total / MAX_QUESTIONS));
+  return Array.from({ length: pagesTotal }, (_, i) => {
+    const from = i * MAX_QUESTIONS + 1;
+    const to = Math.min(total, (i + 1) * MAX_QUESTIONS);
+    return { page: i + 1, from, to, count: to - from + 1 };
+  });
 }

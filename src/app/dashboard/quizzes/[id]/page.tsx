@@ -88,7 +88,7 @@ export default async function QuizDetailPage({ params }: PageProps) {
       simce_2m_mate: "SIMCE II Medio - Matemática",
       simce_2m_lectura: "SIMCE II Medio - Lectura",
     };
-    return labels[quiz.evaluation_variant] || quiz.evaluation_variant;
+    return labels[quiz.evaluation_variant] || String(quiz.evaluation_variant).replace(/_/g, " ");
   };
 
   return (
