@@ -116,35 +116,78 @@ export default function OnboardingPage() {
               </div>
             </div>
 
-            {/* Buscar institución si es colegio o superior */}
+            <fieldset>
+              <legend className="text-sm font-semibold">País de origen</legend>
+              <div className="mt-3 grid gap-2 md:grid-cols-3">
+                {countryProfiles.map((country) => (
+                  <label key={country.code} className="cursor-pointer">
+                    <input
+                      className="peer sr-only" type="radio" name="country_code" value={country.code}
+                      defaultChecked={country.code === initialCountry.code}
+                      onChange={() => {
+                        setCountryCode(country.code);
+                        // Buscar institucion solo tiene datos reales para Chile
+                        // (chile_schools/instituciones_superiores). Fuera de
+                        // Chile se va directo a modo manual -- antes el buscador
+                        // aparecia igual para cualquier pais y nunca encontraba
+                        // nada, bloqueando el flujo.
+                        if (country.code !== "CL") {
+                          handleManualMode();
+                        } else {
+                          setIsManual(false);
+                        }
+                      }}
+                    />
+                    <span className="block rounded-xl border border-[#d8dde3] bg-white p-3 transition peer-checked:border-2 peer-checked:border-[#07305f] peer-checked:bg-[#eef6ff]">
+                      <span className="text-2xl" aria-hidden="true">{country.flag}</span>
+                      <span className="mt-2 block text-sm font-semibold text-[#111827]">{country.countryName}</span>
+                      <span className="mt-0.5 block text-xs text-[#5b6472]">{country.standardsLabel}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-[#5b6472]">{selectedCountry.onboardingHelper}</p>
+            </fieldset>
+
+            {/* Buscar institución si es colegio o superior -- solo tiene datos
+                reales para Chile, para el resto de paises se va directo a
+                modo manual (ver onChange del radio de pais arriba). */}
             {institucionTipo !== "personal" && (
               <>
-                <div className="flex justify-between items-center text-sm font-semibold mt-2">
-                  <span>Buscar institución</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isManual) {
-                        setIsManual(false);
-                      } else {
-                        handleManualMode();
-                      }
-                    }}
-                    className="text-xs font-semibold text-[#07305f] hover:underline cursor-pointer"
-                  >
-                    {isManual ? "Buscar institución..." : "Ingresar manualmente"}
-                  </button>
-                </div>
+                {selectedCountry.code === "CL" ? (
+                  <>
+                    <div className="flex justify-between items-center text-sm font-semibold mt-2">
+                      <span>Buscar institución</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isManual) {
+                            setIsManual(false);
+                          } else {
+                            handleManualMode();
+                          }
+                        }}
+                        className="text-xs font-semibold text-[#07305f] hover:underline cursor-pointer"
+                      >
+                        {isManual ? "Buscar institución..." : "Ingresar manualmente"}
+                      </button>
+                    </div>
 
-                {!isManual ? (
-                  <SeleccionarInstitucion
-                    tab={institucionTipo === "superior" ? "superior" : "colegio"}
-                    onSelect={handleSelect}
-                    onManualMode={handleManualMode}
-                  />
+                    {!isManual ? (
+                      <SeleccionarInstitucion
+                        tab={institucionTipo === "superior" ? "superior" : "colegio"}
+                        onSelect={handleSelect}
+                        onManualMode={handleManualMode}
+                      />
+                    ) : (
+                      <div className="text-xs text-[#5b6472] -mt-1">
+                        Registrando institución de forma manual.
+                      </div>
+                    )}
+                  </>
                 ) : (
-                  <div className="text-xs text-[#5b6472] -mt-1">
-                    Registrando institución de forma manual.
+                  <div className="text-xs font-semibold text-[#5b6472] mt-2">
+                    Ingresa los datos de tu institución:
                   </div>
                 )}
 
@@ -183,27 +226,6 @@ export default function OnboardingPage() {
             )}
 
             <label className="text-sm font-semibold">Subdominio<input name="subdomain" className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal" placeholder="losandes" /></label>
-
-            <fieldset>
-              <legend className="text-sm font-semibold">País de origen</legend>
-              <div className="mt-3 grid gap-2 md:grid-cols-3">
-                {countryProfiles.map((country) => (
-                  <label key={country.code} className="cursor-pointer">
-                    <input
-                      className="peer sr-only" type="radio" name="country_code" value={country.code}
-                      defaultChecked={country.code === initialCountry.code}
-                      onChange={() => setCountryCode(country.code)}
-                    />
-                    <span className="block rounded-xl border border-[#d8dde3] bg-white p-3 transition peer-checked:border-2 peer-checked:border-[#07305f] peer-checked:bg-[#eef6ff]">
-                      <span className="text-2xl" aria-hidden="true">{country.flag}</span>
-                      <span className="mt-2 block text-sm font-semibold text-[#111827]">{country.countryName}</span>
-                      <span className="mt-0.5 block text-xs text-[#5b6472]">{country.standardsLabel}</span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-              <p className="mt-2 text-xs text-[#5b6472]">{selectedCountry.onboardingHelper}</p>
-            </fieldset>
 
             {/* Dirección si es colegio o superior */}
             {institucionTipo !== "personal" && (
