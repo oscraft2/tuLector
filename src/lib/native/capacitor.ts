@@ -243,8 +243,9 @@ export async function googleNativeSignIn(): Promise<string | null> {
     // Pasar scopes custom exige modificar MainActivity (no aplica aquí).
     const res = await SocialLogin.login({ provider: "google", options: {} });
     return res?.result?.idToken ?? null;
-  } catch {
-    return null; // cancelado por el usuario o sin cuenta Google en el dispositivo
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Google Sign-In: ${msg}`);
   }
 }
 
