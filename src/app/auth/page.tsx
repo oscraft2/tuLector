@@ -58,6 +58,7 @@ function AuthForm() {
   const [bioDone, setBioDone] = useState(false);
   const [bioButtonReady, setBioButtonReady] = useState(false);
   const [bioRetrying, setBioRetrying] = useState(false);
+  const [oldApk, setOldApk] = useState(false);
   const router = useRouter();
   const client = useMemo(() => createClient(), []);
 
@@ -78,6 +79,20 @@ function AuthForm() {
     });
     return () => { active = false; };
   }, [searchParams]);
+
+  useEffect(() => {
+    let active = true;
+    const check = () => {
+      if (!active) return;
+      const w = window as unknown as { Capacitor?: { getPlatform?: () => string } };
+      if (w.Capacitor?.getPlatform?.() === "android" && !/TuLectorApp/i.test(navigator.userAgent)) {
+        setOldApk(true);
+      }
+    };
+    check();
+    const timer = setTimeout(check, 2000);
+    return () => { active = false; clearTimeout(timer); };
+  }, []);
 
   const homeAfterAuth = () => (isNativeApp() ? "/app" : "/dashboard");
 
@@ -413,6 +428,15 @@ function AuthForm() {
         </section>
 
         <section className="rounded-xl border border-[#dfe5e2] bg-white p-5 shadow-xl shadow-[#123b5d]/8 md:p-8">
+          {oldApk && (
+            <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
+              <div className="flex-1">
+                <p className="font-bold text-amber-800">Actualiza la app</p>
+                <p className="mt-1 text-amber-700">Esta version de la app no soporta el acceso con Google. Actualizala desde Google Play.</p>
+                <a href="https://play.google.com/store/apps/details?id=cl.tulector.app" target="_blank" rel="noopener noreferrer" className="mt-2 inline-block rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700">Abrir Play Store</a>
+              </div>
+            </div>
+          )}
           <div>
             <div className="mb-5 lg:hidden"><TuLectorLogo href="/" /></div>
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#2f6f5e]">{mode === "login" ? "Acceso seguro" : "Registro seguro"}</p>
