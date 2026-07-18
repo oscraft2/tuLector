@@ -31,8 +31,13 @@ type LatestMeta = { question_number: number; axis_name: string | null; skill_nam
 type SchoolPaper = {
   score: number | null;
   total: number | null;
+  equivalent_score: number | null;
   quizzes: { subject: string | null; grade: string | null; evaluation_type: string | null } | null;
 };
+
+function isNotaType(evType: string | null | undefined) {
+  return evType !== "paes" && evType !== "simce";
+}
 type SimceRow = {
   agno: number | string;
   grado: string;
@@ -54,7 +59,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
   let allSchoolPapersQuery = supabase
     .from("papers")
-    .select("id, score, total, status, quizzes!inner(id, subject, grade, evaluation_type, school_id)")
+    .select("id, score, total, equivalent_score, status, quizzes!inner(id, subject, grade, evaluation_type, school_id)")
     .eq("quizzes.school_id", school.id)
     .in("status", ["corrected", "active"]);
   if (from) allSchoolPapersQuery = allSchoolPapersQuery.gte("scanned_at", from);
@@ -76,8 +81,12 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const scansLimit = school.scans_limit ?? 0;
   const simceData = (simceResult?.data ?? []) as SimceRow[];
   const allSchoolPapers = (allSchoolPapersResult?.data ?? []) as unknown as SchoolPaper[];
-  const schoolAvg = allSchoolPapers.length
-    ? Math.round(allSchoolPapers.reduce((sum, p) => sum + (Number(p.score ?? 0) / Math.max(1, Number(p.total ?? 1))) * 100, 0) / allSchoolPapers.length)
+  // "Promedio del colegio" nunca mezcla % de ensayos personalizados con
+  // puntaje equivalente PAES/SIMCE -- mismo criterio que perfil de alumno
+  // y detalle de curso (bug real de esta sesion: se promediaban juntos).
+  const notaSchoolPapers = allSchoolPapers.filter((p) => isNotaType(p.quizzes?.evaluation_type));
+  const schoolAvg = notaSchoolPapers.length
+    ? Math.round(notaSchoolPapers.reduce((sum, p) => sum + (Number(p.score ?? 0) / Math.max(1, Number(p.total ?? 1))) * 100, 0) / notaSchoolPapers.length)
     : 0;
 
   // ---- Análisis por ítem del último ensayo con lecturas (datos reales) ----
@@ -98,9 +107,29 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   }
 
   // ---- Resultados del colegio (agregaciones reales) ----
+  // "Rendimiento por curso" es % de logro -- solo tiene sentido para
+  // ensayos personalizados (mismo criterio que schoolAvg arriba).
   const papersGroupedByGrade: Record<string, { sum: number; count: number }> = {};
-  const papersGroupedByEvalType: Record<string, { sum: number; count: number }> = {};
-  const papersGroupedByGradeSubject: Record<string, { sum: number; count: number }> = {};
+  // "Por tipo de prueba" SI mezcla los 3 tipos, pero cada uno con su propia
+  // escala: % para personalizado, equivalent_score real para PAES/SIMCE.
+  const papersGroupedByEvalType: Record<string, { sum: number; count: number; isEquivalent: boolean }> = {};
+  // "Ensayos vs SIMCE real" solo tiene sentido comparando ensayos que SI son
+  // de tipo SIMCE contra el SIMCE oficial -- antes comparaba CUALQUIER
+  // ensayo (incluso personalizados) recalculando ademas su propia formula
+  // de puntaje en vez de usar equivalent_score ya guardado (bug real).
+  const papersGroupedByGradeSubjectSimce: Record<string, { sum: number; count: number }> = {};
+
+  notaSchoolPapers.forEach((paper) => {
+    const score = Number(paper.score ?? 0);
+    const total = Number(paper.total ?? 1);
+    const pct = total > 0 ? (score / total) * 100 : 0;
+    const quiz = paper.quizzes;
+    if (!quiz) return;
+    const grade = quiz.grade || "Sin curso";
+    if (!papersGroupedByGrade[grade]) papersGroupedByGrade[grade] = { sum: 0, count: 0 };
+    papersGroupedByGrade[grade].sum += pct;
+    papersGroupedByGrade[grade].count += 1;
+  });
 
   allSchoolPapers.forEach((paper) => {
     const score = Number(paper.score ?? 0);
@@ -109,39 +138,38 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     const quiz = paper.quizzes;
     if (!quiz) return;
 
-    const grade = quiz.grade || "Sin curso";
-    if (!papersGroupedByGrade[grade]) papersGroupedByGrade[grade] = { sum: 0, count: 0 };
-    papersGroupedByGrade[grade].sum += pct;
-    papersGroupedByGrade[grade].count += 1;
-
     const evalType = quiz.evaluation_type || "Otro";
     const labelEval = evalType === "simce" ? "Ensayo SIMCE" : evalType === "paes" ? "Ensayo PAES" : "Pruebas Propias";
-    if (!papersGroupedByEvalType[labelEval]) papersGroupedByEvalType[labelEval] = { sum: 0, count: 0 };
-    papersGroupedByEvalType[labelEval].sum += pct;
+    const isEquivalent = evalType === "simce" || evalType === "paes";
+    if (!papersGroupedByEvalType[labelEval]) papersGroupedByEvalType[labelEval] = { sum: 0, count: 0, isEquivalent };
+    papersGroupedByEvalType[labelEval].sum += isEquivalent ? Number(paper.equivalent_score ?? 0) : pct;
     papersGroupedByEvalType[labelEval].count += 1;
 
-    const key = `${grade}|${quiz.subject || ""}`;
-    if (!papersGroupedByGradeSubject[key]) papersGroupedByGradeSubject[key] = { sum: 0, count: 0 };
-    papersGroupedByGradeSubject[key].sum += pct;
-    papersGroupedByGradeSubject[key].count += 1;
+    if (evalType === "simce") {
+      const grade = quiz.grade || "Sin curso";
+      const key = `${grade}|${quiz.subject || ""}`;
+      if (!papersGroupedByGradeSubjectSimce[key]) papersGroupedByGradeSubjectSimce[key] = { sum: 0, count: 0 };
+      papersGroupedByGradeSubjectSimce[key].sum += Number(paper.equivalent_score ?? 0);
+      papersGroupedByGradeSubjectSimce[key].count += 1;
+    }
   });
 
   const gradeStats = Object.entries(papersGroupedByGrade)
     .map(([name, stat]) => ({ name, avg: Math.round(stat.sum / stat.count), count: stat.count }))
     .sort((a, b) => b.avg - a.avg);
-  const evalStats = Object.entries(papersGroupedByEvalType).map(([name, stat]) => ({ name, avg: Math.round(stat.sum / stat.count), count: stat.count }));
+  const evalStats = Object.entries(papersGroupedByEvalType).map(([name, stat]) => ({ name, avg: Math.round(stat.sum / stat.count), count: stat.count, isEquivalent: stat.isEquivalent }));
 
   const normalizeGrade = (g: string) => g.toLowerCase().replace(/º/g, "o").trim();
   const normalizeSubject = (s: string) => s.toLowerCase().trim();
-  const simceComparison = Object.entries(papersGroupedByGradeSubject).map(([key, stat]) => {
+  const simceComparison = Object.entries(papersGroupedByGradeSubjectSimce).map(([key, stat]) => {
     const [grade, subject] = key.split("|");
-    const omrAvg = Math.round(stat.sum / stat.count);
+    const omrPts = Math.round(stat.sum / stat.count);
     const matchedSimce = simceData.find((row) =>
       normalizeGrade(row.grado) === normalizeGrade(grade) &&
       (normalizeSubject(row.asignatura).includes(normalizeSubject(subject)) || normalizeSubject(subject).includes(normalizeSubject(row.asignatura))),
     );
     return {
-      grade, subject, omrAvg, omrCount: stat.count,
+      grade, subject, omrPts, omrCount: stat.count,
       simcePts: matchedSimce ? Number(matchedSimce.puntaje_promedio) : null,
       simceYear: matchedSimce ? matchedSimce.agno : null,
     };
@@ -255,7 +283,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
                   <span className="text-sm font-medium text-[#4b5563]">{stat.name}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-[#9aa3af]">({stat.count})</span>
-                    <span className={`text-sm font-bold ${LVL[levelOf(stat.avg)].text}`}>{stat.avg}%</span>
+                    <span className={`text-sm font-bold ${stat.isEquivalent ? "text-[#07305f]" : LVL[levelOf(stat.avg)].text}`}>{stat.avg}{stat.isEquivalent ? " pts" : "%"}</span>
                   </div>
                 </div>
               )) : <p className="text-xs italic text-[#9aa3af]">No hay lecturas registradas aún.</p>}
@@ -264,10 +292,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
           <div className="rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
             <h2 className="text-base font-semibold text-[#111827]">Ensayos vs SIMCE real</h2>
-            <p className="mt-1 text-xs text-[#5b6472]">Contraste de ensayos propios vs último resultado oficial.</p>
+            <p className="mt-1 text-xs text-[#5b6472]">Contraste de tus ensayos tipo SIMCE vs último resultado oficial.</p>
             <div className="mt-4 space-y-3.5">
               {simceComparison.length > 0 ? simceComparison.map((comp, i) => {
-                const omrPts = Math.round(100 + (comp.omrAvg / 100) * 300);
+                const omrPts = comp.omrPts;
                 const max = Math.max(omrPts, comp.simcePts ?? 0, 320);
                 return (
                   <div key={i} className="border-b border-[#eef0f3] pb-2.5 last:border-0 last:pb-0">

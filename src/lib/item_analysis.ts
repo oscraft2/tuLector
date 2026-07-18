@@ -13,6 +13,15 @@ export type ItemStat = {
   axis: string | null;
   skill: string | null;
   level: "good" | "warn" | "bad";
+  // Indice de discriminacion (tecnica de Kelley, estandar en analisis de
+  // items): %acierto del tercio superior de puntaje menos %acierto del
+  // tercio inferior. null si no hay suficientes papers con score (<6) para
+  // que el tercio superior/inferior tenga sentido estadistico.
+  discrimination: number | null;
+  // Se prende si el item probablemente tiene la clave mal cargada: un
+  // distractor fue mas marcado que la "correcta", o el item discrimina al
+  // reves (los de mejor desempeño general la fallan mas que los de peor).
+  possibleKeyError: boolean;
 };
 
 export type AxisStat = { axis: string; pct: number; count: number; level: "good" | "warn" | "bad" };
@@ -41,8 +50,14 @@ export function levelOf(pct: number): "good" | "warn" | "bad" {
 
 type MetaRow = { question_number: number; axis_name: string | null; skill_name: string | null };
 
+// Bajo esta cantidad de papers con score valido, el tercio superior/inferior
+// queda con muy pocos alumnos y el indice de discriminacion es puro ruido
+// estadistico -- se omite (discrimination: null) en vez de mostrar un
+// numero enganoso.
+const MIN_PAPERS_FOR_DISCRIMINATION = 6;
+
 export function computeItemAnalysis(
-  papers: { answers: unknown }[],
+  papers: { answers: unknown; score?: number | null; total?: number | null }[],
   answerKey: string | null | undefined,
   numQuestions: number,
   numOptions: number | null | undefined,
@@ -59,27 +74,47 @@ export function computeItemAnalysis(
   }
 
   const counts: Record<number, Record<string, number>> = {};
-  const answered: Record<number, number> = {};
   for (let q = 1; q <= nQ; q++) {
     counts[q] = { "-": 0 };
     for (const o of options) counts[q][o] = 0;
-    answered[q] = 0;
   }
 
+  // Tecnica de Kelley: ordenar por ratio de acierto (score/total, no score
+  // crudo, para no sesgar si algun paper tuviera un total distinto) y tomar
+  // el tercio superior/inferior para medir que tan bien cada pregunta
+  // separa a quienes dominan el contenido de quienes no.
+  const withScore = papers
+    .map((p, idx) => ({ idx, score: Number(p.score ?? NaN), total: Number(p.total ?? NaN) }))
+    .filter((p) => Number.isFinite(p.score) && Number.isFinite(p.total) && p.total > 0)
+    .sort((a, b) => b.score / b.total - a.score / a.total);
+  const groupSize = Math.floor(withScore.length / 3);
+  const canDiscriminate = withScore.length >= MIN_PAPERS_FOR_DISCRIMINATION && groupSize >= 2;
+  const topGroup = new Set(canDiscriminate ? withScore.slice(0, groupSize).map((p) => p.idx) : []);
+  const bottomGroup = new Set(canDiscriminate ? withScore.slice(-groupSize).map((p) => p.idx) : []);
+  const topCorrect: Record<number, number> = {};
+  const bottomCorrect: Record<number, number> = {};
+  for (let q = 1; q <= nQ; q++) { topCorrect[q] = 0; bottomCorrect[q] = 0; }
+
   let totalPapers = 0;
-  for (const p of papers) {
+  papers.forEach((p, pIdx) => {
     const arr = Array.isArray(p.answers) ? (p.answers as Array<{ q?: unknown; a?: unknown }>) : [];
-    if (arr.length === 0) continue;
+    if (arr.length === 0) return;
     totalPapers++;
+    const inTop = topGroup.has(pIdx);
+    const inBottom = bottomGroup.has(pIdx);
     for (const item of arr) {
       const q = Number(item?.q);
       if (!Number.isInteger(q) || q < 1 || q > nQ) continue;
       let a = String(item?.a ?? "-").trim().toUpperCase();
       if (!options.includes(a)) a = "-";
       counts[q][a] = (counts[q][a] ?? 0) + 1;
-      if (a !== "-") answered[q]++;
+      const correctLetter = key[q - 1];
+      if (correctLetter && a === correctLetter) {
+        if (inTop) topCorrect[q]++;
+        if (inBottom) bottomCorrect[q]++;
+      }
     }
-  }
+  });
 
   const items: ItemStat[] = [];
   for (let q = 1; q <= nQ; q++) {
@@ -99,12 +134,26 @@ export function computeItemAnalysis(
     const topDistractorPct = n > 0 && topDistractorCount > 0 ? Math.round((topDistractorCount / n) * 100) : 0;
     if (topDistractorCount <= 0) topDistractor = null;
 
+    const discrimination = canDiscriminate && correct
+      ? Math.round(((topCorrect[q] / groupSize) - (bottomCorrect[q] / groupSize)) * 100) / 100
+      : null;
+    // Si hay suficientes papers para discriminacion, esa es la senal fuerte
+    // -- un item con discriminacion negativa (los mejores alumnos la fallan
+    // mas que los peores) es un red flag real, incluso si el % de acierto es
+    // alto. "Distractor le gana a la correcta" por si solo NO alcanza (un
+    // item dificil pero VALIDO, bien discriminado, puede tener esto sin
+    // problema -- ver test sintetico) y solo se usa como respaldo cuando
+    // todavia no hay papers suficientes para calcular discriminacion.
+    const distractorBeatsCorrect = topDistractor !== null && topDistractorPct > pctCorrect;
+    const possibleKeyError = Boolean(correct) && (discrimination !== null ? discrimination < 0 : distractorBeatsCorrect);
+
     const meta = metaByQ.get(q);
     items.push({
       q, correct, pctCorrect, counts: counts[q], n,
       topDistractor, topDistractorPct,
       axis: meta?.axis ?? null, skill: meta?.skill ?? null,
       level: levelOf(pctCorrect),
+      discrimination, possibleKeyError,
     });
   }
 

@@ -255,12 +255,23 @@ function ItemRow({ it }: { it: ItemStat }) {
   const opts = Object.keys(it.counts).filter((k) => k !== "-").sort();
   const mx = Math.max(1, ...Object.values(it.counts));
   const lvl = LVL[it.level];
+  const discriminationTitle = it.discrimination === null
+    ? "Discriminación: sin datos suficientes (se necesitan 6+ lecturas)"
+    : `Discriminación: ${it.discrimination.toFixed(2)} (tercio superior vs inferior)`;
   return (
     <div className="grid grid-cols-[26px_minmax(0,1fr)_88px] items-center gap-3 border-b border-[#eef0f3] py-2.5 last:border-0">
       <div className="text-xs font-bold text-[#6b7280]">P{it.q}</div>
       <div className="min-w-0">
-        <div className="truncate text-[13px] font-semibold text-[#111827]">
-          {it.axis ? (<span>{it.axis}{it.skill ? <span className="font-normal text-[#6b7280]"> · {it.skill}</span> : null}</span>) : `Pregunta ${it.q}`}
+        <div className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-[#111827]">
+          {it.axis ? (<span className="truncate">{it.axis}{it.skill ? <span className="font-normal text-[#6b7280]"> · {it.skill}</span> : null}</span>) : `Pregunta ${it.q}`}
+          {it.possibleKeyError && (
+            <span
+              className="shrink-0 rounded-full bg-[#fbeae1] px-1.5 py-0.5 text-[10px] font-bold text-[#c2410c]"
+              title="Un distractor supera a la respuesta correcta, o el item discrimina al reves -- revisa si la clave de esta pregunta esta bien cargada."
+            >
+              ⚠ revisar clave
+            </span>
+          )}
         </div>
         <div className="mt-1.5 flex h-5 items-end gap-[3px]">
           {opts.map((o) => {
@@ -269,9 +280,12 @@ function ItemRow({ it }: { it: ItemStat }) {
           })}
         </div>
       </div>
-      <div className="text-right">
+      <div className="text-right" title={discriminationTitle}>
         <span className={`text-[15px] font-bold ${lvl.text}`}>{it.pctCorrect}%</span>
         <div className="mt-1 h-2 overflow-hidden rounded-full bg-[#eef0f3]"><div className={`h-full rounded-full ${lvl.bar}`} style={{ width: `${it.pctCorrect}%` }} /></div>
+        {it.discrimination !== null && (
+          <div className={`mt-0.5 text-[10px] font-semibold ${it.discrimination < 0.1 ? "text-[#c2410c]" : "text-[#9aa3af]"}`}>disc. {it.discrimination.toFixed(2)}</div>
+        )}
       </div>
     </div>
   );

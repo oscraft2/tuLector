@@ -162,20 +162,33 @@ export default async function StudentProfilePage({ params }: PageProps) {
       subject: p.quizzes?.subject ?? null,
       grade: p.quizzes?.grade ?? null,
       evalType: p.quizzes?.evaluation_type ?? null,
+      equivalentScore: p.equivalent_score ?? null,
       score, total, pct, nota,
       date: p.scanned_at ?? new Date(0).toISOString(),
     };
   });
 
   const count = rows.length;
-  const avgNota = count ? rows.reduce((s, r) => s + r.nota, 0) / count : 0;
-  const avgPct = count ? Math.round(rows.reduce((s, r) => s + r.pct, 0) / count) : 0;
-  const best = count ? rows.reduce((b, r) => (r.nota > b.nota ? r : b), rows[0]) : null;
-  const trend = count >= 2 ? rows[rows.length - 1].nota - rows[0].nota : 0;
-  const approved = rows.filter((r) => r.nota >= 4).length;
+  // Nunca promediar "nota" (escala 1-7) junto con puntaje PAES (100-1000) o
+  // SIMCE (100-400) -- son escalas incompatibles. Los KPI de nota se
+  // calculan solo sobre ensayos personalizados; PAES/SIMCE tienen su propio
+  // chip aparte con su propia escala (bug real encontrado en auditoria de
+  // esta sesion: se estaban mezclando en un solo promedio sin sentido).
+  const notaRows = rows.filter((r) => r.evalType !== "paes" && r.evalType !== "simce");
+  const paesRows = rows.filter((r) => r.evalType === "paes" && r.equivalentScore != null);
+  const simceRows = rows.filter((r) => r.evalType === "simce" && r.equivalentScore != null);
+  const notaCount = notaRows.length;
+  const avgNota = notaCount ? notaRows.reduce((s, r) => s + r.nota, 0) / notaCount : 0;
+  const avgPct = notaCount ? Math.round(notaRows.reduce((s, r) => s + r.pct, 0) / notaCount) : 0;
+  const best = notaCount ? notaRows.reduce((b, r) => (r.nota > b.nota ? r : b), notaRows[0]) : null;
+  const trend = notaCount >= 2 ? notaRows[notaRows.length - 1].nota - notaRows[0].nota : 0;
+  const avgPaes = paesRows.length ? Math.round(paesRows.reduce((s, r) => s + (r.equivalentScore ?? 0), 0) / paesRows.length) : null;
+  const avgSimce = simceRows.length ? Math.round(simceRows.reduce((s, r) => s + (r.equivalentScore ?? 0), 0) / simceRows.length) : null;
+  const approved = notaRows.filter((r) => r.nota >= 4).length;
 
-  // Sparkline de notas (orden cronológico)
-  const notas = rows.map((r) => r.nota);
+  // Sparkline de notas (orden cronológico) -- solo ensayos personalizados,
+  // misma razon que el resto de KPIs de nota.
+  const notas = notaRows.map((r) => r.nota);
   const spMin = 1;
   const spMax = 7;
   const spW = 260;
@@ -218,32 +231,46 @@ export default async function StudentProfilePage({ params }: PageProps) {
         </div>
       ) : (
         <>
-          {/* KPIs */}
+          {/* KPIs. Nota (1-7), PAES (100-1000) y SIMCE (100-400) son escalas
+              incompatibles -- nunca se promedian juntas, cada una en su
+              propio chip. */}
           <section className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Kpi label="Ensayos rendidos" value={String(count)} sub={`${approved} aprobados`} />
-            <Kpi label="Nota promedio" value={avgNota.toFixed(1)} sub={`${avgPct}% de logro`} tone={avgNota >= 4 ? "good" : "bad"} />
-            <Kpi label="Mejor resultado" value={best ? best.nota.toFixed(1) : "-"} sub={best?.title ?? ""} tone="good" />
-            <Kpi label="Tendencia" value={`${trend >= 0 ? "▲" : "▼"} ${Math.abs(trend).toFixed(1)}`} sub="primer → último" tone={trend >= 0 ? "good" : "bad"} />
+            <Kpi label="Ensayos rendidos" value={String(count)} sub={notaCount ? `${approved} aprobados` : "sin ensayos con nota"} />
+            {notaCount > 0 && (
+              <>
+                <Kpi label="Nota promedio" value={avgNota.toFixed(1)} sub={`${avgPct}% de logro`} tone={avgNota >= 4 ? "good" : "bad"} />
+                <Kpi label="Mejor resultado" value={best ? best.nota.toFixed(1) : "-"} sub={best?.title ?? ""} tone="good" />
+                <Kpi label="Tendencia" value={`${trend >= 0 ? "▲" : "▼"} ${Math.abs(trend).toFixed(1)}`} sub="primer → último" tone={trend >= 0 ? "good" : "bad"} />
+              </>
+            )}
+            {avgPaes != null && (
+              <Kpi label="Promedio PAES" value={String(avgPaes)} sub={`pts · ${paesRows.length} ensayo${paesRows.length === 1 ? "" : "s"}`} tone="good" />
+            )}
+            {avgSimce != null && (
+              <Kpi label="Promedio SIMCE" value={String(avgSimce)} sub={`pts · ${simceRows.length} ensayo${simceRows.length === 1 ? "" : "s"}`} tone="good" />
+            )}
           </section>
 
-          {/* Evolución */}
-          <section className="mt-4 rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-[#111827]">Evolución de notas</h2>
-            <p className="mt-1 text-xs text-[#5b6472]">Cronológico, del primer al último ensayo.</p>
-            <div className="mt-4 flex items-center gap-4">
-              <svg viewBox={`0 0 ${spW} ${spH}`} className="h-16 w-full max-w-[420px]" preserveAspectRatio="none" aria-hidden="true">
-                <line x1="0" y1={spH - ((4 - spMin) / (spMax - spMin)) * spH} x2={spW} y2={spH - ((4 - spMin) / (spMax - spMin)) * spH} stroke="#e6e8eb" strokeWidth="1" strokeDasharray="3 3" />
-                {points.length > 1 ? <polyline points={points.join(" ")} fill="none" stroke="#07305f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /> : null}
-                {points.map((pt, i) => {
-                  const [x, y] = pt.split(",");
-                  return <circle key={i} cx={x} cy={y} r="2.6" fill={notas[i] >= 4 ? "#1a8f52" : "#c2410c"} />;
-                })}
-              </svg>
-              <div className="shrink-0 text-right">
-                <p className="text-xs text-[#6b7280]">Línea = nota 4,0</p>
+          {/* Evolución (solo ensayos con nota 1-7; PAES/SIMCE no aplican) */}
+          {notaCount > 0 && (
+            <section className="mt-4 rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
+              <h2 className="text-base font-semibold text-[#111827]">Evolución de notas</h2>
+              <p className="mt-1 text-xs text-[#5b6472]">Cronológico, del primer al último ensayo con nota.</p>
+              <div className="mt-4 flex items-center gap-4">
+                <svg viewBox={`0 0 ${spW} ${spH}`} className="h-16 w-full max-w-[420px]" preserveAspectRatio="none" aria-hidden="true">
+                  <line x1="0" y1={spH - ((4 - spMin) / (spMax - spMin)) * spH} x2={spW} y2={spH - ((4 - spMin) / (spMax - spMin)) * spH} stroke="#e6e8eb" strokeWidth="1" strokeDasharray="3 3" />
+                  {points.length > 1 ? <polyline points={points.join(" ")} fill="none" stroke="#07305f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /> : null}
+                  {points.map((pt, i) => {
+                    const [x, y] = pt.split(",");
+                    return <circle key={i} cx={x} cy={y} r="2.6" fill={notas[i] >= 4 ? "#1a8f52" : "#c2410c"} />;
+                  })}
+                </svg>
+                <div className="shrink-0 text-right">
+                  <p className="text-xs text-[#6b7280]">Línea = nota 4,0</p>
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          )}
 
           <AxisMasterySection axes={axisMastery} />
 

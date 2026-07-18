@@ -22,7 +22,11 @@ type PaperRow = {
   quizzes: { id: string; title: string; num_questions: number; evaluation_type: string | null };
 };
 
-type QuizStat = { quizId: string; title: string; evType: string | null; count: number; avgPct: number };
+type QuizStat = { quizId: string; title: string; evType: string | null; count: number; avgPct: number; avgEquivalent: number };
+
+function isNotaType(evType: string | null) {
+  return evType !== "paes" && evType !== "simce";
+}
 
 export default async function CourseDetailPage({ params }: PageProps) {
   const { id } = await params;
@@ -60,9 +64,13 @@ export default async function CourseDetailPage({ params }: PageProps) {
       papersByStudent[studentKey] = { sum: 0, count: 0, grades: [], lastQuiz: null, lastDate: null };
     }
     const pct = ((paper.score ?? 0) / Math.max(1, paper.total ?? 1)) * 100;
+    const evType = paper.quizzes?.evaluation_type ?? null;
     papersByStudent[studentKey].sum += pct;
     papersByStudent[studentKey].count++;
-    if (paper.grade) papersByStudent[studentKey].grades.push(Number(paper.grade));
+    // "Aprobado" (nota >= 4.0) solo aplica a ensayos personalizados -- PAES
+    // no tiene concepto de aprobacion (es puntaje de admision) y SIMCE es
+    // diagnostico, no un examen que se aprueba/reprueba.
+    if (paper.grade && isNotaType(evType)) papersByStudent[studentKey].grades.push(Number(paper.grade));
     if (!papersByStudent[studentKey].lastDate || paper.scanned_at > papersByStudent[studentKey].lastDate!) {
       papersByStudent[studentKey].lastDate = paper.scanned_at;
       papersByStudent[studentKey].lastQuiz = paper.quizzes?.title ?? null;
@@ -71,21 +79,31 @@ export default async function CourseDetailPage({ params }: PageProps) {
     const quiz = paper.quizzes;
     if (quiz?.id) {
       if (!quizMap.has(quiz.id)) {
-        quizMap.set(quiz.id, { quizId: quiz.id, title: quiz.title, evType: quiz.evaluation_type, count: 0, avgPct: 0 });
+        quizMap.set(quiz.id, { quizId: quiz.id, title: quiz.title, evType: quiz.evaluation_type, count: 0, avgPct: 0, avgEquivalent: 0 });
       }
       const qs = quizMap.get(quiz.id)!;
       qs.count++;
       qs.avgPct += pct;
+      qs.avgEquivalent += paper.equivalent_score ?? 0;
     }
   }
 
   for (const qs of quizMap.values()) {
     qs.avgPct = Math.round(qs.avgPct / qs.count);
+    qs.avgEquivalent = Math.round(qs.avgEquivalent / qs.count);
   }
 
   const quizStats = [...quizMap.values()].sort((a, b) => b.count - a.count);
 
-  const courseAvg = papers.length ? Math.round(papers.reduce((s, p) => s + ((p.score ?? 0) / Math.max(1, p.total ?? 1)) * 100, 0) / papers.length) : 0;
+  // Nunca promediar junto ensayos personalizados (%) con PAES/SIMCE (puntaje
+  // equivalente 100-1000/100-400) -- "Promedio del curso" queda restringido
+  // a ensayos personalizados, igual criterio que el perfil de alumno.
+  const notaPapers = papers.filter((p) => isNotaType(p.quizzes?.evaluation_type ?? null));
+  const courseAvg = notaPapers.length ? Math.round(notaPapers.reduce((s, p) => s + ((p.score ?? 0) / Math.max(1, p.total ?? 1)) * 100, 0) / notaPapers.length) : 0;
+  const paesPapers = papers.filter((p) => p.quizzes?.evaluation_type === "paes" && p.equivalent_score != null);
+  const simcePapers = papers.filter((p) => p.quizzes?.evaluation_type === "simce" && p.equivalent_score != null);
+  const avgPaesCourse = paesPapers.length ? Math.round(paesPapers.reduce((s, p) => s + (p.equivalent_score ?? 0), 0) / paesPapers.length) : null;
+  const avgSimceCourse = simcePapers.length ? Math.round(simcePapers.reduce((s, p) => s + (p.equivalent_score ?? 0), 0) / simcePapers.length) : null;
   const passingCount = studentList.filter((s) => {
     const r = s.rut_normalized ?? canonicalRut(s.rut) ?? canonicalRut(s.student_id);
     if (!r) return false;
@@ -113,9 +131,11 @@ export default async function CourseDetailPage({ params }: PageProps) {
       <div className="space-y-6">
         <KPIGrid>
           <KPI label="Alumnos" value={studentList.length} />
-          <KPI label="Promedio del curso" value={`${courseAvg}%`} />
+          <KPI label="Promedio del curso" value={`${courseAvg}%`} detail={paesPapers.length || simcePapers.length ? "ensayos personalizados" : undefined} />
           <KPI label="Hojas escaneadas" value={papers.length} />
           <KPI label="Aprobacion" value={`${passingRate}%`} />
+          {avgPaesCourse != null && <KPI label="Promedio PAES" value={`${avgPaesCourse} pts`} />}
+          {avgSimceCourse != null && <KPI label="Promedio SIMCE" value={`${avgSimceCourse} pts`} />}
         </KPIGrid>
 
         {quizStats.length > 0 && (
@@ -125,27 +145,31 @@ export default async function CourseDetailPage({ params }: PageProps) {
             empty=""
             renderRow={(qs) => {
               const label = qs.evType === "paes" ? "PAES" : qs.evType === "simce" ? "SIMCE" : "Personalizado";
+              const scoreLabel = isNotaType(qs.evType) ? `${qs.avgPct}%` : `${qs.avgEquivalent} pts`;
               return (
                 <tr key={qs.quizId} className="border-b border-[#eef0f3] last:border-0">
                   <td className="px-5 py-4 font-semibold text-[#07305f]">{qs.title}</td>
                   <td className="px-5 py-4"><span className="rounded bg-[#f4f6f8] px-2 py-0.5 text-xs font-semibold">{label}</span></td>
                   <td className="px-5 py-4 text-[#5b6472]">{qs.count}</td>
-                  <td className="px-5 py-4 font-semibold">{qs.avgPct}%</td>
+                  <td className="px-5 py-4 font-semibold">{scoreLabel}</td>
                   <td className="px-5 py-4">
                     <Link href={`/dashboard/results/${qs.quizId}`} className="text-xs font-semibold text-[#07305f] underline">Resultados</Link>
                   </td>
                 </tr>
               );
             }}
-            renderMobileRow={(qs) => (
-              <article className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
-                <p className="font-semibold text-[#111827]">{qs.title}</p>
-                <div className="mt-2 grid gap-1 text-sm text-[#5b6472]">
-                  <p>Promedio: <span className="font-semibold">{qs.avgPct}%</span> · {qs.count} alumno{qs.count === 1 ? "" : "s"}</p>
-                </div>
-                <Link href={`/dashboard/results/${qs.quizId}`} className="mt-2 inline-block text-xs font-semibold text-[#07305f] underline">Ver resultados</Link>
-              </article>
-            )}
+            renderMobileRow={(qs) => {
+              const scoreLabel = isNotaType(qs.evType) ? `${qs.avgPct}%` : `${qs.avgEquivalent} pts`;
+              return (
+                <article className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
+                  <p className="font-semibold text-[#111827]">{qs.title}</p>
+                  <div className="mt-2 grid gap-1 text-sm text-[#5b6472]">
+                    <p>Promedio: <span className="font-semibold">{scoreLabel}</span> · {qs.count} alumno{qs.count === 1 ? "" : "s"}</p>
+                  </div>
+                  <Link href={`/dashboard/results/${qs.quizId}`} className="mt-2 inline-block text-xs font-semibold text-[#07305f] underline">Ver resultados</Link>
+                </article>
+              );
+            }}
           />
         )}
 
