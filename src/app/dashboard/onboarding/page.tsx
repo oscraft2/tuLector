@@ -232,14 +232,26 @@ export default function OnboardingPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="text-sm font-semibold">
                   {selectedCountry.adminDivisionLabel}
-                  <input
-                    readOnly={!isManual}
-                    value={region}
-                    onChange={(e) => setRegion(e.target.value)}
-                    className={`mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal ${!isManual ? "bg-[#f3f4f6] text-[#6b7280]" : "bg-white text-[#0b1220]"}`}
-                    placeholder={!isManual ? "Se completará automáticamente" : `Ej. ${selectedCountry.adminDivisionExample}`}
-                    tabIndex={!isManual ? -1 : undefined}
-                  />
+                  {isManual ? (
+                    <select
+                      value={region}
+                      onChange={(e) => setRegion(e.target.value)}
+                      className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal text-[#0b1220]"
+                    >
+                      <option value="">Selecciona {selectedCountry.adminDivisionLabel.toLowerCase()}</option>
+                      {selectedCountry.adminDivisions.map((division) => (
+                        <option key={division} value={division}>{division}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      readOnly
+                      value={region}
+                      className="mt-2 w-full rounded-md border border-[#cfd6df] bg-[#f3f4f6] px-3 py-2 font-normal text-[#6b7280]"
+                      placeholder="Se completará automáticamente"
+                      tabIndex={-1}
+                    />
+                  )}
                 </label>
                 <label className="text-sm font-semibold">
                   {selectedCountry.localityLabel}

@@ -68,7 +68,11 @@ export default async function SettingsPage() {
               {countryProfile.code === "CL" && (
                 <FieldInput name="rbd" label="RBD" defaultValue={school.rbd ?? ""} readOnly={isOfficialSchool || !isAdmin} />
               )}
-              <FieldInput name="region" label={countryProfile.adminDivisionLabel} defaultValue={school.region ?? ""} readOnly={isOfficialSchool || !isAdmin} />
+              {isOfficialSchool || !isAdmin ? (
+                <FieldInput name="region" label={countryProfile.adminDivisionLabel} defaultValue={school.region ?? ""} readOnly />
+              ) : (
+                <FieldSelect name="region" label={countryProfile.adminDivisionLabel} defaultValue={school.region ?? ""} options={countryProfile.adminDivisions} />
+              )}
               <FieldInput name="city" label={countryProfile.localityLabel} defaultValue={school.city ?? ""} readOnly={isOfficialSchool || !isAdmin} />
 
               <label className="text-sm font-semibold">
@@ -184,6 +188,30 @@ function FieldInput({ name, label, defaultValue, readOnly }: { name: string; lab
         readOnly={readOnly}
         className={`mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal ${readOnly ? "cursor-not-allowed bg-[#f4f6f8] text-[#5b6472]" : "bg-white text-[#0b1220]"}`}
       />
+    </label>
+  );
+}
+
+function FieldSelect({ name, label, defaultValue, options }: { name: string; label: string; defaultValue: string; options: readonly string[] }) {
+  // Si el valor ya guardado (ej. via el buscador de colegios de Chile, con
+  // el nombre oficial exacto de la tabla comunas) no calza con ninguna
+  // opcion de la lista fija, se agrega como opcion extra -- evita que el
+  // select "pierda" silenciosamente un valor real ya guardado.
+  const hasUnknownValue = Boolean(defaultValue) && !options.includes(defaultValue);
+  return (
+    <label className="text-sm font-semibold">
+      {label}
+      <select
+        name={name}
+        defaultValue={defaultValue}
+        className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal text-[#0b1220]"
+      >
+        <option value="">Selecciona {label.toLowerCase()}</option>
+        {hasUnknownValue && <option value={defaultValue}>{defaultValue}</option>}
+        {options.map((option) => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+      </select>
     </label>
   );
 }

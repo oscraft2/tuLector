@@ -15,6 +15,7 @@ export type CountryProfile = {
   studentIdExample: string;
   adminDivisionLabel: string;
   adminDivisionExample: string;
+  adminDivisions: readonly string[];
   localityLabel: string;
   localityExample: string;
   grading: {
@@ -45,6 +46,12 @@ export const countryProfiles: readonly CountryProfile[] = [
     studentIdExample: "12.345.678-9",
     adminDivisionLabel: "Región",
     adminDivisionExample: "Metropolitana",
+    adminDivisions: [
+      "Arica y Parinacota", "Tarapacá", "Antofagasta", "Atacama", "Coquimbo",
+      "Valparaíso", "Metropolitana de Santiago", "Libertador Bernardo O'Higgins",
+      "Maule", "Ñuble", "Biobío", "La Araucanía", "Los Ríos", "Los Lagos",
+      "Aysén", "Magallanes y de la Antártica Chilena",
+    ],
     localityLabel: "Comuna",
     localityExample: "Santiago",
     grading: {
@@ -73,6 +80,13 @@ export const countryProfiles: readonly CountryProfile[] = [
     studentIdExample: "12.345.678",
     adminDivisionLabel: "Provincia",
     adminDivisionExample: "Buenos Aires",
+    adminDivisions: [
+      "Buenos Aires", "Catamarca", "Chaco", "Chubut", "Córdoba", "Corrientes",
+      "Entre Ríos", "Formosa", "Jujuy", "La Pampa", "La Rioja", "Mendoza",
+      "Misiones", "Neuquén", "Río Negro", "Salta", "San Juan", "San Luis",
+      "Santa Cruz", "Santa Fe", "Santiago del Estero", "Tierra del Fuego",
+      "Tucumán", "Ciudad Autónoma de Buenos Aires",
+    ],
     localityLabel: "Localidad",
     localityExample: "La Plata",
     grading: {
@@ -101,6 +115,14 @@ export const countryProfiles: readonly CountryProfile[] = [
     studentIdExample: "123.456.789-00",
     adminDivisionLabel: "Estado",
     adminDivisionExample: "São Paulo",
+    adminDivisions: [
+      "Acre", "Alagoas", "Amapá", "Amazonas", "Bahia", "Ceará",
+      "Distrito Federal", "Espírito Santo", "Goiás", "Maranhão",
+      "Mato Grosso", "Mato Grosso do Sul", "Minas Gerais", "Pará", "Paraíba",
+      "Paraná", "Pernambuco", "Piauí", "Rio de Janeiro", "Rio Grande do Norte",
+      "Rio Grande do Sul", "Rondônia", "Roraima", "Santa Catarina",
+      "São Paulo", "Sergipe", "Tocantins",
+    ],
     localityLabel: "Cidade",
     localityExample: "São Paulo",
     grading: {
@@ -129,6 +151,13 @@ export const countryProfiles: readonly CountryProfile[] = [
     studentIdExample: "12345678",
     adminDivisionLabel: "Departamento",
     adminDivisionExample: "Lima",
+    adminDivisions: [
+      "Amazonas", "Áncash", "Apurímac", "Arequipa", "Ayacucho", "Cajamarca",
+      "Callao", "Cusco", "Huancavelica", "Huánuco", "Ica", "Junín",
+      "La Libertad", "Lambayeque", "Lima", "Loreto", "Madre de Dios",
+      "Moquegua", "Pasco", "Piura", "Puno", "San Martín", "Tacna", "Tumbes",
+      "Ucayali",
+    ],
     localityLabel: "Provincia",
     localityExample: "Lima",
     grading: {
@@ -157,6 +186,15 @@ export const countryProfiles: readonly CountryProfile[] = [
     studentIdExample: "1234567890",
     adminDivisionLabel: "Departamento",
     adminDivisionExample: "Cundinamarca",
+    adminDivisions: [
+      "Amazonas", "Antioquia", "Arauca", "Atlántico", "Bolívar", "Boyacá",
+      "Caldas", "Caquetá", "Casanare", "Cauca", "Cesar", "Chocó", "Córdoba",
+      "Cundinamarca", "Guainía", "Guaviare", "Huila", "La Guajira",
+      "Magdalena", "Meta", "Nariño", "Norte de Santander", "Putumayo",
+      "Quindío", "Risaralda", "San Andrés y Providencia", "Santander",
+      "Sucre", "Tolima", "Valle del Cauca", "Vaupés", "Vichada",
+      "Bogotá D.C.",
+    ],
     localityLabel: "Municipio",
     localityExample: "Bogotá",
     grading: {
@@ -185,6 +223,13 @@ export const countryProfiles: readonly CountryProfile[] = [
     studentIdExample: "1712345678",
     adminDivisionLabel: "Provincia",
     adminDivisionExample: "Pichincha",
+    adminDivisions: [
+      "Azuay", "Bolívar", "Cañar", "Carchi", "Chimborazo", "Cotopaxi",
+      "El Oro", "Esmeraldas", "Galápagos", "Guayas", "Imbabura", "Loja",
+      "Los Ríos", "Manabí", "Morona Santiago", "Napo", "Orellana", "Pastaza",
+      "Pichincha", "Santa Elena", "Santo Domingo de los Tsáchilas",
+      "Sucumbíos", "Tungurahua", "Zamora Chinchipe",
+    ],
     localityLabel: "Cantón",
     localityExample: "Quito",
     grading: {
@@ -213,6 +258,12 @@ export const countryProfiles: readonly CountryProfile[] = [
     studentIdExample: "1.234.567-8",
     adminDivisionLabel: "Departamento",
     adminDivisionExample: "Montevideo",
+    adminDivisions: [
+      "Artigas", "Canelones", "Cerro Largo", "Colonia", "Durazno", "Flores",
+      "Florida", "Lavalleja", "Maldonado", "Montevideo", "Paysandú",
+      "Río Negro", "Rivera", "Rocha", "Salto", "San José", "Soriano",
+      "Tacuarembó", "Treinta y Tres",
+    ],
     localityLabel: "Localidad",
     localityExample: "Montevideo",
     grading: {
