@@ -5,7 +5,7 @@ import { QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE,
 import { resolveCountryProfile } from "@/lib/country_profiles";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
 
-export type EvaluationType = "custom" | "paes" | "simce";
+export type EvaluationType = "custom" | "paes" | "simce" | "dia";
 
 export function AnswerKeyEditor({
   name = "answer_key",
@@ -68,10 +68,21 @@ export function AnswerKeyEditor({
       setEvalVariant("paes_m1");
     } else if (type === "simce") {
       setEvalVariant("simce_4b_mate");
+    } else if (type === "dia") {
+      setEvalVariant("dia");
     } else {
       setEvalVariant("");
     }
   };
+
+  // Valor real que se envia en el campo `evaluation_type` de la BD -- esa
+  // columna tiene un CHECK ('custom'|'paes'|'simce'), asi que "dia" NUNCA se
+  // manda ahi (rompería el insert/update). Mismo patron que ya usan los
+  // paises no-Chile: el tipo real queda "custom" (puntaje = % simple, sin
+  // formula PAES/SIMCE) y la etiqueta "DIA" vive en `evaluation_variant`
+  // (texto libre, sin restriccion) -- ver getVariantLabel() en
+  // dashboard/quizzes/[id]/page.tsx para donde se muestra esa etiqueta.
+  const evaluationTypeToSubmit = evalType === "dia" ? "custom" : evalType;
 
   const labels = optionLabelsFor(optionCount);
   const allowed = useMemo(() => new Set(labels.split("")), [labels]);
@@ -137,7 +148,6 @@ export function AnswerKeyEditor({
           <label className="text-sm font-semibold">
             Tipo de prueba
             <select
-              name="evaluation_type"
               value={evalType}
               onChange={(e) => handleEvalTypeChange(e.target.value as EvaluationType)}
               className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal"
@@ -145,7 +155,9 @@ export function AnswerKeyEditor({
               <option value="custom">Personalizado (Manual)</option>
               <option value="paes">PAES (Admisión Superior)</option>
               <option value="simce">SIMCE (Agencia Calidad)</option>
+              <option value="dia">Generar prueba DIA (Diagnóstico Integral)</option>
             </select>
+            <input type="hidden" name="evaluation_type" value={evaluationTypeToSubmit} />
           </label>
         ) : (
           <>
@@ -203,9 +215,19 @@ export function AnswerKeyEditor({
             </select>
           </label>
         )}
+
+        {isChile && evalType === "dia" && <input type="hidden" name="evaluation_variant" value="dia" />}
       </div>
 
-      {evalType === "custom" ? (
+      {evalType === "dia" && (
+        <div className="rounded-md bg-blue-50/50 border border-blue-100 p-3 text-xs text-blue-800 space-y-1">
+          <p className="font-semibold">Ensayo para DIA (Diagnóstico Integral de Aprendizajes):</p>
+          <p>• Puntaje = porcentaje de acierto simple (no aplica formula PAES/SIMCE).</p>
+          <p>• Ajusta preguntas/opciones segun el instrumento real de DIA para ese nivel — DIA no tiene un numero fijo, varia por curso y asignatura.</p>
+          <p>• Al exportar, el <strong>curso</strong> de este ensayo debe coincidir con el curso real en la plataforma DIA (revisa el formato en &ldquo;Exportar Formato Pruebas DIA&rdquo;).</p>
+        </div>
+      )}
+      {evalType === "custom" || evalType === "dia" ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-sm font-semibold">
             Preguntas

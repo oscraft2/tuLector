@@ -10,7 +10,6 @@ import { QuizStats } from "@/components/dashboard/QuizStats";
 import { canonicalRut } from "@/lib/rut";
 import { PrintButton } from "@/components/dashboard/PrintButton";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
-import { ExportCsvButton } from "@/components/dashboard/ExportCsvButton";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +89,7 @@ export default async function QuizDetailPage({ params }: PageProps) {
       simce_8b_lectura: "SIMCE 8° Básico - Lectura",
       simce_2m_mate: "SIMCE II Medio - Matemática",
       simce_2m_lectura: "SIMCE II Medio - Lectura",
+      dia: "DIA (Diagnóstico Integral de Aprendizajes)",
     };
     return labels[quiz.evaluation_variant] || String(quiz.evaluation_variant).replace(/_/g, " ");
   };
@@ -140,13 +140,17 @@ export default async function QuizDetailPage({ params }: PageProps) {
               <span className="h-px flex-1 bg-[#e6e8eb]" />
             </div>
             <div className="flex flex-col items-end gap-1">
-              <ExportCsvButton
-                papers={quizPapers.map((p) => ({ student_name: p.student_name, student_rut_norm: p.student_rut_norm, answers: p.answers }))}
-                numQuestions={Number(quiz.num_questions) || 0}
-                subject={quiz.subject ?? null}
-                grade={quiz.grade ?? null}
-                label="Exportar Formato Pruebas DIA"
-              />
+              <a
+                href={`/api/quiz/${quiz.id}/export-dia`}
+                aria-disabled={quizPapers.length === 0}
+                className={
+                  quizPapers.length === 0
+                    ? "pointer-events-none rounded-md border border-[#cfd6df] bg-white px-4 py-2 text-sm font-semibold text-[#111827] opacity-50"
+                    : "rounded-md border border-[#cfd6df] bg-white px-4 py-2 text-sm font-semibold text-[#111827] hover:bg-gray-50"
+                }
+              >
+                Exportar Formato Pruebas DIA
+              </a>
               <p className="text-xs text-[#8a93a1]">Listo para subir a la extensión de ingreso a la plataforma DIA.</p>
             </div>
           </div>

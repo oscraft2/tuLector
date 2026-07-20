@@ -15,6 +15,19 @@ const DUP_CLS = "rounded-md border border-[#cfd6df] px-3 py-1.5 text-xs font-sem
 const ARCH_CLS = "rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50";
 const DUP_CLS_M = "rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold hover:bg-gray-50";
 const ARCH_CLS_M = "rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50";
+const EXPORT_CLS = "rounded-md border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50";
+const EXPORT_CLS_M = "rounded-md border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50";
+const EXPORT_CLS_DISABLED = "pointer-events-none rounded-md border border-[#cfd6df] px-3 py-1.5 text-xs font-semibold text-[#9aa3af] opacity-60";
+const EXPORT_CLS_DISABLED_M = "pointer-events-none rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold text-[#9aa3af] opacity-60";
+
+function ExportDiaLink({ quizId, hasPapers, mobile = false }: { quizId: string; hasPapers: boolean; mobile?: boolean }) {
+  const cls = hasPapers ? (mobile ? EXPORT_CLS_M : EXPORT_CLS) : (mobile ? EXPORT_CLS_DISABLED_M : EXPORT_CLS_DISABLED);
+  return (
+    <a href={hasPapers ? `/api/quiz/${quizId}/export-dia` : undefined} aria-disabled={!hasPapers} className={cls}>
+      Exportar DIA
+    </a>
+  );
+}
 
 type QuizRow = {
   id: string;
@@ -53,11 +66,23 @@ export default async function QuizzesPage() {
   const courseList = (courses ?? []) as CourseRow[];
   const quizzes = (quizzesData ?? []) as unknown as QuizRow[];
   const courseNameById = new Map(courseList.map((course) => [course.id, course.name]));
+
+  // Conteo liviano (solo quiz_id, sin `answers`) para saber que ensayos ya
+  // tienen algo que exportar -- evita cargar answers de TODOS los ensayos
+  // del colegio solo para pintar la lista.
+  const quizIds = quizzes.map((q) => q.id);
+  const papersCountByQuiz = new Map<string, number>();
+  if (quizIds.length > 0) {
+    const { data: paperRows } = await supabase.from("papers").select("quiz_id").in("quiz_id", quizIds);
+    for (const row of paperRows ?? []) {
+      papersCountByQuiz.set(row.quiz_id, (papersCountByQuiz.get(row.quiz_id) ?? 0) + 1);
+    }
+  }
   const countryProfile = resolveCountryProfile(school.country_code ?? "CL");
   // El texto de ayuda no puede nombrar PAES/SIMCE (Chile) para un colegio de
   // otro pais -- usa los sistemas de evaluacion reales de su perfil.
   const evaluationHint = countryProfile.code === "CL"
-    ? "personalizada, PAES o SIMCE"
+    ? "personalizada, PAES, SIMCE o DIA"
     : `personalizada o ${countryProfile.evaluationSystems.map((s) => s.replace(/_/g, " ")).join("/")}`;
 
   return (
@@ -108,6 +133,7 @@ export default async function QuizzesPage() {
                       Escanear
                     </button>
                   </form>
+                  <ExportDiaLink quizId={quiz.id} hasPapers={(papersCountByQuiz.get(quiz.id) ?? 0) > 0} />
                   <ActionButton
                     action={duplicateQuiz}
                     fields={{ id: quiz.id }}
@@ -144,6 +170,7 @@ export default async function QuizzesPage() {
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold hover:bg-gray-50">Hoja</Link>
                 <form action={startScanForQuiz}><input type="hidden" name="quiz_id" value={quiz.id} /><button className="rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold hover:bg-gray-50">Escanear</button></form>
+                <ExportDiaLink quizId={quiz.id} hasPapers={(papersCountByQuiz.get(quiz.id) ?? 0) > 0} mobile />
                 <ActionButton action={duplicateQuiz} fields={{ id: quiz.id }} label="Duplicar" pendingLabel="Duplicando…" className={DUP_CLS_M} />
                 <ActionButton action={archiveQuiz} fields={{ id: quiz.id }} label="Archivar" pendingLabel="Archivando…" className={ARCH_CLS_M} confirm={`¿Archivar "${quiz.title}"?`} confirmTitle="¿Archivar ensayo?" confirmLabel="Archivar" />
               </div>
