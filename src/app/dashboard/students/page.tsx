@@ -9,10 +9,11 @@ import { CourseRoster } from "@/components/dashboard/CourseRoster";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { ActionButton } from "@/components/dashboard/ActionButton";
 import { EmptyState } from "@/components/dashboard/EmptyState";
-import { importStudents, importStudentsMapped, createCourse, deleteCourse, deleteStudent, createStudent, updateStudentCourse } from "@/app/dashboard/actions";
+import { importStudents, importStudentsMapped, createCourse, updateCourse, deleteCourse, deleteStudent, createStudent, updateStudentCourse } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 import { resolveCountryProfile } from "@/lib/country_profiles";
+import { CourseEditRow } from "@/components/dashboard/CourseEditRow";
 
 export const dynamic = "force-dynamic";
 
@@ -90,22 +91,15 @@ export default async function StudentsPage({ searchParams }: PageProps) {
             ) : (
               <div className="max-h-48 overflow-y-auto divide-y divide-[#eef0f3] pr-1">
                 {courseList.map((course) => (
-                  <div key={course.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                    <Link
-                      href={`/dashboard/students?course=${course.id}`}
-                      className={selectedCourse?.id === course.id ? "min-w-0 rounded-md bg-[#eef4ff] px-2 py-1 text-[#07305f]" : "min-w-0 rounded-md px-2 py-1 hover:bg-[#f4f6f8] hover:text-[#07305f]"}
-                    >
-                      <span className="block truncate font-semibold">{course.name}</span>
-                      <span className="text-xs text-[#6b7280]">{course.grade}</span>
-                    </Link>
-                    {isAdmin && (
-                      <DeleteButton
-                        action={deleteCourse}
-                        id={course.id}
-                        confirm={`¿Eliminar el curso "${course.name}"? Los alumnos no se borran, pero deberás reasignarlos.`}
-                      />
-                    )}
-                  </div>
+                  <CourseEditRow
+                    key={course.id}
+                    course={course}
+                    selected={selectedCourse?.id === course.id}
+                    isAdmin={isAdmin}
+                    updateAction={updateCourse}
+                    deleteAction={deleteCourse}
+                    grades={CHILEAN_GRADES}
+                  />
                 ))}
               </div>
             )}

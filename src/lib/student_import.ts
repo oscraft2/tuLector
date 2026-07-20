@@ -24,7 +24,11 @@ export type ColumnMapping = {
   gradeCol: number; // -1 = no mapeada (opcional)
 };
 
-export const ID_ALIASES = ["rut", "run", "dni", "cpf", "student_id", "id alumno", "identificador", "documento", "id"] as const;
+// OJO: nunca agregar alias demasiado genericos aca (ej. "id" solo) -- un
+// alumno real reporto que una columna llamada "ID" (id interno del colegio,
+// no el identificador nacional) se tomaba por error como RUT. Los alias
+// deben ser especificos del dato que representan.
+export const ID_ALIASES = ["rut", "run", "dni", "cpf", "student_id", "id alumno", "identificador", "documento"] as const;
 export const NAME_ALIASES = ["nombre", "name", "alumno", "estudiante", "nombre completo"] as const;
 export const COURSE_ALIASES = ["curso", "course", "grupo", "seccion", "sección"] as const;
 export const GRADE_ALIASES = ["nivel", "grade", "grado"] as const;

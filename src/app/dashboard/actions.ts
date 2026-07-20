@@ -704,6 +704,46 @@ export async function createCourse(_prevState: DashboardActionState, formData: F
   }
 }
 
+/** Antes no existia forma de corregir un curso mal escrito (ej. "IIMC" en vez
+ * de "II C") una vez creado -- solo crear/eliminar. Ademas de renombrar la
+ * fila en `courses`, propaga el nombre nuevo al texto denormalizado
+ * `students.course` de sus alumnos (asi el listado de alumnos no queda
+ * mostrando el nombre viejo) -- NO toca `quizzes.grade`: un ensayo ya creado
+ * conserva el nombre de curso que tenia al crearse, igual que al duplicar o
+ * editar un ensayo, para no reescribir historial. */
+export async function updateCourse(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  const { supabase, school } = await getDashboardContext();
+  try {
+    const id = String(formData.get("id") ?? "");
+    const name = String(formData.get("name") ?? "").trim();
+    const grade = String(formData.get("grade") ?? "").trim();
+    if (!id) throw new Error("Falta el curso a editar.");
+    if (!name || !grade) throw new Error("Nombre y nivel son obligatorios.");
+
+    const { data: existing, error: findError } = await supabase
+      .from("courses")
+      .select("id,name")
+      .eq("id", id)
+      .eq("school_id", school.id)
+      .maybeSingle();
+    if (findError) throw new Error(findError.message);
+    if (!existing) throw new Error("Curso no encontrado.");
+
+    const { error } = await supabase.from("courses").update({ name, grade }).eq("id", id).eq("school_id", school.id);
+    if (error) throw new Error(error.message);
+
+    if (existing.name !== name) {
+      await supabase.from("students").update({ course: name }).eq("course_id", id).eq("school_id", school.id);
+    }
+
+    revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/quizzes");
+    return actionSuccess("Curso actualizado", `Ahora se llama "${name}".`, "✓");
+  } catch (error) {
+    return actionError(error, "No se pudo editar el curso");
+  }
+}
+
 export async function deleteCourse(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
   const { supabase, school } = await getDashboardContext();
   try {

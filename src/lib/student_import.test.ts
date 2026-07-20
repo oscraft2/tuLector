@@ -11,6 +11,14 @@ test("guessColumnMapping devuelve -1 para columnas no reconocidas", () => {
   assert.deepEqual(guessColumnMapping(["Columna A", "Columna B"]), { rutCol: -1, nameCol: -1, courseCol: -1, gradeCol: -1 });
 });
 
+test("guessColumnMapping NO confunde una columna generica 'ID' con el RUT (bug reportado)", () => {
+  // Un colegio real reporto una columna "ID" (id interno, no el identificador
+  // nacional) tomada por error como RUT -- "id" se saco de ID_ALIASES por ser
+  // demasiado generico. Los alias especificos (documento, dni, etc.) siguen andando.
+  assert.equal(guessColumnMapping(["ID", "Nombre", "Curso"]).rutCol, -1);
+  assert.equal(guessColumnMapping(["Documento", "Nombre", "Curso"]).rutCol, 0);
+});
+
 test("parseDelimitedText respeta comillas y comas dentro de campo", () => {
   const rows = parseDelimitedText('rut,nombre\n12345678-5,"Perez, Ana"');
   assert.deepEqual(rows, [["rut", "nombre"], ["12345678-5", "Perez, Ana"]]);

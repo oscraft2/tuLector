@@ -113,11 +113,18 @@ function SmartImport({ action, studentIdLabel }: { action: CSVImportProps["mappe
       rows = rows.filter((r) => r.some((c) => c.trim() !== ""));
       if (rows.length === 0) { setFileError("El archivo no tiene filas con datos."); return; }
 
+      // Solo confiamos en el auto-mapeo si encabezado reconoce RUT, nombre Y
+      // curso a la vez (igual de exigente que el modo "pegar CSV" de
+      // siempre). Si no, NUNCA se adivina por posicion (col 1 = rut, col 2 =
+      // nombre...) -- eso fallaba en silencio con archivos reales que no
+      // vienen en ese orden. En su lugar se asume que SI hay encabezado
+      // (lo mas comun) y se deja todo sin mapear para que el usuario elija
+      // a mano viendo los nombres de columna reales.
       const guess = guessColumnMapping(rows[0]);
-      const guessedHasHeader = guess.rutCol >= 0 && guess.nameCol >= 0;
+      const guessedHasHeader = guess.rutCol >= 0 && guess.nameCol >= 0 && guess.courseCol >= 0;
       setTable(rows);
-      setHasHeader(guessedHasHeader);
-      setMapping(guessedHasHeader ? guess : { rutCol: 0, nameCol: 1, courseCol: rows[0].length >= 3 ? 2 : -1, gradeCol: -1 });
+      setHasHeader(true);
+      setMapping(guessedHasHeader ? guess : { rutCol: -1, nameCol: -1, courseCol: -1, gradeCol: -1 });
     } catch {
       setFileError("No se pudo leer el archivo. Prueba con CSV, TXT o XLSX.");
     }
@@ -147,6 +154,12 @@ function SmartImport({ action, studentIdLabel }: { action: CSVImportProps["mappe
             <p className="text-xs text-[#4b5563]">
               {fileName ? `${fileName}: ` : ""}{table.length} fila{table.length === 1 ? "" : "s"} detectada{table.length === 1 ? "" : "s"}.
             </p>
+
+            {mapping.rutCol === -1 && (
+              <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+                No reconocimos las columnas automáticamente — revisa la vista previa abajo y elige a mano cuál es cuál antes de importar.
+              </p>
+            )}
 
             <label className="flex items-center gap-2 text-xs font-semibold text-[#4b5563]">
               <input type="checkbox" checked={hasHeader} onChange={(e) => setHasHeader(e.target.checked)} />
