@@ -10,6 +10,7 @@ import { QuizStats } from "@/components/dashboard/QuizStats";
 import { canonicalRut } from "@/lib/rut";
 import { PrintButton } from "@/components/dashboard/PrintButton";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
+import { ExportCsvButton } from "@/components/dashboard/ExportCsvButton";
 
 export const dynamic = "force-dynamic";
 
@@ -130,6 +131,25 @@ export default async function QuizDetailPage({ params }: PageProps) {
             <span className="h-px flex-1 bg-[#e6e8eb]" />
           </div>
           <QuizStats quiz={quiz} papers={papers ?? []} metadata={metadata ?? []} />
+        </section>
+
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <h2 className="whitespace-nowrap text-[12.5px] font-semibold uppercase tracking-[0.1em] text-[#6b7280]">Resultados por alumno</h2>
+              <span className="h-px flex-1 bg-[#e6e8eb]" />
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <ExportCsvButton
+                papers={quizPapers.map((p) => ({ student_name: p.student_name, student_rut_norm: p.student_rut_norm, answers: p.answers }))}
+                numQuestions={Number(quiz.num_questions) || 0}
+                subject={quiz.subject ?? null}
+                grade={quiz.grade ?? null}
+                label="Exportar Formato Pruebas DIA"
+              />
+              <p className="text-xs text-[#8a93a1]">Listo para subir a la extensión de ingreso a la plataforma DIA.</p>
+            </div>
+          </div>
         </section>
         <DataTable
           columns={["Alumno", "Respuestas Correctas", "Resultado Equivalente", "Estado", "Fecha"]}
