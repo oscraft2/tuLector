@@ -9,9 +9,10 @@ import { CourseRoster } from "@/components/dashboard/CourseRoster";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { ActionButton } from "@/components/dashboard/ActionButton";
 import { EmptyState } from "@/components/dashboard/EmptyState";
-import { importStudents, createCourse, deleteCourse, deleteStudent, createStudent, updateStudentCourse } from "@/app/dashboard/actions";
+import { importStudents, importStudentsMapped, createCourse, deleteCourse, deleteStudent, createStudent, updateStudentCourse } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { isMissingColumnError } from "@/lib/supabase_errors";
+import { resolveCountryProfile } from "@/lib/country_profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -49,8 +50,9 @@ type StudentRow = {
 type CourseRow = { id: string; name: string; grade: string | null };
 
 export default async function StudentsPage({ searchParams }: PageProps) {
-  const { supabase, locale, isAdmin } = await getDashboardContext();
+  const { supabase, locale, isAdmin, school } = await getDashboardContext();
   const t = getDashboardMessages(locale);
+  const studentIdLabel = resolveCountryProfile(school.country_code ?? "CL").studentIdLabel;
   const params = await searchParams;
   const selectedCourseId = Array.isArray(params?.course) ? params?.course[0] : params?.course;
 
@@ -121,7 +123,7 @@ export default async function StudentsPage({ searchParams }: PageProps) {
             <StudentForm action={createStudent} courses={courseList} defaultCourse={selectedCourse?.name} />
           </div>
 
-          <CSVImport action={importStudents} />
+          <CSVImport action={importStudents} mappedAction={importStudentsMapped} studentIdLabel={studentIdLabel} />
         </div>
 
         <div className="space-y-4">

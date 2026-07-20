@@ -19,6 +19,7 @@ import {
   optionLabelsFor,
 } from "@/lib/quiz_constraints";
 import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
+import { type StudentCsvRow, guessColumnMapping, rowsFromMapping } from "@/lib/student_import";
 import { suggestColumns } from "@/lib/sheet_generator";
 import { sendTemplatedEmail } from "@/lib/email";
 import { calculateGrade } from "@/lib/latam";
@@ -398,28 +399,6 @@ async function saveStudentWithoutConstraint(
   if (error) throw new Error(error.message);
 }
 
-type StudentCsvRow = {
-  rut: string;
-  name: string;
-  course: string | null;
-  grade: string | null;
-};
-
-function normalizeCsvHeader(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
-
-function findHeaderIndex(headers: string[], aliases: readonly string[]) {
-  const normalizedAliases = new Set(aliases.map(normalizeCsvHeader));
-  return headers.findIndex((header) => normalizedAliases.has(normalizeCsvHeader(header)));
-}
-
 function parseStudentCsv(csv: string): StudentCsvRow[] {
   const parsed = parse(csv, {
     bom: true,
@@ -431,26 +410,17 @@ function parseStudentCsv(csv: string): StudentCsvRow[] {
   if (parsed.length === 0) return [];
 
   const firstRow = parsed[0] ?? [];
-  const rutIndex = findHeaderIndex(firstRow, ["rut", "run", "student_id", "id alumno", "identificador"]);
-  const nameIndex = findHeaderIndex(firstRow, ["nombre", "name", "alumno", "estudiante", "nombre completo"]);
-  const courseIndex = findHeaderIndex(firstRow, ["curso", "course", "grupo", "seccion", "sección"]);
-  const gradeIndex = findHeaderIndex(firstRow, ["nivel", "grade", "grado"]);
-  const hasHeader = rutIndex >= 0 && nameIndex >= 0 && courseIndex >= 0;
-  const dataRows = hasHeader ? parsed.slice(1) : parsed;
+  const mapping = guessColumnMapping(firstRow);
+  const hasHeader = mapping.rutCol >= 0 && mapping.nameCol >= 0 && mapping.courseCol >= 0;
+  if (hasHeader) return rowsFromMapping(parsed, mapping, true);
 
-  return dataRows.map((row) => {
-    if (hasHeader) {
-      return {
-        rut: row[rutIndex]?.trim() ?? "",
-        name: row[nameIndex]?.trim() ?? "",
-        course: row[courseIndex]?.trim() || null,
-        grade: gradeIndex >= 0 ? row[gradeIndex]?.trim() || null : null,
-      };
-    }
-
+  // Sin encabezados reconocidos: formato legacy posicional (rut, nombre,
+  // [...], curso, [nivel]) -- se mantiene tal cual para no romper CSVs viejos
+  // ya en uso. El modo "mapeo inteligente" (importStudentsMapped) es la via
+  // recomendada para cualquier planilla que no calce con este formato.
+  return parsed.map((row) => {
     const legacyCourseIndex = row.length <= 4 ? 2 : row.length - 1;
     const legacyGrade = row.length === 4 ? row[3]?.trim() || null : null;
-
     return {
       rut: row[0]?.trim() ?? "",
       name: row[1]?.trim() ?? "",
@@ -491,55 +461,94 @@ async function findOrCreateCourse(
   return inserted.id;
 }
 
-export async function importStudents(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
-  const { supabase, user, school } = await getDashboardContext();
+/** Valida, sincroniza cursos y guarda una lista de filas de alumnos ya
+ * parseadas -- logica COMPARTIDA entre `importStudents` (modo "pegar CSV
+ * simple", formato fijo que nosotros definimos) e `importStudentsMapped`
+ * (modo "mapeo inteligente", cualquier planilla + columnas elegidas por el
+ * usuario). Ambos caminos terminan validando/guardando exactamente igual;
+ * solo cambia como se llega a `StudentCsvRow[]`. */
+async function persistStudentRows(
+  rows: StudentCsvRow[],
+  ctx: { supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"]; user: { id: string }; school: { id: string; country_code?: string | null } },
+): Promise<DashboardActionState> {
+  const { supabase, user, school } = ctx;
+  const countryCode = school.country_code ?? "CL";
+  const courseGrades = new Map<string, string>();
+  const validRows = rows.map((row) => {
+    if (!row.rut || !row.name) return null;
+    const resolved = resolveNationalId(row.rut, countryCode);
+    if (!resolved.valid) return null;
+    const course = row.course;
+    if (course && row.grade && !courseGrades.has(course)) courseGrades.set(course, row.grade);
 
+    return {
+      student_id: resolved.normalized,
+      rut: resolved.normalized,
+      rut_normalized: resolved.canonical,
+      name: row.name,
+      course,
+    };
+  }).filter((row): row is NonNullable<typeof row> => row !== null);
+
+  if (validRows.length === 0) throw new Error(`No hay alumnos validos para importar. Revisa ${resolveCountryProfile(countryCode).studentIdLabel}, nombre y curso.`);
+
+  // Sincroniza el catalogo de cursos: cada curso del CSV queda registrado en
+  // `courses` para poder asociarlo a un ensayo (antes solo quedaba como texto).
+  const cursos = [...new Set(validRows.map((p) => p.course).filter((c): c is string => !!c))];
+  const courseIds = new Map<string, string | null>();
+  for (const curso of cursos) {
+    courseIds.set(curso, await findOrCreateCourse(supabase, school.id, curso, courseGrades.get(curso)));
+  }
+
+  const payload = validRows.map((student) => ({
+    school_id: school.id,
+    user_id: user.id,
+    ...student,
+    course_id: student.course ? courseIds.get(student.course) ?? null : null,
+    updated_at: new Date().toISOString(),
+  }));
+
+  for (const student of payload) {
+    await saveStudentWithoutConstraint(supabase, student);
+  }
+
+  revalidatePath("/dashboard/students");
+  revalidatePath("/dashboard/quizzes");
+  const cursoMsg = cursos.length ? ` en ${cursos.length} curso${cursos.length === 1 ? "" : "s"}` : "";
+  return actionSuccess("Importacion lista", `${payload.length} alumno${payload.length === 1 ? "" : "s"} importado${payload.length === 1 ? "" : "s"} o actualizado${payload.length === 1 ? "" : "s"}${cursoMsg}.`);
+}
+
+export async function importStudents(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  const ctx = await getDashboardContext();
   try {
     const csv = String(formData.get("csv") ?? "");
-    const countryCode = school.country_code ?? "CL";
-    const courseGrades = new Map<string, string>();
-    const validRows = parseStudentCsv(csv).map((row) => {
-      if (!row.rut || !row.name) return null;
-      const resolved = resolveNationalId(row.rut, countryCode);
-      if (!resolved.valid) return null;
-      const course = row.course;
-      if (course && row.grade && !courseGrades.has(course)) courseGrades.set(course, row.grade);
+    return await persistStudentRows(parseStudentCsv(csv), ctx);
+  } catch (error) {
+    return actionError(error, "No se pudo importar");
+  }
+}
 
-      return {
-        student_id: resolved.normalized,
-        rut: resolved.normalized,
-        rut_normalized: resolved.canonical,
-        name: row.name,
-        course,
-      };
-    }).filter((row): row is NonNullable<typeof row> => row !== null);
-
-    if (validRows.length === 0) throw new Error(`No hay alumnos validos para importar. Revisa ${resolveCountryProfile(countryCode).studentIdLabel}, nombre y curso.`);
-
-    // Sincroniza el catalogo de cursos: cada curso del CSV queda registrado en
-    // `courses` para poder asociarlo a un ensayo (antes solo quedaba como texto).
-    const cursos = [...new Set(validRows.map((p) => p.course).filter((c): c is string => !!c))];
-    const courseIds = new Map<string, string | null>();
-    for (const curso of cursos) {
-      courseIds.set(curso, await findOrCreateCourse(supabase, school.id, curso, courseGrades.get(curso)));
+/** Modo "mapeo inteligente" (CSVImport.tsx): el cliente ya parseo el archivo
+ * (CSV/TSV/XLSX, con o sin encabezados) y el usuario eligio a mano cual
+ * columna es cual -- aca solo se reconstruyen las filas con ese mapeo y se
+ * reusa la misma validacion/guardado que el modo simple. Acepta cualquier
+ * formato de planilla, no solo el que definimos nosotros. */
+export async function importStudentsMapped(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  const ctx = await getDashboardContext();
+  try {
+    const table = JSON.parse(String(formData.get("rows") ?? "[]")) as string[][];
+    if (!Array.isArray(table) || table.length === 0) throw new Error("No se recibieron filas para importar.");
+    const mapping = {
+      rutCol: Number(formData.get("rutCol") ?? -1),
+      nameCol: Number(formData.get("nameCol") ?? -1),
+      courseCol: Number(formData.get("courseCol") ?? -1),
+      gradeCol: Number(formData.get("gradeCol") ?? -1),
+    };
+    if (mapping.rutCol < 0 || mapping.nameCol < 0) {
+      throw new Error(`Falta indicar cual columna es el ${resolveCountryProfile(ctx.school.country_code ?? "CL").studentIdLabel} y cual es el nombre.`);
     }
-
-    const payload = validRows.map((student) => ({
-      school_id: school.id,
-      user_id: user.id,
-      ...student,
-      course_id: student.course ? courseIds.get(student.course) ?? null : null,
-      updated_at: new Date().toISOString(),
-    }));
-
-    for (const student of payload) {
-      await saveStudentWithoutConstraint(supabase, student);
-    }
-
-    revalidatePath("/dashboard/students");
-    revalidatePath("/dashboard/quizzes");
-    const cursoMsg = cursos.length ? ` en ${cursos.length} curso${cursos.length === 1 ? "" : "s"}` : "";
-    return actionSuccess("Importacion lista", `${payload.length} alumno${payload.length === 1 ? "" : "s"} importado${payload.length === 1 ? "" : "s"} o actualizado${payload.length === 1 ? "" : "s"}${cursoMsg}.`);
+    const hasHeader = formData.get("hasHeader") === "1";
+    return await persistStudentRows(rowsFromMapping(table, mapping, hasHeader), ctx);
   } catch (error) {
     return actionError(error, "No se pudo importar");
   }
