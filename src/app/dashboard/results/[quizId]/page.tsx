@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { calculateGrade } from "@/lib/latam";
+import { evaluationVariantLabel } from "@/lib/evaluation_types";
 import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { PageHeader } from "@/components/dashboard/PageHeader";
@@ -57,14 +58,11 @@ export default async function ResultsPage({ params, searchParams }: PageProps) {
     return String(gradeResult.grade);
   };
 
-  const isPAES = quiz.evaluation_type === "paes";
-  const isSIMCE = quiz.evaluation_type === "simce";
-
   const getScoreDisplay = (paper: PaperResult) => {
-    if (isPAES) {
+    if (quiz.evaluation_type === "paes") {
       return `${paper.equivalent_score ?? Math.round(100 + ((paper.score ?? 0) / (paper.total || quiz.num_questions)) * 900)} pts PAES`;
     }
-    if (isSIMCE) {
+    if (quiz.evaluation_type === "simce") {
       return `${paper.equivalent_score ?? Math.round(100 + ((paper.score ?? 0) / (paper.total || quiz.num_questions)) * 300)} pts SIMCE`;
     }
     const defaultGrade = paper.grade || (paper.total ? resolveGrade(paper.score ?? 0, paper.total) : "-");
@@ -76,23 +74,7 @@ export default async function ResultsPage({ params, searchParams }: PageProps) {
   const proto = headersList.get("x-forwarded-proto") ?? "http";
   const baseUrl = `${proto}://${host}`;
 
-  const getVariantLabel = () => {
-    if (!quiz.evaluation_variant) return "Personalizado";
-    const labels: Record<string, string> = {
-      paes_m1: "PAES Competencia Matemática 1 (M1)",
-      paes_m2: "PAES Competencia Matemática 2 (M2)",
-      paes_lectora: "PAES Competencia Lectora",
-      paes_ciencias: "PAES Ciencias",
-      paes_historia: "PAES Historia",
-      simce_4b_mate: "SIMCE 4° Básico - Matemática",
-      simce_4b_lectura: "SIMCE 4° Básico - Lectura",
-      simce_8b_mate: "SIMCE 8° Básico - Matemática",
-      simce_8b_lectura: "SIMCE 8° Básico - Lectura",
-      simce_2m_mate: "SIMCE II Medio - Matemática",
-      simce_2m_lectura: "SIMCE II Medio - Lectura",
-    };
-    return labels[quiz.evaluation_variant] || quiz.evaluation_variant;
-  };
+  const getVariantLabel = () => evaluationVariantLabel(quiz.evaluation_variant);
 
   return (
     <>
