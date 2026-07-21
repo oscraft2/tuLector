@@ -59,5 +59,5 @@ export async function GET() {
     }))
     .filter((q) => q.hojasLeidas > 0);
 
-  return NextResponse.json({ ensayos });
+  return NextResponse.json({ ensayos, colegioActivo: school.name });
 }
