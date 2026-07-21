@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { isMissingColumnError } from "@/lib/supabase_errors";
+import { planHasFeature } from "@/lib/plan_gates";
 
 type QuizRow = {
   id: string;
@@ -20,6 +21,16 @@ type QuizRow = {
 export async function GET() {
   const { supabase, school } = await getDashboardContext();
 
+  // El sync automático con la extensión es feature de pago; el export manual
+  // del CSV (export-dia) sigue libre. La extensión muestra un CTA de upgrade
+  // cuando recibe este 403 (popup.js maneja error === "plan_required").
+  if (!planHasFeature(school.plan, "dia_sync")) {
+    return NextResponse.json(
+      { error: "plan_required", requiredPlan: "pro", upgradeUrl: "/dashboard/billing" },
+      { status: 403 },
+    );
+  }
+
   // OJO: filtrar school_id EXPLICITO acá, igual que export-dia/route.ts --
   // no basta con confiar solo en RLS. Un usuario con acceso a mas de un
   // colegio puede tener RLS que le deje ver quizzes de varios colegios a la
@@ -32,9 +43,17 @@ export async function GET() {
     supabase.from("courses").select("id,name").eq("school_id", school.id),
   ]);
 
+  // Nunca silenciar errores de PostgREST: un error no manejado acá se veía
+  // antes como {ensayos:[]} con 200, indistinguible de "no hay ensayos".
   let quizzesData: unknown = quizzesResult.data;
-  if (quizzesResult.error && isMissingColumnError(quizzesResult.error, "course_id")) {
+  if (quizzesResult.error) {
+    if (!isMissingColumnError(quizzesResult.error, "course_id")) {
+      return NextResponse.json({ error: quizzesResult.error.message }, { status: 500 });
+    }
     const fallback = await supabase.from("quizzes").select("id,title,subject,grade,num_questions").eq("school_id", school.id).is("archived_at", null).order("created_at", { ascending: false });
+    if (fallback.error) {
+      return NextResponse.json({ error: fallback.error.message }, { status: 500 });
+    }
     quizzesData = fallback.data;
   }
 

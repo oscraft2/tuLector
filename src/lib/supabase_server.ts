@@ -72,6 +72,7 @@ export const getDashboardContext = cache(async function getDashboardContext() {
 
   const cookieStore = await cookies();
   const activeSchoolId = cookieStore.get("tulector_active_school_id")?.value;
+  const impersonateSchoolId = cookieStore.get("tulector_impersonate_school_id")?.value;
 
   let membership: any = null;
   let embeddedSchool: any = null;
@@ -91,23 +92,38 @@ export const getDashboardContext = cache(async function getDashboardContext() {
 
   const isStaff = staffMember !== null;
 
-  // Try to use school ID from cookie if it's valid for this user
-  if (activeSchoolId) {
+  // Impersonación de staff: SOLO via su cookie dedicada (con maxAge corto,
+  // seteada por impersonateSchool en admin/actions.ts). Antes se colgaba de
+  // tulector_active_school_id — la misma cookie del switcher normal, sin
+  // expiración — y una impersonación olvidada dejaba la sesión del staff
+  // pegada para siempre en un colegio ajeno mientras RLS seguía mostrando los
+  // datos del colegio propio (bug real: list-dia devolvía 0 ensayos con el
+  // nombre de colegio "correcto"; ver
+  // dia-bot-extension/docs/HANDOFF_bug_list-dia_0_ensayos.md).
+  let isImpersonating = false;
+  if (impersonateSchoolId && isStaff) {
+    isImpersonating = true;
+    membership = {
+      id: "impersonated-session",
+      school_id: impersonateSchoolId,
+      user_id: user.id,
+      role: "admin",
+      created_at: new Date().toISOString(),
+    };
+  } else if (activeSchoolId) {
     membership = activeMembershipResult.data;
     if (membership) {
       embeddedSchool = membership.schools;
       delete membership.schools;
-    }
-
-    // Staff impersonation override: if user is staff and has school ID cookie, grant session
-    if (!membership && isStaff) {
-      membership = {
-        id: "impersonated-session",
-        school_id: activeSchoolId,
-        user_id: user.id,
-        role: "admin",
-        created_at: new Date().toISOString(),
-      };
+    } else {
+      // Cookie de colegio activo apuntando a un colegio SIN membresía (ej.
+      // impersonación vieja pegada, o membresía revocada): se borra para que
+      // el fallback de primera membresía la re-fije bien.
+      try {
+        cookieStore.delete("tulector_active_school_id");
+      } catch {
+        // Server Components no pueden tocar cookies; el fallback opera igual.
+      }
     }
   }
 
@@ -194,6 +210,7 @@ export const getDashboardContext = cache(async function getDashboardContext() {
     // en vez de forzar "es-CL" a todos (ej. Brasil ya ve pt-BR por defecto).
     locale: ((profile?.locale as DashboardLocale | undefined) ?? countryProfile.locale),
     isAdmin: membership.role === "admin",
+    isImpersonating,
     userSchools,
   };
 });

@@ -563,15 +563,26 @@ export async function impersonateSchool(formData: FormData) {
     reason: `Impersonación: ${reason}`,
   });
 
+  // Cookie dedicada, distinta de tulector_active_school_id (la del switcher
+  // normal): con maxAge para que una impersonación olvidada expire sola en vez
+  // de dejar la sesión del staff pegada en un colegio ajeno para siempre.
   const cookieStore = await cookies();
-  cookieStore.set("tulector_active_school_id", schoolId, {
+  cookieStore.set("tulector_impersonate_school_id", schoolId, {
     path: "/",
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
+    maxAge: 60 * 60 * 8,
   });
 
   revalidatePath("/dashboard");
   redirect("/dashboard");
+}
+
+export async function stopImpersonation() {
+  const cookieStore = await cookies();
+  cookieStore.delete("tulector_impersonate_school_id");
+  revalidatePath("/dashboard");
+  redirect("/admin/schools");
 }
 

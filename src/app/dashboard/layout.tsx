@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { getDashboardMessages } from "@/locales";
 import { DashboardLayoutShell } from "@/components/dashboard/DashboardLayoutShell";
+import { stopImpersonation } from "@/app/admin/actions";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   // Read pathname from middleware header
@@ -45,7 +46,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // For all other dashboard pages, load context for the persistent shell.
   // Note: getDashboardContext() may call redirect() which throws and propagates
   // automatically — we don't catch it here.
-  const { school, user, locale, userSchools, supabase } = await getDashboardContext();
+  const { school, user, locale, userSchools, supabase, isImpersonating } = await getDashboardContext();
   const t = getDashboardMessages(locale);
   const email = user.email ?? "TL";
   const userInitials = email.slice(0, 2).toUpperCase();
@@ -78,6 +79,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
       activeSchoolId={school.id}
       notifCount={pendingReview ?? 0}
     >
+      {isImpersonating ? (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+          <span>
+            Estás viendo <strong>{school.name}</strong> como staff (impersonación). Los datos que ves no son de tu colegio.
+          </span>
+          <form action={stopImpersonation}>
+            <button type="submit" className="shrink-0 rounded-md border border-amber-400 bg-white px-3 py-1 font-medium text-amber-900 hover:bg-amber-100">
+              Salir
+            </button>
+          </form>
+        </div>
+      ) : null}
       {children}
     </DashboardLayoutShell>
   );
