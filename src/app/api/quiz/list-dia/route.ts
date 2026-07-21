@@ -18,16 +18,23 @@ type QuizRow = {
  * solo que devuelto como JSON en vez de una tabla renderizada. Solo lectura:
  * no expone respuestas, solo metadata (titulo/curso/asignatura/cantidad). */
 export async function GET() {
-  const { supabase } = await getDashboardContext();
+  const { supabase, school } = await getDashboardContext();
 
+  // OJO: filtrar school_id EXPLICITO acá, igual que export-dia/route.ts --
+  // no basta con confiar solo en RLS. Un usuario con acceso a mas de un
+  // colegio puede tener RLS que le deje ver quizzes de varios colegios a la
+  // vez, pero export-dia SI filtra por el colegio "activo" de la sesion
+  // (school.id); sin este mismo filtro acá, list-dia podia listar un ensayo
+  // que export-dia despues rechazaba con 404 "Ensayo no disponible" -- bug
+  // real encontrado en vivo probando el sync con la extension de Chrome.
   const [quizzesResult, { data: courses }] = await Promise.all([
-    supabase.from("quizzes").select("id,title,subject,grade,course_id,num_questions").is("archived_at", null).order("created_at", { ascending: false }),
-    supabase.from("courses").select("id,name"),
+    supabase.from("quizzes").select("id,title,subject,grade,course_id,num_questions").eq("school_id", school.id).is("archived_at", null).order("created_at", { ascending: false }),
+    supabase.from("courses").select("id,name").eq("school_id", school.id),
   ]);
 
   let quizzesData: unknown = quizzesResult.data;
   if (quizzesResult.error && isMissingColumnError(quizzesResult.error, "course_id")) {
-    const fallback = await supabase.from("quizzes").select("id,title,subject,grade,num_questions").is("archived_at", null).order("created_at", { ascending: false });
+    const fallback = await supabase.from("quizzes").select("id,title,subject,grade,num_questions").eq("school_id", school.id).is("archived_at", null).order("created_at", { ascending: false });
     quizzesData = fallback.data;
   }
 
