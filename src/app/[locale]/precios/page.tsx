@@ -99,6 +99,30 @@ export default async function Precios({ params }: { params: Promise<{ locale: st
         <p className="mt-6 text-center text-sm text-[#6b7280]">El plan gratis permanece siempre disponible. Los unicos planes pagados son Pro y School; School habilita administracion de equipo.</p>
       </section>
 
+      {validLocale === "es-CL" && (
+        <section className="mx-auto max-w-5xl px-5 pb-14 md:px-8 md:pb-20">
+          <div className="rounded-xl border border-[#2f6f5e]/30 bg-[#f0f7f4] p-8 md:flex md:items-center md:gap-8">
+            <div className="mb-4 flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-[#2f6f5e] md:mb-0" aria-hidden="true">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 3v12m0 0l-4-4m4 4l4-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.12em] text-[#2f6f5e]">Exclusivo para colegios en Chile</p>
+              <h2 className="mt-1 text-xl font-semibold text-[#111827]">Sube tus resultados a la plataforma DIA automaticamente</h2>
+              <p className="mt-2 text-sm leading-6 text-[#4b5563]">
+                Con Plan Pro o School, tus resultados escaneados en TuLector se sincronizan directo con la plataforma DIA de la
+                Agencia de Calidad de la Educacion, sin digitarlos pregunta por pregunta para cada estudiante.
+              </p>
+              <p className="mt-3 text-xs text-[#9aa3af]">
+                Herramienta independiente de TuLector. No afiliada ni patrocinada por la Agencia de Calidad de la Educacion.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="bg-[#f8faf9] py-14 md:py-20">
         <div className="mx-auto max-w-3xl px-5 text-center md:px-8">
           <h2 className="text-2xl font-semibold tracking-tight">Preguntas frecuentes sobre precios</h2>
@@ -108,6 +132,7 @@ export default async function Precios({ params }: { params: Promise<{ locale: st
               { q: "Los precios pagados son anuales?", a: "Si. Pro y School son planes anuales. El plan gratis permanece disponible con 100 lecturas mensuales." },
               { q: "Que metodos de pago aceptan?", a: "Aceptamos transferencia bancaria, tarjeta de credito y debito. En Mexico y Argentina ofrecemos MercadoPago. En Chile, Flow. En Brasil, PIX y boleto." },
               { q: "Ofrecen facturacion?", a: "Si. Emitimos factura o boleta segun la normativa fiscal de tu pais. Solo necesitas proporcionar tu RUT/CURP/CPF al momento de la contratacion." },
+              ...(validLocale === "es-CL" ? [{ q: "Como funciona el sync con la plataforma DIA?", a: "Con Plan Pro o School, instalas nuestra extension gratuita de Chrome y la conectas con tu sesion de TuLector y tu sesion de la plataforma DIA (nunca pedimos tu contrasena). La extension sube los resultados ya leidos por TuLector automaticamente, sin digitarlos uno por uno." }] : []),
             ].map((faq) => (
               <details key={faq.q} className="group rounded-lg border border-[#e6e8eb] bg-white p-5">
                 <summary className="cursor-pointer text-sm font-semibold text-[#111827]">{faq.q}</summary>

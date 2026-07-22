@@ -8,6 +8,7 @@ import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 import { BillingCheckoutPanel, type CheckoutItem, type CommuneOption } from "@/components/dashboard/BillingCheckoutPanel";
 import { resolveBillingCatalogItem, type BillingCheckoutInput } from "@/lib/billing_catalog";
 import { getFlowConfig } from "@/lib/flow";
+import { planHasFeature } from "@/lib/plan_gates";
 
 export const dynamic = "force-dynamic";
 
@@ -96,6 +97,23 @@ export default async function BillingPage() {
             paymentsReady={paymentsReady}
           />
         )}
+        {school.country_code === "CL" && !planHasFeature(school.plan, "dia_sync") ? (
+          <div className="flex items-center gap-4 rounded-md border border-[#2f6f5e]/30 bg-[#f0f7f4] p-5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#2f6f5e]" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 3v12m0 0l-4-4m4 4l4-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#111827]">Sube tus resultados a la plataforma DIA automaticamente</p>
+              <p className="mt-1 text-sm text-[#4b5563]">
+                Exclusivo de Plan Pro y School: sincroniza los resultados escaneados directo con la plataforma DIA sin digitarlos
+                uno por uno. Sube tu plan para activarlo.
+              </p>
+            </div>
+          </div>
+        ) : null}
         <KPIGrid>
           <KPI label="Escaneos usados" value={`${school.scans_used ?? 0}/${school.scans_limit ?? "—"}`} />
           <KPI label="Consumo mensual est." value={String(projConsumption)} />

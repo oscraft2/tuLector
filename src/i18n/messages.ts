@@ -163,8 +163,8 @@ export const messages: Record<Locale, Messages> = {
     ],
     plans: [
       { name: "Gratis", description: "100 lecturas mensuales, acceso web y movil, exportacion basica.", price: 0, currency: "CLP" },
-      { name: "Pro", description: "2.000 lecturas anuales para docentes o equipos pequenos.", price: 19990, currency: "CLP" },
-      { name: "School", description: "10.000 lecturas anuales, administracion de equipo y soporte institucional.", price: 99990, currency: "CLP" },
+      { name: "Pro", description: "2.000 lecturas anuales para docentes o equipos pequenos. Incluye sync automatico de resultados a la plataforma DIA.", price: 19990, currency: "CLP" },
+      { name: "School", description: "10.000 lecturas anuales, administracion de equipo, soporte institucional y sync automatico DIA.", price: 99990, currency: "CLP" },
     ],
     privacy: { title: "Politica de Privacidad", description: "Como TuLector recopila, usa y protege tus datos personales y los de tus estudiantes en cumplimiento de la legislacion chilena." },
     terms: { title: "Terminos y Condiciones", description: "Condiciones de uso de la plataforma TuLector para instituciones educativas y usuarios en Chile." },
