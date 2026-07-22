@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import Image from "next/image";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { getDashboardMessages } from "@/locales";
 import { QuotaBar } from "@/components/dashboard/QuotaBar";
@@ -99,11 +100,8 @@ export default async function BillingPage() {
         )}
         {school.country_code === "CL" && !planHasFeature(school.plan, "dia_sync") ? (
           <div className="flex items-center gap-4 rounded-md border border-[#2f6f5e]/30 bg-[#f0f7f4] p-5">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#2f6f5e]" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 3v12m0 0l-4-4m4 4l4-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+            <div className="flex h-14 w-20 shrink-0 items-center justify-center rounded-lg bg-white p-2">
+              <Image src="/agencia-calidad-educacion.png" alt="Agencia de Calidad de la Educacion" width={200} height={130} className="h-full w-full object-contain" />
             </div>
             <div>
               <p className="text-sm font-semibold text-[#111827]">Sube tus resultados a la plataforma DIA automaticamente</p>
