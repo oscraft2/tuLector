@@ -1,0 +1,319 @@
+"use client";
+
+import { useState, useRef, useEffect } from "react";
+import { completeOnboarding } from "./actions";
+import { countryProfiles, resolveCountryProfile } from "@/lib/country_profiles";
+import SeleccionarInstitucion from "@/components/SeleccionarInstitucion";
+import { TuLectorLogo } from "@/components/TuLectorLogo";
+import { isNativeApp } from "@/lib/native/capacitor";
+
+type Result = {
+  id: string; nombre: string; comuna: string | null; region: string | null;
+} & ({ rbd: string } | { sigla: string | null; tipo: string | null });
+
+type Tab = "colegio" | "superior" | "personal";
+
+export function OnboardingForm({ nativeInitial }: { nativeInitial: boolean }) {
+  // El servidor ya decide segun el User-Agent (sin flash); este efecto solo
+  // sube a `true` para APK viejos que no mandan el token en el UA pero SI
+  // exponen window.Capacitor (ver isNativeApp) -- mismo patron de reintento
+  // que auth/page.tsx (Capacitor puede inyectarse tarde con server.url remota).
+  const [native, setNative] = useState(nativeInitial);
+  useEffect(() => {
+    if (native) return;
+    let active = true;
+    const check = () => { if (active && isNativeApp()) setNative(true); };
+    check();
+    const timer = setTimeout(check, 2000);
+    return () => { active = false; clearTimeout(timer); };
+  }, [native]);
+
+  const initialCountry = resolveCountryProfile("CL");
+  // Reactivo al radio de pais: antes quedaba fijo en el texto de Chile sin
+  // importar que pais eligiera el usuario (bug de auditoria jul 15 2026).
+  const [countryCode, setCountryCode] = useState(initialCountry.code);
+  const selectedCountry = resolveCountryProfile(countryCode);
+  const [selected, setSelected] = useState<{ item: Result; tab: Tab } | null>(null);
+  const [isManual, setIsManual] = useState(false);
+  const [name, setName] = useState("");
+  const [region, setRegion] = useState("");
+  const [city, setCity] = useState("");
+  const [rbd, setRbd] = useState("");
+  const [institucionTipo, setInstitucionTipo] = useState<Tab>("colegio");
+  const formRef = useRef<HTMLFormElement>(null);
+
+  function handleSelect(item: Result) {
+    setSelected({ item, tab: institucionTipo });
+    setIsManual(false);
+    setName(item.nombre);
+    setRegion(item.region ?? "");
+    setCity(item.comuna ?? "");
+    setRbd("rbd" in item ? item.rbd : "");
+  }
+
+  function handleManualMode(initialName: string = "") {
+    setIsManual(true);
+    setSelected(null);
+    setName(initialName);
+    setRegion("");
+    setCity("");
+    setRbd("");
+  }
+
+  function handleTabChange(newTab: Tab) {
+    setInstitucionTipo(newTab);
+    setSelected(null);
+    setIsManual(false);
+    if (newTab === "personal") {
+      setName("Cuenta Personal");
+      setRegion("");
+      setCity("");
+      setRbd("");
+    } else {
+      setName("");
+      setRegion("");
+      setCity("");
+      setRbd("");
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+
+    const finalName = institucionTipo === "personal" ? "Cuenta Personal" : name.trim();
+    fd.set("name", finalName);
+    fd.set("region", region.trim());
+    fd.set("city", city.trim());
+    fd.set("rbd", rbd.trim());
+    fd.set("institucion_tipo", institucionTipo);
+    await completeOnboarding(fd);
+  }
+
+  // Mismo formulario para ambas variantes (native/web) -- solo cambia el
+  // "chrome" que lo envuelve mas abajo.
+  const formContent = (
+    <form ref={formRef} onSubmit={handleSubmit} className="mt-6 grid gap-4">
+
+      {/* Tipo de cuenta */}
+      <div>
+        <span className="text-sm font-semibold block mb-2">Tipo de cuenta</span>
+        <div className="flex gap-1 rounded-lg border border-[#d8dde3] p-0.5 bg-[#f3f4f6]">
+          <button
+            type="button"
+            onClick={() => handleTabChange("colegio")}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition ${institucionTipo === "colegio" ? "bg-white text-[#07305f] shadow-sm" : "text-[#6b7280] hover:text-[#111827]"}`}
+          >
+            Colegio
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange("superior")}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition ${institucionTipo === "superior" ? "bg-white text-[#07305f] shadow-sm" : "text-[#6b7280] hover:text-[#111827]"}`}
+          >
+            Inst. Superior
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange("personal")}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition ${institucionTipo === "personal" ? "bg-white text-[#07305f] shadow-sm" : "text-[#6b7280] hover:text-[#111827]"}`}
+          >
+            Personal
+          </button>
+        </div>
+      </div>
+
+      <fieldset>
+        <legend className="text-sm font-semibold">País de origen</legend>
+        <div className="mt-3 grid gap-2 md:grid-cols-3">
+          {countryProfiles.map((country) => (
+            <label key={country.code} className="cursor-pointer">
+              <input
+                className="peer sr-only" type="radio" name="country_code" value={country.code}
+                defaultChecked={country.code === initialCountry.code}
+                onChange={() => {
+                  setCountryCode(country.code);
+                  // Buscar institucion solo tiene datos reales para Chile
+                  // (chile_schools/instituciones_superiores). Fuera de
+                  // Chile se va directo a modo manual -- antes el buscador
+                  // aparecia igual para cualquier pais y nunca encontraba
+                  // nada, bloqueando el flujo.
+                  if (country.code !== "CL") {
+                    handleManualMode();
+                  } else {
+                    setIsManual(false);
+                  }
+                }}
+              />
+              <span className="block rounded-xl border border-[#d8dde3] bg-white p-3 transition peer-checked:border-2 peer-checked:border-[#07305f] peer-checked:bg-[#eef6ff]">
+                <span className="text-2xl" aria-hidden="true">{country.flag}</span>
+                <span className="mt-2 block text-sm font-semibold text-[#111827]">{country.countryName}</span>
+                <span className="mt-0.5 block text-xs text-[#5b6472]">{country.standardsLabel}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-[#5b6472]">{selectedCountry.onboardingHelper}</p>
+      </fieldset>
+
+      {/* Buscar institución si es colegio o superior -- solo tiene datos
+          reales para Chile, para el resto de paises se va directo a
+          modo manual (ver onChange del radio de pais arriba). */}
+      {institucionTipo !== "personal" && (
+        <>
+          {selectedCountry.code === "CL" ? (
+            <>
+              <div className="flex justify-between items-center text-sm font-semibold mt-2">
+                <span>Buscar institución</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isManual) {
+                      setIsManual(false);
+                    } else {
+                      handleManualMode();
+                    }
+                  }}
+                  className="text-xs font-semibold text-[#07305f] hover:underline cursor-pointer"
+                >
+                  {isManual ? "Buscar institución..." : "Ingresar manualmente"}
+                </button>
+              </div>
+
+              {!isManual ? (
+                <SeleccionarInstitucion
+                  tab={institucionTipo === "superior" ? "superior" : "colegio"}
+                  onSelect={handleSelect}
+                  onManualMode={handleManualMode}
+                />
+              ) : (
+                <div className="text-xs text-[#5b6472] -mt-1">
+                  Registrando institución de forma manual.
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-xs font-semibold text-[#5b6472] mt-2">
+              Ingresa los datos de tu institución:
+            </div>
+          )}
+
+          <label className="text-sm font-semibold block mt-2">
+            Nombre de institución
+            <input
+              readOnly={!isManual}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className={`mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal ${!isManual ? "bg-[#f3f4f6] text-[#6b7280]" : "bg-white text-[#0b1220]"}`}
+              placeholder={!isManual ? "Selecciona una institución arriba" : "Ej. Colegio San Francisco"}
+              tabIndex={!isManual ? -1 : undefined}
+              required={isManual}
+            />
+          </label>
+
+          {isManual && institucionTipo === "colegio" && selectedCountry.code === "CL" && (
+            <label className="text-sm font-semibold block mt-2">
+              RBD (Opcional)
+              <input
+                type="text"
+                value={rbd}
+                onChange={(e) => setRbd(e.target.value)}
+                className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal text-[#0b1220]"
+                placeholder="Ej. 12345"
+              />
+            </label>
+          )}
+        </>
+      )}
+
+      {institucionTipo === "personal" && (
+        <div className="rounded-md border border-[#eef6ff] bg-[#f9fafb] p-4 text-sm text-[#5b6472] mt-2">
+          Perfil de cuenta personal. No requiere vincularse a un colegio o universidad.
+        </div>
+      )}
+
+      <label className="text-sm font-semibold">Subdominio<input name="subdomain" className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal" placeholder="losandes" /></label>
+
+      {/* Dirección si es colegio o superior */}
+      {institucionTipo !== "personal" && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="text-sm font-semibold">
+            {selectedCountry.adminDivisionLabel}
+            {isManual ? (
+              <select
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+                className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal text-[#0b1220]"
+              >
+                <option value="">Selecciona {selectedCountry.adminDivisionLabel.toLowerCase()}</option>
+                {selectedCountry.adminDivisions.map((division) => (
+                  <option key={division} value={division}>{division}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                readOnly
+                value={region}
+                className="mt-2 w-full rounded-md border border-[#cfd6df] bg-[#f3f4f6] px-3 py-2 font-normal text-[#6b7280]"
+                placeholder="Se completará automáticamente"
+                tabIndex={-1}
+              />
+            )}
+          </label>
+          <label className="text-sm font-semibold">
+            {selectedCountry.localityLabel}
+            <input
+              readOnly={!isManual}
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              className={`mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal ${!isManual ? "bg-[#f3f4f6] text-[#6b7280]" : "bg-white text-[#0b1220]"}`}
+              placeholder={!isManual ? "Se completará automáticamente" : `Ej. ${selectedCountry.localityExample}`}
+              tabIndex={!isManual ? -1 : undefined}
+            />
+          </label>
+        </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={institucionTipo !== "personal" && !selected && (!isManual || !name.trim())}
+        className={`mt-2 rounded-md bg-[#07305f] px-4 py-3 text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${native ? "active:scale-[0.99] transition-transform" : ""}`}
+      >
+        Crear cuenta
+      </button>
+    </form>
+  );
+
+  if (native) {
+    // Variante nativa: mismo formulario, "chrome" consistente con /app y la
+    // variante nativa de /auth (header oscuro + sheet blanca). Sin logo ni
+    // links a "/" -- nada debe llevar a la landing de marketing dentro del APK.
+    return (
+      <main className="min-h-dvh bg-[#111827] text-white">
+        <header className="safe-pt px-6 pb-6 pt-5">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-lg font-black text-[#111827]">TL</div>
+          <h1 className="mt-5 text-2xl font-black tracking-tight">Ya casi 👋</h1>
+          <p className="mt-1 text-sm text-white/60">Cuéntanos dónde enseñas para configurar tu cuenta.</p>
+        </header>
+        <section className="safe-pb rounded-t-[2rem] bg-white px-6 pt-7 pb-7 text-[#0b1220]">
+          {formContent}
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="min-h-screen bg-[#fafafa] px-5 py-10 text-[#0b1220]" style={{ fontFamily: '"Source Sans 3", "Noto Sans", "Segoe UI", Arial, sans-serif' }}>
+      <div className="mx-auto max-w-2xl">
+        <TuLectorLogo href="/" size="lg" />
+        <section className="mt-10 rounded-md border border-[#d8dde3] bg-white p-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7280]">Primer acceso</p>
+          <h1 className="mt-2 text-3xl font-semibold">Configura tu perfil</h1>
+          <p className="mt-2 text-sm leading-6 text-[#5b6472]">Selecciona el tipo de cuenta y país. El país determina la escala de notas y estándares de evaluación de tu perfil.</p>
+          {formContent}
+        </section>
+      </div>
+    </main>
+  );
+}

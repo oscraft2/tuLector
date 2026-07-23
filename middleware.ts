@@ -68,10 +68,16 @@ export async function middleware(request: NextRequest) {
 
   // Supabase puede volver al Site URL raiz si el redirectTo no esta allowlisted.
   // Si vuelve a /?code=..., lo normalizamos al callback real para crear cookies SSR.
+  // "next"/"from" solo se reenvian si vinieron en la URL -- sin default aqui,
+  // asi el callback decide el destino segun sea nativo (APK) o web (ver
+  // auth/callback/route.ts).
   if (pathname === "/" && searchParams.has("code")) {
     const callbackUrl = new URL("/auth/callback", origin);
     callbackUrl.searchParams.set("code", searchParams.get("code") ?? "");
-    callbackUrl.searchParams.set("next", searchParams.get("next") ?? "/dashboard");
+    const next = searchParams.get("next");
+    if (next) callbackUrl.searchParams.set("next", next);
+    const from = searchParams.get("from");
+    if (from) callbackUrl.searchParams.set("from", from);
     return NextResponse.redirect(callbackUrl);
   }
 

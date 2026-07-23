@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase_server";
 import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
@@ -68,5 +69,10 @@ export async function completeOnboarding(formData: FormData) {
     }
   }
 
-  redirect("/dashboard");
+  // El POST de la action sale del WebView del APK, asi que en builds
+  // actuales trae el token TuLectorApp del User-Agent (mismo criterio que
+  // dashboard/layout.tsx). En builds viejos sin el token, cae a /dashboard
+  // y lo rescata NativeDashboardGuard client-side.
+  const isNative = /TuLectorApp/i.test((await headers()).get("user-agent") ?? "");
+  redirect(isNative ? "/app" : "/dashboard");
 }

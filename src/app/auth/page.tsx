@@ -199,7 +199,13 @@ function AuthForm() {
           email: normalizedEmail,
           password,
           options: {
-            emailRedirectTo: authCallbackUrl(),
+            // APK: el link de confirmacion del correo debe abrir la app (no
+            // Chrome). OAUTH_DEEP_LINK es la misma URL que /auth/callback;
+            // NativeBootstrap ya la intercepta via App Link (mismo mecanismo
+            // que usa Apple en Android) y canjea el code en el WebView. El
+            // marcador ?from=app distingue este caso en auth/callback/route.ts
+            // (pagina puente si el App Link no logra abrir la app).
+            emailRedirectTo: isNativeApp() ? `${OAUTH_DEEP_LINK}?from=app` : authCallbackUrl(),
           },
         });
         if (error) throw error;

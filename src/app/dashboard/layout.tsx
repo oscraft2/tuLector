@@ -4,6 +4,8 @@ import { getDashboardContext } from "@/lib/supabase_server";
 import { getDashboardMessages } from "@/locales";
 import { DashboardLayoutShell } from "@/components/dashboard/DashboardLayoutShell";
 import { stopImpersonation } from "@/app/admin/actions";
+import { isNativeAllowedDashboardPath } from "@/lib/native/routes";
+import { NativeDashboardGuard } from "@/components/native/NativeDashboardGuard";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   // Read pathname from middleware header
@@ -32,15 +34,22 @@ export default async function DashboardLayout({ children }: { children: React.Re
   //    blanco para siempre (no hay forma de completar el registro nativo).
   const ua = headersList.get("user-agent") ?? "";
   const pathname = headersList.get("x-pathname") ?? "";
-  const nativeAllowedPrefixes = ["/dashboard/quizzes", "/dashboard/students", "/dashboard/settings", "/dashboard/billing", "/dashboard/onboarding"];
-  if (/TuLectorApp/i.test(ua) && !nativeAllowedPrefixes.some((p) => pathname.startsWith(p))) {
+  if (/TuLectorApp/i.test(ua) && !isNativeAllowedDashboardPath(pathname)) {
     redirect("/app");
   }
 
   // Skip the shell for the onboarding page — it has its own full-page layout.
   // Also skip if pathname is empty (fallback).
   if (pathname.includes("/onboarding") || !pathname) {
-    return <>{children}</>;
+    // NativeDashboardGuard: cinturon client-side para APK viejos que no
+    // mandan el token TuLectorApp en el User-Agent (ver componente). En web
+    // es no-op (isNativeApp() da false); no afecta a nadie mas.
+    return (
+      <>
+        <NativeDashboardGuard />
+        {children}
+      </>
+    );
   }
 
   // For all other dashboard pages, load context for the persistent shell.
@@ -79,6 +88,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       activeSchoolId={school.id}
       notifCount={pendingReview ?? 0}
     >
+      <NativeDashboardGuard />
       {isImpersonating ? (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
           <span>
