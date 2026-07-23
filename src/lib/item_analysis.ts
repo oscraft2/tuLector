@@ -1,6 +1,9 @@
 // Análisis por ítem (OMR real): recorre papers.answers contra la clave del ensayo.
 // papers.answers tiene forma [{ q: number (1-based), a: "A".."E" | "-" }].
-// answer_key es un string de letras (se limpia con replace(/[^A-Za-z]/g, "")).
+// answer_key es un string de letras y "-" (posicional: "-" = sin clave, ej.
+// clave parcial o pregunta de desarrollo). El "-" se PRESERVA al limpiar --
+// descartarlo correria el indice de todo lo que viene despues de un hueco
+// (mismo criterio que answerKeyAt en grading.ts).
 
 export type ItemStat = {
   q: number; // 1-based
@@ -63,7 +66,7 @@ export function computeItemAnalysis(
   numOptions: number | null | undefined,
   metadata: MetaRow[] = [],
 ): ItemAnalysis {
-  const key = String(answerKey ?? "").replace(/[^A-Za-z]/g, "").toUpperCase();
+  const key = String(answerKey ?? "").replace(/[^A-Za-z-]/g, "").toUpperCase();
   const nOpts = Math.max(2, Math.min(6, Number(numOptions) || 5));
   const options = LETTERS.slice(0, nOpts);
   const nQ = Math.max(0, Number(numQuestions) || key.length || 0);
@@ -108,7 +111,7 @@ export function computeItemAnalysis(
       let a = String(item?.a ?? "-").trim().toUpperCase();
       if (!options.includes(a)) a = "-";
       counts[q][a] = (counts[q][a] ?? 0) + 1;
-      const correctLetter = key[q - 1];
+      const correctLetter = key[q - 1] === "-" ? "" : key[q - 1];
       if (correctLetter && a === correctLetter) {
         if (inTop) topCorrect[q]++;
         if (inBottom) bottomCorrect[q]++;
@@ -118,7 +121,9 @@ export function computeItemAnalysis(
 
   const items: ItemStat[] = [];
   for (let q = 1; q <= nQ; q++) {
-    const correct = key[q - 1] ?? "";
+    // "-" = sin clave (parcial o desarrollo): tratar como "" para no contar
+    // los blancos (counts[q]["-"]) como % de acierto.
+    const correct = key[q - 1] === "-" ? "" : key[q - 1] ?? "";
     // Denominador: alumnos que entregaron la hoja (respondieran o no), para no premiar los blancos.
     const n = totalPapers;
     const nCorrect = correct ? counts[q][correct] ?? 0 : 0;
@@ -178,7 +183,7 @@ export function computeAxisMastery(papers: AxisMasteryPaper[]): AxisStat[] {
   const axisMap: Record<string, { correct: number; total: number }> = {};
 
   for (const paper of papers) {
-    const key = String(paper.answerKey ?? "").replace(/[^A-Za-z]/g, "").toUpperCase();
+    const key = String(paper.answerKey ?? "").replace(/[^A-Za-z-]/g, "").toUpperCase();
     const nQ = Math.max(0, Number(paper.numQuestions) || key.length || 0);
     if (!key || nQ <= 0) continue;
 
@@ -200,7 +205,7 @@ export function computeAxisMastery(papers: AxisMasteryPaper[]): AxisStat[] {
     for (let q = 1; q <= nQ; q++) {
       const axis = metaByQ.get(q);
       const correct = key[q - 1];
-      if (!axis || !correct) continue;
+      if (!axis || !correct || correct === "-") continue;
       if (!axisMap[axis]) axisMap[axis] = { correct: 0, total: 0 };
       axisMap[axis].total += 1;
       if (answerByQ.get(q) === correct) axisMap[axis].correct += 1;

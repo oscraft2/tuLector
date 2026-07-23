@@ -5,8 +5,10 @@ import Link from "next/link";
 import { SHEET_W, SHEET_H, type SheetConfig } from "@/lib/sheet_layout";
 import {
   renderSheet, randomValidNationalId, randomAnswers, randomPartialAnswers, safeColumns, allowedColumns,
-  paginateQuiz, MIN_QUESTIONS, MAX_QUESTIONS, type Branding, type GroundTruthEntry, type SheetMarks, type QuizPage,
+  paginateQuiz, chunkOpenQuestions, renderOpenAnswersSheet, MIN_QUESTIONS, MAX_QUESTIONS,
+  type Branding, type GroundTruthEntry, type SheetMarks, type QuizPage,
 } from "@/lib/sheet_generator";
+import { parseOpenQuestions } from "@/lib/quiz_constraints";
 import { resolveNationalId } from "@/lib/national_id";
 import { countryProfiles, resolveCountryProfile } from "@/lib/country_profiles";
 import { resolveIdBlock } from "@/lib/country_id_blocks";
@@ -79,6 +81,10 @@ export default function SheetPage() {
 
   // Ensayo heredado via /sheet?quiz=<id>: la hoja toma su formato + clave + codigo.
   const [quizInfo, setQuizInfo] = useState<{ id: string; title: string; sheetCode: number | null; answerKey: string } | null>(null);
+  // Preguntas de desarrollo (abiertas) del ensayo, numeracion GLOBAL 1..N:
+  // en la hoja frontal la fila imprime "Resolver al reverso" (sin burbujas) y
+  // el PDF intercala una pagina de reverso con recuadros para escribir.
+  const [openQuestions, setOpenQuestions] = useState<number[]>([]);
 
   // Parsea la lista pegada (acepta "id" o "id,nombre,curso" por línea, salta
   // encabezado). Devuelve IDs válidos (segun el pais elegido) normalizados, sin duplicados.
@@ -118,13 +124,15 @@ export default function SheetPage() {
   // pagina (pages.length===1, el caso de hoy) se usa el tamano real pedido,
   // sin cambio de comportamiento. Ver docs/plan-multipagina-fase1.md.
   const pageGridSize = isMultipage ? MAX_QUESTIONS : numQuestions;
-  // Recibe QuizPage por consistencia con marksForPage/brandingForPage (se
-  // llaman las 3 juntas por pagina), aunque el grid ya no varia por pagina.
-  const cfgForPage = (_p: QuizPage): SheetConfig => ({
+  // Abiertas de UNA pagina en numeracion LOCAL de esa hoja (1-indexada).
+  const openForPage = (p: QuizPage): number[] =>
+    openQuestions.filter((g) => g >= p.from && g <= p.to).map((g) => g - p.from + 1);
+  const cfgForPage = (p: QuizPage): SheetConfig => ({
     numQuestions: pageGridSize,
     numOptions,
     numColumns: safeColumns(pageGridSize, numColumns),
     idBlock,
+    ...(openQuestions.length > 0 ? { openQuestions: openForPage(p) } : {}),
   });
   const marksForPage = (p: QuizPage): SheetMarks => ({
     ...(fillRut ? { rut, filled: true } : {}),
@@ -148,9 +156,17 @@ export default function SheetPage() {
   // la hoja con el MISMO nº de preguntas/opciones/columnas que se imprimió.
   useEffect(() => {
     try {
-      localStorage.setItem("tulector_scan_config", JSON.stringify({ numQuestions, numOptions, numColumns }));
+      // openQuestions solo cuando el ensayo cabe en 1 hoja: en multipagina la
+      // numeracion local por pagina no se conoce hasta decodificar el codigo de
+      // hoja (limitacion documentada; sin burbujas igual se lee "-" y el
+      // servidor excluye las abiertas del puntaje).
+      localStorage.setItem("tulector_scan_config", JSON.stringify({
+        numQuestions, numOptions, numColumns,
+        openQuestions: isMultipage ? [] : openQuestions,
+      }));
     } catch { /* sin storage */ }
-  }, [numQuestions, numOptions, numColumns]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [numQuestions, numOptions, numColumns, isMultipage, JSON.stringify(openQuestions)]);
 
   // Detecta si corremos en el APK (para mostrar botón "Compartir" nativo).
   useEffect(() => {
@@ -168,7 +184,7 @@ export default function SheetPage() {
     const ctx = canvas.getContext("2d");
     if (ctx) renderSheet(ctx, marks, cfg, branding);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numQuestions, numOptions, numColumns, countryCode, title, school, logo, fillRut, rut, quizInfo]);
+  }, [numQuestions, numOptions, numColumns, countryCode, title, school, logo, fillRut, rut, quizInfo, openQuestions]);
 
   // Carga el ensayo desde ?quiz=<id> y hace que la hoja HEREDE su formato + codigo.
   useEffect(() => {
@@ -193,6 +209,7 @@ export default function SheetPage() {
           if (fillRut) setRut(randomValidNationalId(String(q.country_code)));
         }
         setQuizInfo({ id: String(q.id), title: String(q.title ?? ""), sheetCode: q.sheet_code ?? null, answerKey: String(q.answer_key ?? "") });
+        setOpenQuestions(parseOpenQuestions(q.open_questions ?? "", nq));
       } catch { /* sin ensayo -> generador manual */ }
     })();
   }, []);
@@ -225,11 +242,33 @@ export default function SheetPage() {
     return c.toDataURL("image/png");
   };
 
+  /** Renderiza UNA pagina de reverso (recuadros de desarrollo) a dataURL PNG. */
+  const renderOpenPageToDataUrl = (questions: number[], pageInfo?: string) => {
+    const c = document.createElement("canvas");
+    c.width = SHEET_W * 2; c.height = SHEET_H * 2;
+    const ctx = c.getContext("2d")!;
+    ctx.scale(2, 2);
+    renderOpenAnswersSheet(ctx, questions, branding, pageInfo ? { pageInfo } : {});
+    return c.toDataURL("image/png");
+  };
+
+  // Paginas de reverso que genera cada pagina frontal (para avisos de duplex).
+  const openChunksForPage = (p: QuizPage) => {
+    const inPage = openQuestions.filter((g) => g >= p.from && g <= p.to);
+    return chunkOpenQuestions(inPage);
+  };
+  const maxOpenChunks = Math.max(0, ...pages.map((p) => openChunksForPage(p).length));
+
   // Multipagina: exporta las N hojas como un solo PDF de N paginas (exportPdf
   // ya soporta multi-pagina, se reusa sin cambios). 1 pagina -> comportamiento
-  // identico al de siempre.
+  // identico al de siempre. Con preguntas de desarrollo, intercala la(s)
+  // pagina(s) de reverso DESPUES de cada frente (calza con impresion duplex).
   const pdfOne = () => exportPdf(
-    pages.map((p) => renderPageToDataUrl(p)),
+    pages.flatMap((p) => [
+      renderPageToDataUrl(p),
+      ...openChunksForPage(p).map((qs, i, arr) =>
+        renderOpenPageToDataUrl(qs, arr.length > 1 || isMultipage ? `Reverso ${i + 1} de ${arr.length}${isMultipage ? ` — Hoja ${p.page}` : ""}` : undefined)),
+    ]),
     fillRut ? `hoja_tulector_${rut}.pdf` : "hoja_tulector.pdf",
   );
 
@@ -277,15 +316,17 @@ export default function SheetPage() {
       const ans = partialMode
         ? randomPartialAnswers(numQuestions, numOptions, effectiveMarkUpTo)
         : randomAnswers(numQuestions, numOptions);
+      // Preguntas de desarrollo: sin burbujas en la hoja → siempre en blanco.
+      for (const g of openQuestions) if (g >= 1 && g <= ans.length) ans[g - 1] = -1;
       urls.push(renderToDataUrl({ rut: r, answers: ans, filled: true, ...(marks.code ? { code: marks.code } : {}) }));
       // La verdad-terreno solo cubre lo AUTO-marcado (1..markedUpTo); lo demás se
       // marca a mano y se evalua contra la clave real del ensayo, no contra este JSON.
-      truth.push({ index: i, rut: r, answers: ans.slice(0, effectiveMarkUpTo).map((a) => LABELS[a]) });
+      truth.push({ index: i, rut: r, answers: ans.slice(0, effectiveMarkUpTo).map((a) => (a < 0 ? "-" : LABELS[a])) });
     }
     const meta = {
       generadoEn: new Date().toISOString(),
       origen: rutMode === "list" ? "roster-curso" : "aleatorio",
-      config: { numQuestions, numOptions, numColumns },
+      config: { numQuestions, numOptions, numColumns, ...(openQuestions.length > 0 ? { openQuestions } : {}) },
       markedUpTo: effectiveMarkUpTo,
       total: count,
       hojas: truth,
@@ -334,6 +375,12 @@ export default function SheetPage() {
           {isMultipage && (
             <p className="text-xs text-amber-400">
               ⚠ Este ensayo tiene {numQuestions} preguntas → se imprime en {pages.length} hojas (cada una con su propio bloque de ID, se pueden escanear en cualquier orden). Usa <strong>Descargar PDF</strong> para obtener las {pages.length} páginas.
+            </p>
+          )}
+          {openQuestions.length > 0 && (
+            <p className="text-xs text-sky-300">
+              ✎ {openQuestions.length} pregunta(s) de desarrollo ({openQuestions.join(", ")}): en la hoja aparecen como &ldquo;Resolver al reverso&rdquo; y el PDF incluye la(s) hoja(s) de desarrollo con sus recuadros.
+              {maxOpenChunks > 1 && " ⚠ Hay más de una página de reverso por hoja: la impresión dúplex directa no calza — imprime los reversos por separado."}
             </p>
           )}
         </div>

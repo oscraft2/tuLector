@@ -41,6 +41,7 @@ type QuizRow = {
   id: string;
   answer_key: string | null;
   num_questions: number | null;
+  open_questions?: string | null;
   evaluation_type: string | null;
   exigencia: number | null;
   sheet_code: number | null;
@@ -347,11 +348,21 @@ export async function POST(request: Request) {
 
     let quizResult = await supabase
       .from("quizzes")
-      .select("id,school_id,title,answer_key,num_questions,evaluation_type,evaluation_variant,sheet_code,exigencia")
+      .select("id,school_id,title,answer_key,num_questions,open_questions,evaluation_type,evaluation_variant,sheet_code,exigencia")
       .eq("id", quizId)
       .eq("school_id", school.id)
       .is("archived_at", null)
       .single();
+
+    if (quizResult.error && isMissingColumnError(quizResult.error, "open_questions")) {
+      quizResult = await supabase
+        .from("quizzes")
+        .select("id,school_id,title,answer_key,num_questions,evaluation_type,evaluation_variant,sheet_code,exigencia")
+        .eq("id", quizId)
+        .eq("school_id", school.id)
+        .is("archived_at", null)
+        .single();
+    }
 
     if (quizResult.error && isMissingColumnError(quizResult.error, "sheet_code")) {
       quizResult = await supabase

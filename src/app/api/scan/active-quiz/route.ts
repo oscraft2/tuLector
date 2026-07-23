@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase_server";
+import { isMissingColumnError } from "@/lib/supabase_errors";
 
 export async function GET() {
   const cookieStore = await cookies();
@@ -11,12 +12,23 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
-  const { data, error } = await supabase
+  let result = await supabase
     .from("quizzes")
-    .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code")
+    .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions")
     .eq("id", quizId)
     .is("archived_at", null)
     .single();
+
+  if (result.error && isMissingColumnError(result.error, "open_questions")) {
+    result = await supabase
+      .from("quizzes")
+      .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code")
+      .eq("id", quizId)
+      .is("archived_at", null)
+      .single();
+  }
+
+  const { data, error } = result;
 
   if (error || !data) return NextResponse.json({ error: "Ensayo no disponible" }, { status: 404 });
 
@@ -38,6 +50,7 @@ export async function GET() {
     option_labels: data.option_labels,
     num_columns: data.num_columns,
     sheet_code: data.sheet_code,
+    open_questions: (data as { open_questions?: string | null }).open_questions ?? null,
     country_code: schoolRow?.country_code ?? "CL",
   });
 }

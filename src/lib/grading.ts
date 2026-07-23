@@ -1,5 +1,6 @@
 import "server-only";
 import { calculateGrade } from "@/lib/latam";
+import { parseOpenQuestions } from "@/lib/quiz_constraints";
 
 /**
  * Lee la letra esperada de una clave en una posicion dada. Preserva "-"
@@ -25,6 +26,9 @@ export type ScoreableAnswer = { q: number; a: string };
 export type ScoreableQuiz = {
   answer_key: string | null;
   num_questions: number | null;
+  /** CSV canonico "18,27,33" de preguntas de desarrollo (ver parseOpenQuestions):
+   *  quedan FUERA del puntaje automatico (numerador y denominador). */
+  open_questions?: string | null;
   evaluation_type?: string | null;
   exigencia?: number | null;
 };
@@ -48,8 +52,13 @@ export function computeQuizScore(
   school: ScoreableSchool,
   countryCode: string,
 ) {
-  const total = Number(quiz.num_questions ?? answers.length);
+  const numQ = Number(quiz.num_questions ?? answers.length);
+  // Las preguntas de desarrollo (abiertas) no se corrigen automaticamente:
+  // la nota es correctas / preguntas-de-alternativas.
+  const open = new Set(parseOpenQuestions(quiz.open_questions ?? "", numQ));
+  const total = Math.max(1, numQ - open.size);
   const score = answers.reduce((sum, answer) => {
+    if (open.has(answer.q)) return sum;
     const expected = answerKeyAt(String(quiz.answer_key ?? ""), answer.q - 1);
     return sum + (answer.a !== "-" && answer.a === expected ? 1 : 0);
   }, 0);

@@ -44,6 +44,7 @@ export async function analyzeTruthHeadless(
     numOptions: cfg.numOptions,
     optionLabels: LABELS.slice(0, cfg.numOptions),
     numColumns: cfg.numColumns,
+    ...(cfg.openQuestions ? { openQuestions: cfg.openQuestions } : {}),
   };
 
   const canvas = document.createElement("canvas");

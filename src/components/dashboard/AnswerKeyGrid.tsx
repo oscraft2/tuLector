@@ -23,12 +23,15 @@ export function AnswerKeyGrid({
   pageSize = QUIZ_MAX_QUESTIONS,
   optionLabels,
   onAnswerChange,
+  openQuestions,
 }: {
   answerKey: string;
   numQuestions: number;
   pageSize?: number;
   optionLabels?: string;
   onAnswerChange?: (index: number, letter: string) => void;
+  /** Indices 0-indexados de preguntas de desarrollo: chip distinto, sin letra editable. */
+  openQuestions?: Set<number>;
 }) {
   const editable = Boolean(onAnswerChange && optionLabels);
   const [selected, setSelected] = useState<number | null>(null);
@@ -51,6 +54,7 @@ export function AnswerKeyGrid({
   }
 
   function applyLetter(index: number, letter: string) {
+    if (openQuestions?.has(index)) return; // desarrollo: sin letra editable
     onAnswerChange?.(index, letter);
   }
 
@@ -86,21 +90,24 @@ export function AnswerKeyGrid({
             <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-10">
               {letters.slice(from, to).map((answer, i) => {
                 const q = from + i;
+                const isOpen = openQuestions?.has(q) ?? false;
                 const empty = answer === "-";
                 const isSelected = selected === q;
                 const chip = (
                   <span
                     className={`grid h-8 w-8 place-items-center rounded-full text-xs font-bold transition ${
-                      empty
+                      isOpen
+                        ? "border border-dashed border-[#f0b429] bg-[#fffbeb] text-[#b45309]"
+                        : empty
                         ? "border border-dashed border-[#d8dde3] text-[#9ca3af]"
                         : "bg-[#eef4ff] text-[#07305f]"
                     } ${isSelected ? "ring-2 ring-[#111827] ring-offset-1" : ""}`}
                   >
-                    {answer}
+                    {isOpen ? "✎" : answer}
                   </span>
                 );
                 return (
-                  <div key={q} className="flex flex-col items-center gap-0.5" title={`Pregunta ${q + 1}`}>
+                  <div key={q} className="flex flex-col items-center gap-0.5" title={isOpen ? `Pregunta ${q + 1} — desarrollo (se resuelve al reverso)` : `Pregunta ${q + 1}`}>
                     <span className="text-[9px] font-medium leading-none text-[#9ca3af]">{q + 1}</span>
                     {editable ? (
                       <button
@@ -109,7 +116,7 @@ export function AnswerKeyGrid({
                         onClick={() => focusIndex(q)}
                         onFocus={() => setSelected(q)}
                         onKeyDown={(event) => handleKeyDown(event, q)}
-                        aria-label={`Pregunta ${q + 1}, respuesta ${empty ? "sin definir" : answer}`}
+                        aria-label={isOpen ? `Pregunta ${q + 1}, de desarrollo (se resuelve al reverso)` : `Pregunta ${q + 1}, respuesta ${empty ? "sin definir" : answer}`}
                         className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[#111827]"
                       >
                         {chip}
@@ -128,13 +135,17 @@ export function AnswerKeyGrid({
       {editable && optionLabels && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-[#eef0f3] bg-[#f8fafc] p-2.5">
           <span className="text-xs font-semibold text-[#6b7280]">
-            {selected === null ? "Elige una pregunta arriba" : `Pregunta ${selected + 1}:`}
+            {selected === null
+              ? "Elige una pregunta arriba"
+              : openQuestions?.has(selected)
+              ? `Pregunta ${selected + 1}: de desarrollo (se resuelve al reverso)`
+              : `Pregunta ${selected + 1}:`}
           </span>
           {optionLabels.split("").map((letter) => (
             <button
               key={letter}
               type="button"
-              disabled={selected === null}
+              disabled={selected === null || (openQuestions?.has(selected) ?? false)}
               onClick={() => {
                 if (selected === null) return;
                 applyLetter(selected, letter);
@@ -147,7 +158,7 @@ export function AnswerKeyGrid({
           ))}
           <button
             type="button"
-            disabled={selected === null}
+            disabled={selected === null || (openQuestions?.has(selected) ?? false)}
             onClick={() => {
               if (selected === null) return;
               applyLetter(selected, "");

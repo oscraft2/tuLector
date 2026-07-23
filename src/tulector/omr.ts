@@ -23,10 +23,14 @@ export interface OMRConfig {
   idRows: number; idCols: number;
   sheetWidth: number; sheetHeight: number;
   margin: number; cornerSize: number;
+  /** Preguntas de desarrollo (1-indexadas, numeracion local de la hoja): la
+   *  hoja las imprime SIN burbujas, asi que el motor no las muestrea — salen
+   *  como "-" con flag "abierta". Ausente = hoja 100% de alternativas. */
+  openQuestions?: number[];
 }
 
-/** Confianza de una lectura: ok | revisar (dudosa) | blanco (sin marca). */
-export type MarkFlag = "ok" | "revisar" | "blanco";
+/** Confianza de una lectura: ok | revisar (dudosa) | blanco (sin marca) | abierta (desarrollo, sin burbujas). */
+export type MarkFlag = "ok" | "revisar" | "blanco" | "abierta";
 
 export interface BubbleResult {
   question: number; answer: string; scores: number[]; correct: boolean | null;
@@ -761,10 +765,14 @@ function validateFormat(gray: Float32Array, w: number, h: number, config: OMRCon
  * oscuridad concentrada en las posiciones de burbuja esperadas. En una imagen
  * perfecta el optimo es (0,0), por lo que no degrada el caso ideal.
  */
-function darkAtBubbles(gray: Float32Array, w: number, h: number, rowY: number[], ql: L.QLayout, dx: number): number {
+function darkAtBubbles(gray: Float32Array, w: number, h: number, rowY: number[], ql: L.QLayout, dx: number, openSet?: Set<number>): number {
   let darkSum = 0;
-  for (const cy of rowY) {
+  for (let row = 0; row < rowY.length; row++) {
+    const cy = rowY[row];
     for (let col = 0; col < ql.numColumns; col++) {
+      // Celda de pregunta abierta: no hay burbujas impresas ahi (solo el texto
+      // de instruccion) — no debe sesgar la busqueda de offset.
+      if (openSet?.has(col * ql.rowsPerCol + row + 1)) continue;
       for (let o = 0; o < ql.numOptions; o++) {
         const cx = ql.optX(o, col) + dx;
         for (let yy = -6; yy <= 6; yy++) {
@@ -784,11 +792,12 @@ function darkAtBubbles(gray: Float32Array, w: number, h: number, rowY: number[],
 /** Fallback software cuando la pista de temporizacion no se lee: offset (dx,dy). */
 function findGridOffset(gray: Float32Array, w: number, h: number, config: OMRConfig): { dx: number; dy: number } {
   const ql = L.questionLayout({ numQuestions: config.numQuestions, numOptions: config.numOptions, numColumns: config.numColumns });
+  const openSet = new Set(config.openQuestions ?? []);
   let bestDx = 0, bestDy = 0, bestDark = -1;
   for (let dy = -CALIB.gridSearchDy; dy <= CALIB.gridSearchDy; dy += CALIB.gridSearchStep) {
     const rowY = Array.from({ length: ql.rowsPerCol }, (_, r) => ql.rowCY(r) + dy);
     for (let dx = -CALIB.gridSearchDx; dx <= CALIB.gridSearchDx; dx += CALIB.gridSearchStep) {
-      const darkSum = darkAtBubbles(gray, w, h, rowY, ql, dx);
+      const darkSum = darkAtBubbles(gray, w, h, rowY, ql, dx, openSet);
       if (darkSum > bestDark) { bestDark = darkSum; bestDx = dx; bestDy = dy; }
     }
   }
@@ -796,10 +805,10 @@ function findGridOffset(gray: Float32Array, w: number, h: number, config: OMRCon
 }
 
 /** Con los Y de fila ya anclados por la temporizacion, solo refina el offset X. */
-function findColumnOffset(gray: Float32Array, w: number, h: number, rowY: number[], ql: L.QLayout): number {
+function findColumnOffset(gray: Float32Array, w: number, h: number, rowY: number[], ql: L.QLayout, openSet?: Set<number>): number {
   let bestDx = 0, bestDark = -1;
   for (let dx = -CALIB.gridSearchDx; dx <= CALIB.gridSearchDx; dx += CALIB.gridSearchStep) {
-    const darkSum = darkAtBubbles(gray, w, h, rowY, ql, dx);
+    const darkSum = darkAtBubbles(gray, w, h, rowY, ql, dx, openSet);
     if (darkSum > bestDark) { bestDark = darkSum; bestDx = dx; }
   }
   return bestDx;
@@ -854,13 +863,14 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
   // Registro de filas: preferimos los Y fisicos de la pista de temporizacion;
   // si no se leen las marcas, caemos al offset software. La pista tiene una marca
   // por FILA (rowsPerCol); cada columna comparte esos Y.
+  const openSet = new Set(config.openQuestions ?? []);
   const timingRows = readTimingRows(gray, width, height);
   const fitted = rowsFromTiming(timingRows, ql.rowsPerCol, ql); // tolera marcas faltantes
   let rowY: number[];
   let gridDx: number;
   if (fitted) {
     rowY = fitted;
-    gridDx = findColumnOffset(gray, width, height, rowY, ql);
+    gridDx = findColumnOffset(gray, width, height, rowY, ql, openSet);
   } else {
     const off = findGridOffset(gray, width, height, config);
     gridDx = off.dx;
@@ -873,6 +883,12 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
   let glareWarnings = 0;
 
   for (let q = 0; q < numQuestions; q++) {
+    // Pregunta de desarrollo: la hoja no imprime burbujas en esta fila (solo la
+    // instruccion "resolver al reverso") — no se muestrea, no entra a sameCount.
+    if (openSet.has(q + 1)) {
+      results.push({ question: q + 1, answer: "-", scores: [], correct: null, flag: "abierta" });
+      continue;
+    }
     const cy = rowY[ql.rowOf(q)];
     const col = ql.colOf(q);
     const clScores: number[] = [];

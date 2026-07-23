@@ -5,7 +5,7 @@
  */
 import { drawSheet, type Ctx2D } from "@/lib/sheet_render";
 import { computeRutDV } from "@/lib/omr";
-import { SHEET_W, type SheetConfig } from "@/lib/sheet_layout";
+import { SHEET_H, SHEET_W, type SheetConfig } from "@/lib/sheet_layout";
 import { type SheetCodeData } from "@/lib/sheet_code";
 import { resolveIdBlock, resolveIdReadConfig } from "@/lib/country_id_blocks";
 
@@ -135,6 +135,81 @@ export function safeColumns(numQuestions: number, requested: number): number {
 /** Columnas sugeridas por defecto, ya dentro del sobre seguro. */
 export function suggestColumns(numQuestions: number): number {
   return safeColumns(numQuestions, numQuestions > 25 ? 2 : 1);
+}
+
+// ─── Reverso para preguntas de desarrollo (abiertas) ───────────────────────
+// Pagina SOLO impresa (sin anclas ni OMR): recuadros grandes numerados donde el
+// estudiante escribe su desarrollo. Se intercala despues de cada pagina frontal
+// en el PDF (calza con impresion duplex). Vive aqui, fuera del motor, porque no
+// participa de la lectura.
+
+/** Maximo de recuadros por pagina de reverso (menos = recuadros mas grandes). */
+export const OPEN_BOXES_PER_PAGE = 4;
+
+/** Reparte las preguntas abiertas en paginas de reverso. */
+export function chunkOpenQuestions(open: number[], maxPerPage: number = OPEN_BOXES_PER_PAGE): number[][] {
+  const pages: number[][] = [];
+  for (let i = 0; i < open.length; i += maxPerPage) pages.push(open.slice(i, i + maxPerPage));
+  return pages;
+}
+
+/**
+ * Dibuja UNA pagina de reverso (1200x1650, igual que la hoja OMR): encabezado
+ * con titulo + linea manuscrita de Nombre/ID, y un recuadro grande por pregunta
+ * repartiendo el alto util. `questions` en numeracion GLOBAL del ensayo.
+ */
+export function renderOpenAnswersSheet(
+  ctx: CanvasRenderingContext2D,
+  questions: number[],
+  branding: Branding = {},
+  opts: { pageInfo?: string } = {},
+): void {
+  ctx.save();
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, SHEET_W, SHEET_H);
+  ctx.fillStyle = "#000000";
+  ctx.textBaseline = "alphabetic";
+
+  // Encabezado (y=0..190)
+  ctx.textAlign = "center";
+  ctx.font = "bold 26px sans-serif";
+  ctx.fillText("HOJA DE DESARROLLO", SHEET_W / 2, 52);
+  if (branding.title) {
+    ctx.font = "16px sans-serif";
+    ctx.fillText(branding.title.slice(0, 70), SHEET_W / 2, 82);
+  }
+  ctx.textAlign = "left";
+  ctx.font = "15px sans-serif";
+  ctx.fillText("Nombre:", 80, 140);
+  ctx.strokeStyle = "#000000";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(150, 144); ctx.lineTo(720, 144); ctx.stroke();
+  ctx.fillText("RUT / ID:", 760, 140);
+  ctx.beginPath(); ctx.moveTo(845, 144); ctx.lineTo(1120, 144); ctx.stroke();
+  ctx.font = "12px sans-serif";
+  ctx.fillStyle = "#555555";
+  ctx.fillText("Escribe tu desarrollo dentro del recuadro de cada pregunta.", 80, 172);
+  if (opts.pageInfo) {
+    ctx.textAlign = "right";
+    ctx.font = "bold 11px sans-serif";
+    ctx.fillText(opts.pageInfo, SHEET_W - 20, 24);
+    ctx.textAlign = "left";
+  }
+
+  // Recuadros: reparto del area util y=200..1610
+  const top = 200, bottom = SHEET_H - 40, gap = 24;
+  const n = Math.max(1, questions.length);
+  const boxH = Math.floor((bottom - top - gap * (n - 1)) / n);
+  questions.forEach((q, i) => {
+    const y = top + i * (boxH + gap);
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(80, y, SHEET_W - 160, boxH);
+    ctx.fillStyle = "#000000";
+    ctx.font = "bold 18px sans-serif";
+    ctx.fillText(`Pregunta ${q}`, 96, y + 30);
+  });
+  ctx.restore();
 }
 
 export interface GroundTruthEntry {

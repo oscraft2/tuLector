@@ -11,7 +11,7 @@ import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from
 import { APP_VERSION } from "@/lib/version";
 import { safeColumns, allowedColumns } from "@/lib/sheet_generator";
 import { resolveIdReadConfig } from "@/lib/country_id_blocks";
-import { QUIZ_MAX_QUESTIONS } from "@/lib/quiz_constraints";
+import { QUIZ_MAX_QUESTIONS, parseOpenQuestions } from "@/lib/quiz_constraints";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
 type ScanSyncState = "idle" | "saving" | "saved" | "review" | "error" | "queued" | "partial";
@@ -152,7 +152,7 @@ export default function ScanPage() {
  const [answerKey, setAnswerKey] = useState<string[]>(DEFAULT_ANSWER_KEY);
  const [native, setNative] = useState(false);
  // Config de lectura sincronizada con el generador (/sheet la guarda en localStorage).
- const [scanCfg, setScanCfg] = useState({ numQuestions: 20, numOptions: 5, numColumns: 1, optionLabels: "ABCDE" });
+ const [scanCfg, setScanCfg] = useState({ numQuestions: 20, numOptions: 5, numColumns: 1, optionLabels: "ABCDE", openQuestions: [] as number[] });
  useEffect(() => {
   let alive = true;
   Promise.resolve().then(() => {
@@ -161,7 +161,11 @@ export default function ScanPage() {
     const raw = localStorage.getItem("tulector_scan_config");
     if (raw) {
      const c = JSON.parse(raw);
-     setScanCfg({ numQuestions: c.numQuestions || 20, numOptions: c.numOptions || 5, numColumns: c.numColumns || 1, optionLabels: c.optionLabels || "ABCDE" });
+     const nq = c.numQuestions || 20;
+     setScanCfg({
+      numQuestions: nq, numOptions: c.numOptions || 5, numColumns: c.numColumns || 1, optionLabels: c.optionLabels || "ABCDE",
+      openQuestions: Array.isArray(c.openQuestions) ? parseOpenQuestions(c.openQuestions.join(","), nq) : [],
+     });
     }
    } catch { /* sin config guardada → default */ }
   });
@@ -219,7 +223,7 @@ export default function ScanPage() {
      setError("Selecciona un ensayo desde el dashboard antes de escanear.");
      return;
     }
-    const data = await res.json() as { id?: string; answer_key?: string; title?: string; num_questions?: number; options_per_question?: number; option_labels?: string; num_columns?: number; sheet_code?: number | null; country_code?: string };
+    const data = await res.json() as { id?: string; answer_key?: string; title?: string; num_questions?: number; options_per_question?: number; option_labels?: string; num_columns?: number; sheet_code?: number | null; open_questions?: string | null; country_code?: string };
     if (data.id) setActiveQuizId(String(data.id));
     setActiveSheetCode(typeof data.sheet_code === "number" ? data.sheet_code : null);
     if (data.country_code) setActiveCountryCode(data.country_code);
@@ -238,7 +242,15 @@ export default function ScanPage() {
     // Nº de columnas del ENSAYO (Fase 2); si no viene, cae a la heuristica de antes.
     const nextColumns = safeColumns(nextQuestions, Number(data.num_columns) || (nextQuestions > 30 ? 2 : 1));
     const nextLabels = parseLabels(data.option_labels).slice(0, nextOptions);
-    const nextCfg = { numQuestions: nextQuestions, numOptions: nextOptions, numColumns: nextColumns, optionLabels: nextLabels };
+    // Abiertas SOLO si el ensayo cabe en 1 hoja: en multipagina la numeracion
+    // local por pagina no se conoce hasta decodificar el codigo de hoja
+    // (limitacion documentada; sin burbujas igual se lee "-" y el servidor
+    // excluye las abiertas del puntaje).
+    const totalQuestions = Number(data.num_questions || 20);
+    const nextOpen = totalQuestions <= QUIZ_MAX_QUESTIONS
+     ? parseOpenQuestions(data.open_questions ?? "", nextQuestions)
+     : [];
+    const nextCfg = { numQuestions: nextQuestions, numOptions: nextOptions, numColumns: nextColumns, optionLabels: nextLabels, openQuestions: nextOpen };
     setScanCfg(nextCfg);
     try { localStorage.setItem("tulector_scan_config", JSON.stringify(nextCfg)); } catch { /* sin storage */ }
    } catch {
@@ -258,7 +270,7 @@ export default function ScanPage() {
  // Config del lector = la del generador (nº preguntas/opciones/columnas). Esto
  // sincroniza el motor con la hoja impresa (antes estaba fijo en 20/5/1 columna).
  // useMemo: identidad estable → no re-dispara el loop de cámara (que depende de config).
- const config = useMemo(() => ({ ...DEFAULT_CONFIG, numQuestions: scanCfg.numQuestions, numOptions: scanCfg.numOptions, optionLabels: scanCfg.optionLabels.slice(0, scanCfg.numOptions), numColumns: scanCfg.numColumns }), [scanCfg]);
+ const config = useMemo(() => ({ ...DEFAULT_CONFIG, numQuestions: scanCfg.numQuestions, numOptions: scanCfg.numOptions, optionLabels: scanCfg.optionLabels.slice(0, scanCfg.numOptions), numColumns: scanCfg.numColumns, openQuestions: scanCfg.openQuestions }), [scanCfg]);
  // Marcas de temporización requeridas = filas por columna (no el nº de preguntas).
  const marksRequired = useMemo(() => questionLayout(config).rowsPerCol, [config]);
  // Cambiar la config del lector desde el teléfono (debe coincidir con la hoja).
@@ -1147,13 +1159,14 @@ export default function ScanPage() {
      <div className="absolute inset-0 flex items-center justify-center p-6 z-40 bg-black/60 backdrop-blur-sm animate-in fade-in zoom-in duration-200">
       <div className="w-full max-w-xs bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
        {(() => {
-        const correct = results.filter((r, i) => r.answer !== "-" && r.answer === answerKey[i]).length;
-        const answered = results.filter(r => r.answer !== "-").length;
+        const openCount = results.filter((r) => r.flag === "abierta").length;
+        const correct = results.filter((r, i) => r.flag !== "abierta" && r.answer !== "-" && r.answer === answerKey[i]).length;
+        const answered = results.filter(r => r.flag !== "abierta" && r.answer !== "-").length;
         return (
          <>
           <div className="flex justify-between items-start mb-4">
            <div>
-            <h2 className="text-2xl font-black text-white">{correct}<span className="text-zinc-500 text-lg font-bold">/{config.numQuestions}</span></h2>
+            <h2 className="text-2xl font-black text-white">{correct}<span className="text-zinc-500 text-lg font-bold">/{config.numQuestions - openCount}</span></h2>
             <p className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Escaneo #{scanCount} · {answered} resp · {config.numQuestions}p/{config.numOptions}o/{config.numColumns}c · {BUILD_TAG}</p>
            </div>
            <div className="flex flex-col items-end gap-1">
@@ -1188,22 +1201,26 @@ export default function ScanPage() {
           <div className="grid grid-cols-5 gap-1.5 mb-2">
            {results.map((r, i) => {
             const expected = answerKey[i];
-            const isCorrect = r.answer !== "-" && r.answer === expected;
-            const isWrong = r.answer !== "-" && r.answer !== expected;
+            const isOpen = r.flag === "abierta";
+            const isCorrect = !isOpen && r.answer !== "-" && r.answer === expected;
+            const isWrong = !isOpen && r.answer !== "-" && r.answer !== expected;
             return (
              <div key={r.question} className={`rounded-lg flex flex-col items-center justify-center py-1 text-[9px] font-bold gap-0.5
-              ${isCorrect ? "bg-green-500/20 text-green-400 border border-green-500/30"
+              ${isOpen ? "bg-sky-500/10 text-sky-300 border border-sky-500/30"
+              : isCorrect ? "bg-green-500/20 text-green-400 border border-green-500/30"
               : isWrong ? "bg-red-500/20 text-red-400 border border-red-500/30"
-              : "bg-zinc-800 text-zinc-600"}`}>
-              <span className="text-[10px]">{r.answer !== "-" ? r.answer : "–"}</span>
+              : "bg-zinc-800 text-zinc-600"}`}
+              title={isOpen ? `Pregunta ${r.question}: desarrollo (se corrige a mano)` : undefined}>
+              <span className="text-[10px]">{isOpen ? "✎" : r.answer !== "-" ? r.answer : "–"}</span>
               <span className="text-[8px] opacity-60">{isWrong ? expected : ""}</span>
              </div>
             );
            })}
           </div>
           <div className="flex gap-1 mb-6">
-           <div className="flex items-center gap-1 text-[8px] text-green-500"><span className="w-2 h-2 rounded-sm bg-green-500/30 border border-green-500/40 inline-block"/>{results.filter((r,i)=>r.answer===answerKey[i]).length} correctas</div>
-           <div className="flex items-center gap-1 text-[8px] text-red-400 ml-2"><span className="w-2 h-2 rounded-sm bg-red-500/30 border border-red-500/40 inline-block"/>{results.filter((r,i)=>r.answer!=="-"&&r.answer!==answerKey[i]).length} incorrectas</div>
+           <div className="flex items-center gap-1 text-[8px] text-green-500"><span className="w-2 h-2 rounded-sm bg-green-500/30 border border-green-500/40 inline-block"/>{results.filter((r,i)=>r.flag!=="abierta"&&r.answer!=="-"&&r.answer===answerKey[i]).length} correctas</div>
+           <div className="flex items-center gap-1 text-[8px] text-red-400 ml-2"><span className="w-2 h-2 rounded-sm bg-red-500/30 border border-red-500/40 inline-block"/>{results.filter((r,i)=>r.flag!=="abierta"&&r.answer!=="-"&&r.answer!==answerKey[i]).length} incorrectas</div>
+           {openCount > 0 && <div className="flex items-center gap-1 text-[8px] text-sky-300 ml-2"><span className="w-2 h-2 rounded-sm bg-sky-500/20 border border-sky-500/40 inline-block"/>{openCount} desarrollo</div>}
           </div>
          </>
         );

@@ -347,6 +347,44 @@ async function main() {
   }
   console.log(`4-column guard passed: 100 preguntas / 4 columnas leidas OK (${report100.results.length}/100) — nivel ZipGrade en 1 hoja`);
 
+  // ─── Guardia de PREGUNTAS ABIERTAS (desarrollo, pensado para DIA): hoja de 20
+  // con las preguntas 5 y 12 abiertas — la fila conserva numero y marca de
+  // timing pero imprime "Resolver al reverso" en vez de burbujas. (1) Leida CON
+  // config.openQuestions: valida, 18/18 cerradas correctas, 5 y 12 como "-" con
+  // flag "abierta", y el riel de timing completo (20 marcas). (2) La MISMA hoja
+  // leida SIN openQuestions (lector desactualizado): el texto gris de la
+  // instruccion NO debe producir una letra limpia (flag "ok") en 5 ni 12. ───
+  const openQs = [5, 12];
+  const ansOp = Array.from({ length: 20 }, (_, i) => (openQs.includes(i + 1) ? -1 : i % 5));
+  const cfgOp = { numQuestions: 20, numOptions: 5, openQuestions: openQs };
+  const sheetOp = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetOp.getContext("2d") as unknown as Ctx2D, { answers: ansOp, rut: "12345678-5", filled: true }, cfgOp);
+  const imgOp = await loadImage(sheetOp.toDataURL("image/png"));
+  const capOp = createCanvas(imgOp.width, imgOp.height);
+  capOp.getContext("2d").drawImage(imgOp, 0, 0);
+  const frameOp = capOp.getContext("2d").getImageData(0, 0, capOp.width, capOp.height) as unknown as globalThis.ImageData;
+  const cornersOp = findCorners(frameOp) ?? fail("abiertas: esquinas no detectadas");
+  const warpedOp = warpImageData(frameOp, cornersOp);
+  const configOp = { ...DEFAULT_CONFIG, numQuestions: 20, numOptions: 5, optionLabels: "ABCDE", openQuestions: openQs };
+  const reportOp = gradeBubbles(warpedOp, configOp, cornersOp);
+  if (!reportOp.valid) fail(`abiertas 20q invalido: ${reportOp.reason}`);
+  if ((reportOp.diag?.timingRows ?? 0) !== 20) fail(`abiertas: timing incompleto (${reportOp.diag?.timingRows}/20 marcas)`);
+  for (const q of openQs) {
+    const r = reportOp.results[q - 1];
+    if (r.answer !== "-" || r.flag !== "abierta") fail(`abiertas: q${q} leyo '${r.answer}' flag '${r.flag}' (esperaba '-' / 'abierta')`);
+  }
+  const missOp = reportOp.results.filter((r, i) => !openQs.includes(i + 1) && r.answer !== "ABCDE"[ansOp[i]]).length;
+  if (missOp > 0) fail(`abiertas: ${missOp}/18 cerradas erradas`);
+  // (2) lector desactualizado: sin openQuestions en la config
+  const reportOpOld = gradeBubbles(warpedOp, { ...DEFAULT_CONFIG, numQuestions: 20, numOptions: 5, optionLabels: "ABCDE" }, cornersOp);
+  for (const q of openQs) {
+    const r = reportOpOld.results[q - 1];
+    if (r.answer.length === 1 && r.answer !== "-" && r.flag === "ok") {
+      fail(`abiertas (lector viejo): q${q} leyo una letra limpia '${r.answer}' desde el texto de instruccion`);
+    }
+  }
+  console.log(`Open-question guard passed: 18/18 cerradas OK, q5/q12 flag "abierta", lector viejo sin letras espurias`);
+
   // ─── Guardia de SOMBRA (umbral adaptativo): oscurece fuerte la mitad inferior
   // de la hoja (papel de fondo cae por debajo de 70). Con umbral FIJO ese papel
   // sombreado se contaria como tinta (falsos positivos); el adaptativo lo evita. ───

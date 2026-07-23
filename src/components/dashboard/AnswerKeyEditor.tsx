@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect, useRef } from "react";
-import { QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE, optionLabelsFor, extractAnswerLetters } from "@/lib/quiz_constraints";
+import { QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE, optionLabelsFor, extractAnswerLetters, parseOpenQuestions, serializeOpenQuestions } from "@/lib/quiz_constraints";
 import { resolveCountryProfile } from "@/lib/country_profiles";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
 
@@ -12,12 +12,15 @@ export function AnswerKeyEditor({
   questions = 20,
   defaultOptions = 5,
   defaultValue = "",
+  defaultOpenQuestions = "",
   countryCode = "CL",
 }: {
   name?: string;
   questions?: number;
   defaultOptions?: number;
   defaultValue?: string;
+  /** CSV de preguntas de desarrollo ("18,27,33") tal como viene de BD. */
+  defaultOpenQuestions?: string;
   countryCode?: string;
 }) {
   const [evalType, setEvalType] = useState<EvaluationType>("custom");
@@ -32,6 +35,7 @@ export function AnswerKeyEditor({
   const [value, setValue] = useState(defaultValue.toUpperCase());
   const [questionCount, setQuestionCount] = useState(questions);
   const [optionCount, setOptionCount] = useState(defaultOptions);
+  const [openText, setOpenText] = useState(defaultOpenQuestions);
   const [allowPartial, setAllowPartial] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -92,6 +96,11 @@ export function AnswerKeyEditor({
   // caracteres validos en orden y rellenando con "-" -- typear sigue
   // funcionando igual que antes (llena secuencial desde la pregunta 1); la
   // grilla edita una posicion puntual reescribiendo value completo.
+  // Preguntas de desarrollo (abiertas): 1-indexadas para el server action y la
+  // hoja; 0-indexadas (openSet0) para la grilla y los slots. Su slot de clave
+  // queda "-" bloqueado (una abierta nunca tiene letra correcta).
+  const openQuestions = useMemo(() => parseOpenQuestions(openText, questionCount), [openText, questionCount]);
+  const openSet0 = useMemo(() => new Set(openQuestions.map((q) => q - 1)), [openQuestions]);
   const slots = useMemo(() => {
     const chars = value
       .toUpperCase()
@@ -99,12 +108,15 @@ export function AnswerKeyEditor({
       .filter((char) => allowed.has(char) || char === "-")
       .slice(0, questionCount);
     while (chars.length < questionCount) chars.push("-");
+    for (const i of openSet0) if (i < chars.length) chars[i] = "-";
     return chars.join("");
-  }, [value, allowed, questionCount]);
+  }, [value, allowed, questionCount, openSet0]);
   const filledCount = slots.split("").filter((char) => char !== "-").length;
-  const valid = filledCount === questionCount;
+  const closedCount = questionCount - openQuestions.length;
+  const valid = filledCount === closedCount;
 
   function handleGridAnswerChange(index: number, letter: string) {
+    if (openSet0.has(index)) return; // desarrollo: slot bloqueado
     const chars = slots.split("");
     chars[index] = letter || "-";
     setValue(chars.join(""));
@@ -224,6 +236,7 @@ export function AnswerKeyEditor({
           <p className="font-semibold">Ensayo para DIA (Diagnóstico Integral de Aprendizajes):</p>
           <p>• Puntaje = porcentaje de acierto simple (no aplica formula PAES/SIMCE).</p>
           <p>• Ajusta preguntas/opciones segun el instrumento real de DIA para ese nivel — DIA no tiene un numero fijo, varia por curso y asignatura.</p>
+          <p>• Si el instrumento tiene preguntas de <strong>respuesta construida (desarrollo)</strong>, indícalas abajo en &ldquo;Preguntas de desarrollo&rdquo;: la hoja las imprime como &ldquo;Resolver al reverso&rdquo; con su recuadro atrás, y no cuentan en el puntaje automático.</p>
           <p>• Al exportar, el <strong>curso</strong> de este ensayo debe coincidir con el curso real en la plataforma DIA (revisa el formato en &ldquo;Exportar Formato Pruebas DIA&rdquo;).</p>
         </div>
       )}
@@ -296,6 +309,22 @@ export function AnswerKeyEditor({
         </div>
       )}
 
+      <label className="block text-sm font-semibold">
+        Preguntas de desarrollo (opcional)
+        <input
+          value={openText}
+          onChange={(event) => setOpenText(event.target.value)}
+          placeholder="Ej: 18, 27, 33"
+          className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal"
+        />
+        <span className="mt-1 block text-[11px] font-normal text-[#5b6472]">
+          {openQuestions.length > 0
+            ? `${openQuestions.length} pregunta(s) se resolverán al reverso de la hoja (${openQuestions.join(", ")}); la nota se calcula sobre las ${closedCount} de alternativas.`
+            : "Preguntas abiertas/de desarrollo: se imprimen como “Resolver al reverso” (sin burbujas) y no cuentan en el puntaje automático."}
+        </span>
+      </label>
+      <input type="hidden" name="open_questions" value={serializeOpenQuestions(openQuestions) ?? ""} />
+
       <input type="hidden" name="option_labels" value={labels.split("").join(",")} />
       <label className="block text-sm font-semibold text-[#111827]" htmlFor={name}>Clave de respuestas</label>
       <p className="mt-1 text-xs text-[#6b7280]">Marca las respuestas directo en la grilla, tipea la clave completa, o subela desde un archivo.</p>
@@ -306,6 +335,7 @@ export function AnswerKeyEditor({
           numQuestions={questionCount}
           optionLabels={labels}
           onAnswerChange={handleGridAnswerChange}
+          openQuestions={openSet0}
         />
       </div>
 
@@ -344,8 +374,9 @@ export function AnswerKeyEditor({
       </label>
       <p className={valid || allowPartial ? "mt-2 text-xs text-[#4b5563]" : "mt-2 text-xs font-semibold text-[#b45309]"}>
         {allowPartial
-          ? `${filledCount}/${questionCount} respuestas cargadas — podrás completar el resto despues desde "Editar".`
-          : `${filledCount}/${questionCount} respuestas validas ${labels}.`}
+          ? `${filledCount}/${closedCount} respuestas cargadas — podrás completar el resto despues desde "Editar".`
+          : `${filledCount}/${closedCount} respuestas validas ${labels}.`}
+        {openQuestions.length > 0 && ` (${openQuestions.length} de desarrollo, sin clave)`}
       </p>
     </div>
   );

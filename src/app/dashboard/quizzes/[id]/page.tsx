@@ -10,6 +10,7 @@ import { QuizStats } from "@/components/dashboard/QuizStats";
 import { canonicalRut } from "@/lib/rut";
 import { PrintButton } from "@/components/dashboard/PrintButton";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
+import { parseOpenQuestions } from "@/lib/quiz_constraints";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,14 @@ export default async function QuizDetailPage({ params }: PageProps) {
   if (!quiz) notFound();
   const quizPapers = (papers ?? []) as QuizPaper[];
   const avg = quizPapers.length ? Math.round(quizPapers.reduce((s, p) => s + ((p.score ?? 0) / Math.max(1, p.total ?? quiz.num_questions)) * 100, 0) / quizPapers.length) : 0;
-  const keyIncomplete = String(quiz.answer_key ?? "").includes("-") || String(quiz.answer_key ?? "").length < Number(quiz.num_questions ?? 0);
+  // Preguntas de desarrollo: su slot de clave es "-" fijo — no cuentan como
+  // "clave incompleta" ni tienen letra en la grilla.
+  const openQuestions = parseOpenQuestions(quiz.open_questions ?? "", Number(quiz.num_questions ?? 0));
+  const openSet0 = new Set(openQuestions.map((q) => q - 1));
+  const keySlots = String(quiz.answer_key ?? "");
+  const missingClosed = Array.from({ length: Number(quiz.num_questions ?? 0) }, (_, i) => i)
+    .filter((i) => !openSet0.has(i) && (keySlots[i] ?? "-") === "-").length;
+  const keyIncomplete = missingClosed > 0;
 
   const resolveGrade = (score: number, total: number) => {
     const gradeResult = calculateGrade(score, total, school.country_code ?? "CL", {
@@ -99,7 +107,7 @@ export default async function QuizDetailPage({ params }: PageProps) {
       <PageHeader title={quiz.title} description={`Evaluación: ${getVariantLabel()}. Detalle del ensayo, clave, lecturas sincronizadas y analisis por item.`} />
       <div className="space-y-6">
         <section className="grid gap-4 md:grid-cols-5">
-          <Info label="Preguntas" value={quiz.num_questions} />
+          <Info label="Preguntas" value={openQuestions.length > 0 ? `${quiz.num_questions} (${Number(quiz.num_questions) - openQuestions.length} alt. + ${openQuestions.length} desarrollo)` : quiz.num_questions} />
           <Info label="Opciones" value={quiz.options_per_question ?? 5} />
           <Info label="Asignatura" value={quiz.subject ?? "-"} />
           <Info label="Curso" value={quiz.grade ?? "-"} />
@@ -121,7 +129,7 @@ export default async function QuizDetailPage({ params }: PageProps) {
             </div>
           </div>
           <div className="mt-4">
-            <AnswerKeyGrid answerKey={String(quiz.answer_key ?? "")} numQuestions={Number(quiz.num_questions) || 0} />
+            <AnswerKeyGrid answerKey={String(quiz.answer_key ?? "")} numQuestions={Number(quiz.num_questions) || 0} openQuestions={openSet0} />
           </div>
         </section>
 

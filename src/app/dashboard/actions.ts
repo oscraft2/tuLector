@@ -12,11 +12,14 @@ import {
   QUIZ_MAX_QUESTIONS,
   QUIZ_MAX_QUESTIONS_MULTIPAGE,
   QUIZ_MIN_QUESTIONS,
+  applyOpenSlots,
   normalizeAnswerKeyForOptions,
   normalizeAnswerKeySlots,
   normalizeQuestionCount,
   normalizeQuizOptions,
   optionLabelsFor,
+  parseOpenQuestions,
+  serializeOpenQuestions,
 } from "@/lib/quiz_constraints";
 import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
 import { type StudentCsvRow, guessColumnMapping, rowsFromMapping } from "@/lib/student_import";
@@ -69,16 +72,21 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     const numQuestions = normalizeQuestionCount(formData.get("num_questions"));
     const numOptions = normalizeQuizOptions(formData.get("options_per_question"));
     const allowPartial = formData.get("allow_partial_key") === "on";
+    const openQuestions = parseOpenQuestions(formData.get("open_questions"), numQuestions);
+    if (openQuestions.length >= numQuestions) throw new Error("Debe quedar al menos 1 pregunta de alternativas (no puede ser todo desarrollo).");
     const rawAnswerKey = formData.get("answer_key_clean") ?? formData.get("answer_key");
-    const answerKey = allowPartial
-      ? normalizeAnswerKeySlots(rawAnswerKey, numOptions, numQuestions)
+    // Con preguntas de desarrollo la clave SIEMPRE es posicional (slots): las
+    // abiertas quedan "-" fijo y no pueden colapsar el resto de la clave.
+    const answerKey = allowPartial || openQuestions.length > 0
+      ? applyOpenSlots(normalizeAnswerKeySlots(rawAnswerKey, numOptions, numQuestions), openQuestions)
       : normalizeAnswerKeyForOptions(rawAnswerKey, numOptions);
     const evalType = String(formData.get("evaluation_type") ?? "custom");
     const evalVariant = String(formData.get("evaluation_variant") ?? "") || null;
     const rawExigencia = formData.get("exigencia");
     const exigencia = rawExigencia ? Math.max(0, Math.min(1, Number(rawExigencia) || 0.60)) : null;
     if (!title) throw new Error("Ingresa un titulo para el ensayo.");
-    if (!allowPartial && answerKey.length !== numQuestions) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
+    const filledSlots = answerKey.split("").filter((ch) => ch !== "-").length;
+    if (!allowPartial && filledSlots !== numQuestions - openQuestions.length) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
 
     // N. de columnas derivado del tamano de UNA pagina (sobre seguro validado
     // por test:omr, ver sheet_generator.allowedColumns), no del total del
@@ -101,6 +109,7 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
       num_columns: numColumns,
       option_labels: optionLabelsFor(numOptions).split("").join(","),
       answer_key: answerKey,
+      open_questions: serializeOpenQuestions(openQuestions),
       subject: String(formData.get("subject") ?? "") || null,
       grade,
       course_id: courseId,
@@ -109,10 +118,17 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
       ...(exigencia !== null ? { exigencia } : {}),
     };
     for (let attempt = 0; ; attempt++) {
-      const insertPayload = { ...payload, sheet_code: Math.min(baseCode + attempt, SHEET_CODE_MAX) };
+      let insertPayload: Record<string, unknown> = { ...payload, sheet_code: Math.min(baseCode + attempt, SHEET_CODE_MAX) };
       let { error } = await supabase.from("quizzes").insert(insertPayload);
       if (error && isMissingColumnError(error, "course_id")) {
-        error = (await supabase.from("quizzes").insert(withoutCourseId(insertPayload))).error;
+        insertPayload = withoutCourseId(insertPayload);
+        error = (await supabase.from("quizzes").insert(insertPayload)).error;
+      }
+      if (error && isMissingColumnError(error, "open_questions")) {
+        // BD sin migrar: solo se degrada si el ensayo no usa abiertas (perderlas
+        // en silencio dejaria la hoja y el puntaje inconsistentes).
+        if (openQuestions.length > 0) throw new Error("Preguntas de desarrollo requieren actualizar la base de datos (migracion open_questions).");
+        error = (await supabase.from("quizzes").insert(withoutOpenQuestions(insertPayload))).error;
       }
       if (!error) break;
       if (error.code === "23505" && attempt < 3) continue; // unique_violation -> reintenta
@@ -163,12 +179,15 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
     const numQuestions = normalizeQuestionCount(formData.get("num_questions"));
     const numOptions = normalizeQuizOptions(formData.get("options_per_question"));
     const allowPartial = formData.get("allow_partial_key") === "on";
+    const openQuestions = parseOpenQuestions(formData.get("open_questions"), numQuestions);
+    if (openQuestions.length >= numQuestions) throw new Error("Debe quedar al menos 1 pregunta de alternativas (no puede ser todo desarrollo).");
     const rawAnswerKey = formData.get("answer_key_clean") ?? formData.get("answer_key");
-    const answerKey = allowPartial
-      ? normalizeAnswerKeySlots(rawAnswerKey, numOptions, numQuestions)
+    const answerKey = allowPartial || openQuestions.length > 0
+      ? applyOpenSlots(normalizeAnswerKeySlots(rawAnswerKey, numOptions, numQuestions), openQuestions)
       : normalizeAnswerKeyForOptions(rawAnswerKey, numOptions);
     if (!title) throw new Error("Ingresa un titulo para el ensayo.");
-    if (!allowPartial && answerKey.length !== numQuestions) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
+    const filledSlots = answerKey.split("").filter((ch) => ch !== "-").length;
+    if (!allowPartial && filledSlots !== numQuestions - openQuestions.length) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
 
     const numColumns = suggestColumns(Math.min(numQuestions, QUIZ_MAX_QUESTIONS));
     const evalType = String(formData.get("evaluation_type") ?? "custom");
@@ -185,6 +204,7 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
       num_columns: numColumns,
       option_labels: optionLabelsFor(numOptions).split("").join(","),
       answer_key: answerKey,
+      open_questions: serializeOpenQuestions(openQuestions),
       subject: String(formData.get("subject") ?? "") || null,
       grade,
       course_id: courseId,
@@ -196,15 +216,22 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
 
     const keyChanged = String(existing.answer_key ?? "") !== answerKey;
     const structureChanged = existing.num_questions !== numQuestions || existing.options_per_question !== numOptions;
+    const openChanged = String(existing.open_questions ?? "") !== String(updatePayload.open_questions ?? "");
 
-    let { error: updateError } = await supabase.from("quizzes").update(updatePayload).eq("id", id);
+    let effectivePayload: Record<string, unknown> = updatePayload;
+    let { error: updateError } = await supabase.from("quizzes").update(effectivePayload).eq("id", id);
     if (updateError && isMissingColumnError(updateError, "course_id")) {
-      updateError = (await supabase.from("quizzes").update(withoutCourseId(updatePayload)).eq("id", id)).error;
+      effectivePayload = withoutCourseId(effectivePayload);
+      updateError = (await supabase.from("quizzes").update(effectivePayload).eq("id", id)).error;
+    }
+    if (updateError && isMissingColumnError(updateError, "open_questions")) {
+      if (openQuestions.length > 0) throw new Error("Preguntas de desarrollo requieren actualizar la base de datos (migracion open_questions).");
+      updateError = (await supabase.from("quizzes").update(withoutOpenQuestions(effectivePayload)).eq("id", id)).error;
     }
     if (updateError) throw new Error(updateError.message);
 
     let recorrected = 0;
-    if (keyChanged || structureChanged) {
+    if (keyChanged || structureChanged || openChanged) {
       const updatedQuiz = { ...existing, ...updatePayload };
       const { data: papers } = await supabase
         .from("papers")
@@ -324,6 +351,12 @@ function actionError(error: unknown, title = "No se pudo completar"): DashboardA
 function withoutCourseId<T extends { course_id?: unknown }>(payload: T) {
   const { course_id: _courseId, ...rest } = payload;
   void _courseId;
+  return rest;
+}
+
+function withoutOpenQuestions<T extends { open_questions?: unknown }>(payload: T) {
+  const { open_questions: _openQuestions, ...rest } = payload;
+  void _openQuestions;
   return rest;
 }
 

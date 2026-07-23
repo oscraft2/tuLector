@@ -65,6 +65,44 @@ export function normalizeAnswerKeySlots(
 }
 
 /**
+ * Parsea la lista de preguntas de desarrollo (abiertas) tal como la tipea el
+ * profesor ("18, 27,33") o como viene de BD (CSV canonico "18,27,33") a
+ * numeros de pregunta 1-indexados: unicos, ordenados asc, dentro de
+ * 1..numQuestions. Tolerante a separadores/basura arbitraria. Una pregunta
+ * abierta se imprime sin burbujas ("resolver al reverso") y queda fuera del
+ * puntaje automatico (ver computeQuizScore en grading.ts).
+ */
+export function parseOpenQuestions(
+  value: FormDataEntryValue | string | null | undefined,
+  numQuestions: number,
+): number[] {
+  const nums = String(value ?? "")
+    .split(/[^0-9]+/)
+    .filter(Boolean)
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n >= 1 && n <= numQuestions);
+  return [...new Set(nums)].sort((a, b) => a - b);
+}
+
+/** Serializa a la forma canonica de BD ("18,27,33") o null si no hay abiertas. */
+export function serializeOpenQuestions(open: number[]): string | null {
+  return open.length > 0 ? open.join(",") : null;
+}
+
+/**
+ * Fuerza "-" en los slots de preguntas abiertas de una clave ya normalizada
+ * por slots (normalizeAnswerKeySlots): una abierta nunca tiene letra correcta.
+ */
+export function applyOpenSlots(answerKeySlots: string, open: number[]): string {
+  if (open.length === 0) return answerKeySlots;
+  const chars = answerKeySlots.split("");
+  for (const q of open) {
+    if (q >= 1 && q <= chars.length) chars[q - 1] = "-";
+  }
+  return chars.join("");
+}
+
+/**
  * Extrae, en orden, todas las letras validas (segun numOptions) que
  * aparezcan en un texto libre -- usado para poblar la clave desde un
  * archivo CSV/TXT pegado o subido, o desde el volcado celda-por-celda de un

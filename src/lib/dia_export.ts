@@ -41,11 +41,16 @@ export function buildDiaCsv({
   numQuestions,
   subject,
   grade,
+  openQuestions = [],
 }: {
   papers: ExportPaper[];
   numQuestions: number;
   subject: string | null;
   grade: string | null;
+  /** Preguntas de desarrollo (1-indexadas): su celda va SIEMPRE vacia ("No
+   *  Responde"), aunque el motor haya leido ruido — la extension dia-bot ya
+   *  salta las preguntas no-SELECCION_UNICA_SIMPLE al ingresar. */
+  openQuestions?: number[];
 }): string {
   const headers = [
     "rut",
@@ -55,6 +60,7 @@ export function buildDiaCsv({
     ...Array.from({ length: numQuestions }, (_, i) => `p${i + 1}`),
   ];
 
+  const openSet = new Set(openQuestions);
   const rows = papers.map((paper) => {
     const porPregunta = new Map<number, string>();
     if (Array.isArray(paper.answers)) {
@@ -63,7 +69,7 @@ export function buildDiaCsv({
         if (Number.isInteger(q)) porPregunta.set(q, String(item?.a ?? ""));
       }
     }
-    const celdas = Array.from({ length: numQuestions }, (_, i) => celdaRespuesta(porPregunta.get(i + 1)));
+    const celdas = Array.from({ length: numQuestions }, (_, i) => (openSet.has(i + 1) ? "" : celdaRespuesta(porPregunta.get(i + 1))));
     return [
       formatRutConGuion(paper.student_rut_norm),
       paper.student_name ?? "",

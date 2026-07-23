@@ -215,6 +215,11 @@ export interface SheetConfig {
   numOptions: number;     // 3 | 4 | 5
   numColumns?: number;    // 1 (default) | 2 | 3 | 4
   idBlock?: IdBlockConfig; // ID nacional a dibujar (default ID_BLOCK_CL = RUT)
+  /** Preguntas de desarrollo (1-indexadas, numeracion LOCAL de ESTA hoja):
+   *  la fila conserva numero y marca de temporizacion pero SIN burbujas —
+   *  imprime la instruccion "resolver al reverso". Ausente/vacio = hoja
+   *  100% de alternativas (render identico al actual). */
+  openQuestions?: number[];
 }
 
 export const DEFAULT_SHEET: SheetConfig = { numQuestions: NUM_QUESTIONS, numOptions: NUM_OPTIONS };

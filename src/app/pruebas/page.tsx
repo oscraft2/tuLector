@@ -34,7 +34,10 @@ export default function PruebasPage() {
       const numQuestions = Number(c.numQuestions) || hojas[0].answers.length;
       const numOptions = Number(c.numOptions) || 5;
       const numColumns = Number(c.numColumns) || (numQuestions <= 40 ? 1 : 2);
-      setCfg({ numQuestions, numOptions, numColumns });
+      const openQuestions = Array.isArray(c.openQuestions)
+        ? c.openQuestions.map(Number).filter((n: number) => Number.isInteger(n) && n >= 1 && n <= numQuestions)
+        : [];
+      setCfg({ numQuestions, numOptions, numColumns, ...(openQuestions.length > 0 ? { openQuestions } : {}) });
       setTruth(hojas); setTruthName(file.name);
     } catch (e) {
       setError(`No se pudo leer el JSON: ${(e as Error).message}`);

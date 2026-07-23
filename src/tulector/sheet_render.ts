@@ -38,6 +38,10 @@ export interface SheetMarks {
 
 const BLACK = "#000000";
 const GRAY = "#b8b8b8";   // contorno/letras de burbuja: gris claro, no negro
+// Instruccion de pregunta abierta: gris medio, legible impreso pero muy por
+// encima de los umbrales de tinta del motor (DARK_THRESH=70, timing<100), asi
+// el texto no existe para el registro ni puede leerse como marca.
+const OPEN_GRAY = "#9a9a9a";
 
 function solidSquare(ctx: Ctx2D, cx: number, cy: number, size: number) {
   ctx.fillStyle = BLACK;
@@ -170,6 +174,12 @@ export function drawSheet(ctx: Ctx2D, marks: SheetMarks = {}, cfg: L.SheetConfig
     ctx.fillRect(L.TIMING_X - L.TIMING_W / 2, cy - L.TIMING_H / 2, L.TIMING_W, L.TIMING_H);
   }
 
+  const openSet = new Set(cfg.openQuestions ?? []);
+  // Texto de la instruccion segun el ancho disponible del area de opciones
+  // (COL_GEOM: 1-2 col ~260-290px, 3-4 col ~160px).
+  const openLabel = ql.numColumns >= 3 ? "→ reverso" : "Resolver al reverso →";
+  const openFont = ql.numColumns >= 3 ? 11 : 13;
+
   for (let q = 0; q < ql.numQuestions; q++) {
     const col = ql.colOf(q), cy = ql.rowCY(ql.rowOf(q));
 
@@ -179,6 +189,21 @@ export function drawSheet(ctx: Ctx2D, marks: SheetMarks = {}, cfg: L.SheetConfig
     ctx.textBaseline = "alphabetic";
     ctx.font = `${numFont}px sans-serif`;
     ctx.fillText(`${q + 1}`, ql.qnumX(col), cy + 6);
+
+    // Pregunta de desarrollo: fila (numero + marca de timing) intacta, pero sin
+    // burbujas — se imprime la instruccion centrada en el area de opciones.
+    if (openSet.has(q + 1)) {
+      const x0 = ql.optX(0, col) - ql.bubbleR;
+      const x1 = ql.optX(ql.numOptions - 1, col) + ql.bubbleR;
+      ctx.fillStyle = OPEN_GRAY;
+      ctx.font = `italic ${openFont}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(openLabel, (x0 + x1) / 2, cy);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      continue;
+    }
 
     // burbujas de opciones
     for (let o = 0; o < ql.numOptions; o++) {

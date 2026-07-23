@@ -42,6 +42,7 @@ type ExistingQuiz = {
   num_questions: number;
   options_per_question: number;
   answer_key: string;
+  open_questions?: string | null;
   exigencia: number | null;
 };
 
@@ -137,6 +138,7 @@ export function QuizCreateForm({
             questions={quiz?.num_questions ?? 20}
             defaultOptions={quiz?.options_per_question ?? 5}
             defaultValue={quiz?.answer_key ?? ""}
+            defaultOpenQuestions={quiz?.open_questions ?? ""}
             countryCode={countryCode}
           />
 
