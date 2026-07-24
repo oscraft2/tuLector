@@ -171,3 +171,42 @@ export function extractAnswerLetters(text: string, numOptions: number): string {
   }
   return letters.join("");
 }
+
+/** Subtipo de pregunta abierta (docs/dia-instrumentos-monitoreo-2026.md):
+ *  decide que tipo de dato le pide el prompt de la IA de correccion que
+ *  transcriba, y mas adelante que campo del payload de DIA usar
+ *  (respuestaAbierta vs respuestaEscalar) -- ver dia-bot/docs/FINDINGS.md
+ *  §11.4 (ABIERTA_SIMPLE/ABIERTA_PAR_ORDENADO/ABIERTA_ENTERO_DECIMAL). */
+export type OpenQuestionSubtype = "simple" | "par_ordenado" | "entero_decimal";
+
+export interface OpenQuestionRubric {
+  rubric: string;
+  max_points: number;
+  subtipo: OpenQuestionSubtype;
+}
+
+/** Parsea quizzes.open_question_rubrics (JSON-string) a un mapa {pregunta:
+ *  rubrica}, 1-indexado, tolerante a JSON invalido/vacio (devuelve {}). */
+export function parseOpenQuestionRubrics(value: string | null | undefined): Record<number, OpenQuestionRubric> {
+  if (!value) return {};
+  try {
+    const raw = JSON.parse(value) as Record<string, Partial<OpenQuestionRubric>>;
+    const out: Record<number, OpenQuestionRubric> = {};
+    for (const [key, v] of Object.entries(raw)) {
+      const q = Number(key);
+      if (!Number.isInteger(q) || q < 1) continue;
+      const subtipo: OpenQuestionSubtype = v.subtipo === "par_ordenado" || v.subtipo === "entero_decimal" ? v.subtipo : "simple";
+      out[q] = { rubric: String(v.rubric ?? ""), max_points: Number(v.max_points) || 0, subtipo };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** Serializa a la forma canonica de BD (JSON-string) o null si esta vacio. */
+export function serializeOpenQuestionRubrics(rubrics: Record<number, OpenQuestionRubric>): string | null {
+  const entries = Object.entries(rubrics).filter(([, r]) => r.rubric.trim().length > 0);
+  if (entries.length === 0) return null;
+  return JSON.stringify(Object.fromEntries(entries));
+}
