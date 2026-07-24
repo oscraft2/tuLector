@@ -51,6 +51,24 @@ export default async function QuizDetailPage({ params }: PageProps) {
     .filter((i) => !openSet0.has(i) && (keySlots[i] ?? "-") === "-").length;
   const keyIncomplete = missingClosed > 0;
 
+  // Sugerencias de la IA para las preguntas de desarrollo (Fase 3, docs/plan-
+  // correccion-ia-abiertas.md) -- consulta aparte porque open_answers no tiene
+  // quiz_id (se cuelga de paper_id). Si la migracion aun no se aplico (tabla
+  // no existe todavia), se degrada a lista vacia en vez de romper la pagina.
+  type OpenAnswerRow = {
+    paper_id: string; question: number; transcripcion: string | null; puntaje: number | null;
+    max_points: number | null; confianza: string | null; legible: boolean | null; confirmed_points: number | null;
+  };
+  let openAnswers: OpenAnswerRow[] = [];
+  if (openQuestions.length > 0 && quizPapers.length > 0) {
+    const { data: oa, error: oaError } = await supabase
+      .from("open_answers")
+      .select("paper_id,question,transcripcion,puntaje,max_points,confianza,legible,confirmed_points")
+      .in("paper_id", quizPapers.map((p) => p.id));
+    if (!oaError) openAnswers = (oa ?? []) as OpenAnswerRow[];
+  }
+  const paperNameById = new Map(quizPapers.map((p) => [p.id, p.student_name || p.student_id || "Sin identificar"]));
+
   const resolveGrade = (score: number, total: number) => {
     const gradeResult = calculateGrade(score, total, school.country_code ?? "CL", {
       exigencia: (quiz.exigencia as number | undefined) ?? school.exigencia ?? 0.60,
@@ -152,6 +170,54 @@ export default async function QuizDetailPage({ params }: PageProps) {
           </div>
           <QuizStats quiz={quiz} papers={papers ?? []} metadata={metadata ?? []} />
         </section>
+
+        {openQuestions.length > 0 && (
+          <section>
+            <div className="mb-3 flex items-center gap-3">
+              <h2 className="whitespace-nowrap text-[12.5px] font-semibold uppercase tracking-[0.1em] text-[#6b7280]">Preguntas de desarrollo — sugerencias IA</h2>
+              <span className="h-px flex-1 bg-[#e6e8eb]" />
+            </div>
+            {openAnswers.length === 0 ? (
+              <p className="text-sm text-[#6b7280]">
+                Sin escaneos de reverso todavía. Al escanear un alumno con preguntas de desarrollo
+                pendientes, tuLector pide automáticamente el reverso y muestra acá la sugerencia de
+                la IA (sin confirmar) para que la revises.
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-md border border-[#e1e5ea] bg-white">
+                <table className="w-full text-sm">
+                  <thead className="bg-[#f8fafc] text-left text-xs font-semibold uppercase tracking-wide text-[#6b7280]">
+                    <tr>
+                      <th className="px-3 py-2">Alumno</th>
+                      <th className="px-3 py-2">Pregunta</th>
+                      <th className="px-3 py-2">Transcripción IA</th>
+                      <th className="px-3 py-2">Puntaje sugerido</th>
+                      <th className="px-3 py-2">Confianza</th>
+                      <th className="px-3 py-2">Confirmado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {openAnswers.map((oa) => (
+                      <tr key={`${oa.paper_id}-${oa.question}`} className="border-t border-[#eef0f3]">
+                        <td className="px-3 py-2">{paperNameById.get(oa.paper_id) ?? "-"}</td>
+                        <td className="px-3 py-2">{oa.question}</td>
+                        <td className="px-3 py-2 max-w-sm truncate" title={oa.transcripcion ?? ""}>{oa.transcripcion || "-"}{oa.legible === false && " ⚠"}</td>
+                        <td className="px-3 py-2">{oa.puntaje ?? "-"}/{oa.max_points ?? "-"}</td>
+                        <td className="px-3 py-2">{oa.confianza ?? "-"}</td>
+                        <td className="px-3 py-2">{oa.confirmed_points != null ? `${oa.confirmed_points} pts` : <span className="text-[#b45309]">pendiente</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="mt-2 text-xs text-[#8a93a1]">
+              La IA sugiere — el puntaje NO cuenta para la nota hasta confirmarlo (la pantalla de
+              confirmación todavía no está construida; por ahora esta es solo una vista de
+              auditoría).
+            </p>
+          </section>
+        )}
 
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">
