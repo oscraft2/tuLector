@@ -1,8 +1,11 @@
 # Hoja propia de tuLector para instrumentos DIA (selección múltiple + opciones variables)
 
-**Estado (2026-07-24): motor + dashboard/DB + presets automáticos de 5°/6° básico implementados
-y probados. Falta aplicar la migración en producción, cablear la pauta de corrección IA (Fase 4,
-no construida) y el lado dia-bot (Fase B, no construida). Ver "Pendientes" al final.**
+**Estado (2026-07-24): motor + dashboard/DB + presets automáticos (11 instrumentos, 5° básico a
+II medio) + Fase 1-3 completa de corrección IA (reverso escaneable → escaneo automático → recorte
+→ Gemini → vista de sugerencias) implementados y probados, directo a la rama de producción por
+decisión explícita del usuario. Falta: aplicar AMBAS migraciones en Supabase, la pantalla de
+confirmar/ajustar el puntaje sugerido (hoy solo se ve, no se confirma), y el lado dia-bot (Fase B).
+Ver "Pendientes" al final.**
 
 **Alcance confirmado con el usuario (2026-07-24): esta actualización cubre ÚNICAMENTE 5° y 6°
 básico** (los únicos niveles con hoja de respuestas real auditada — ver
