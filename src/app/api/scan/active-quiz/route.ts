@@ -14,10 +14,19 @@ export async function GET() {
 
   let result = await supabase
     .from("quizzes")
-    .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions")
+    .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions")
     .eq("id", quizId)
     .is("archived_at", null)
     .single();
+
+  if (result.error && (isMissingColumnError(result.error, "option_overrides") || isMissingColumnError(result.error, "multi_select_questions"))) {
+    result = await supabase
+      .from("quizzes")
+      .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions")
+      .eq("id", quizId)
+      .is("archived_at", null)
+      .single();
+  }
 
   if (result.error && isMissingColumnError(result.error, "open_questions")) {
     result = await supabase
@@ -51,6 +60,8 @@ export async function GET() {
     num_columns: data.num_columns,
     sheet_code: data.sheet_code,
     open_questions: (data as { open_questions?: string | null }).open_questions ?? null,
+    option_overrides: (data as { option_overrides?: string | null }).option_overrides ?? null,
+    multi_select_questions: (data as { multi_select_questions?: string | null }).multi_select_questions ?? null,
     country_code: schoolRow?.country_code ?? "CL",
   });
 }

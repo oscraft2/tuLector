@@ -11,7 +11,7 @@ import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from
 import { APP_VERSION } from "@/lib/version";
 import { safeColumns, allowedColumns } from "@/lib/sheet_generator";
 import { resolveIdReadConfig } from "@/lib/country_id_blocks";
-import { QUIZ_MAX_QUESTIONS, parseOpenQuestions } from "@/lib/quiz_constraints";
+import { QUIZ_MAX_QUESTIONS, parseOpenQuestions, parseOptionOverrides, parseMultiSelectQuestions } from "@/lib/quiz_constraints";
 
 type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
 type ScanSyncState = "idle" | "saving" | "saved" | "review" | "error" | "queued" | "partial";
@@ -152,7 +152,10 @@ export default function ScanPage() {
  const [answerKey, setAnswerKey] = useState<string[]>(DEFAULT_ANSWER_KEY);
  const [native, setNative] = useState(false);
  // Config de lectura sincronizada con el generador (/sheet la guarda en localStorage).
- const [scanCfg, setScanCfg] = useState({ numQuestions: 20, numOptions: 5, numColumns: 1, optionLabels: "ABCDE", openQuestions: [] as number[] });
+ const [scanCfg, setScanCfg] = useState({
+  numQuestions: 20, numOptions: 5, numColumns: 1, optionLabels: "ABCDE", openQuestions: [] as number[],
+  optionOverrides: {} as Record<number, number>, multiSelectQuestions: [] as number[],
+ });
  useEffect(() => {
   let alive = true;
   Promise.resolve().then(() => {
@@ -165,6 +168,8 @@ export default function ScanPage() {
      setScanCfg({
       numQuestions: nq, numOptions: c.numOptions || 5, numColumns: c.numColumns || 1, optionLabels: c.optionLabels || "ABCDE",
       openQuestions: Array.isArray(c.openQuestions) ? parseOpenQuestions(c.openQuestions.join(","), nq) : [],
+      optionOverrides: c.optionOverrides && typeof c.optionOverrides === "object" ? c.optionOverrides : {},
+      multiSelectQuestions: Array.isArray(c.multiSelectQuestions) ? parseOpenQuestions(c.multiSelectQuestions.join(","), nq) : [],
      });
     }
    } catch { /* sin config guardada → default */ }
@@ -223,7 +228,7 @@ export default function ScanPage() {
      setError("Selecciona un ensayo desde el dashboard antes de escanear.");
      return;
     }
-    const data = await res.json() as { id?: string; answer_key?: string; title?: string; num_questions?: number; options_per_question?: number; option_labels?: string; num_columns?: number; sheet_code?: number | null; open_questions?: string | null; country_code?: string };
+    const data = await res.json() as { id?: string; answer_key?: string; title?: string; num_questions?: number; options_per_question?: number; option_labels?: string; num_columns?: number; sheet_code?: number | null; open_questions?: string | null; option_overrides?: string | null; multi_select_questions?: string | null; country_code?: string };
     if (data.id) setActiveQuizId(String(data.id));
     setActiveSheetCode(typeof data.sheet_code === "number" ? data.sheet_code : null);
     if (data.country_code) setActiveCountryCode(data.country_code);
@@ -247,10 +252,17 @@ export default function ScanPage() {
     // (limitacion documentada; sin burbujas igual se lee "-" y el servidor
     // excluye las abiertas del puntaje).
     const totalQuestions = Number(data.num_questions || 20);
-    const nextOpen = totalQuestions <= QUIZ_MAX_QUESTIONS
-     ? parseOpenQuestions(data.open_questions ?? "", nextQuestions)
-     : [];
-    const nextCfg = { numQuestions: nextQuestions, numOptions: nextOptions, numColumns: nextColumns, optionLabels: nextLabels, openQuestions: nextOpen };
+    const fitsOnePage = totalQuestions <= QUIZ_MAX_QUESTIONS;
+    const nextOpen = fitsOnePage ? parseOpenQuestions(data.open_questions ?? "", nextQuestions) : [];
+    // Mismo motivo que las abiertas (limitacion documentada, multipagina): la
+    // numeracion local por pagina no se conoce hasta decodificar el codigo de
+    // hoja, asi que overrides/multiSelect solo se aplican si cabe en 1 hoja.
+    const nextOptionOverrides = fitsOnePage ? parseOptionOverrides(data.option_overrides ?? "", nextQuestions) : {};
+    const nextMultiSelect = fitsOnePage ? parseMultiSelectQuestions(data.multi_select_questions ?? "", nextQuestions) : [];
+    const nextCfg = {
+     numQuestions: nextQuestions, numOptions: nextOptions, numColumns: nextColumns, optionLabels: nextLabels, openQuestions: nextOpen,
+     optionOverrides: nextOptionOverrides, multiSelectQuestions: nextMultiSelect,
+    };
     setScanCfg(nextCfg);
     try { localStorage.setItem("tulector_scan_config", JSON.stringify(nextCfg)); } catch { /* sin storage */ }
    } catch {
@@ -270,7 +282,11 @@ export default function ScanPage() {
  // Config del lector = la del generador (nº preguntas/opciones/columnas). Esto
  // sincroniza el motor con la hoja impresa (antes estaba fijo en 20/5/1 columna).
  // useMemo: identidad estable → no re-dispara el loop de cámara (que depende de config).
- const config = useMemo(() => ({ ...DEFAULT_CONFIG, numQuestions: scanCfg.numQuestions, numOptions: scanCfg.numOptions, optionLabels: scanCfg.optionLabels.slice(0, scanCfg.numOptions), numColumns: scanCfg.numColumns, openQuestions: scanCfg.openQuestions }), [scanCfg]);
+ const config = useMemo(() => ({
+  ...DEFAULT_CONFIG, numQuestions: scanCfg.numQuestions, numOptions: scanCfg.numOptions,
+  optionLabels: scanCfg.optionLabels.slice(0, scanCfg.numOptions), numColumns: scanCfg.numColumns,
+  openQuestions: scanCfg.openQuestions, optionOverrides: scanCfg.optionOverrides, multiSelectQuestions: scanCfg.multiSelectQuestions,
+ }), [scanCfg]);
  // Marcas de temporización requeridas = filas por columna (no el nº de preguntas).
  const marksRequired = useMemo(() => questionLayout(config).rowsPerCol, [config]);
  // Cambiar la config del lector desde el teléfono (debe coincidir con la hoja).

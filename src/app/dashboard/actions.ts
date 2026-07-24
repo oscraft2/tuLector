@@ -20,6 +20,10 @@ import {
   optionLabelsFor,
   parseOpenQuestions,
   serializeOpenQuestions,
+  parseOptionOverrides,
+  serializeOptionOverrides,
+  parseMultiSelectQuestions,
+  serializeMultiSelectQuestions,
 } from "@/lib/quiz_constraints";
 import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
 import { type StudentCsvRow, guessColumnMapping, rowsFromMapping } from "@/lib/student_import";
@@ -74,11 +78,21 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     const allowPartial = formData.get("allow_partial_key") === "on";
     const openQuestions = parseOpenQuestions(formData.get("open_questions"), numQuestions);
     if (openQuestions.length >= numQuestions) throw new Error("Debe quedar al menos 1 pregunta de alternativas (no puede ser todo desarrollo).");
+    const optionOverrides = parseOptionOverrides(formData.get("option_overrides"), numQuestions);
+    const multiSelectQuestions = parseMultiSelectQuestions(formData.get("multi_select_questions"), numQuestions);
+    if (multiSelectQuestions.some((q) => openQuestions.includes(q))) {
+      throw new Error("Una pregunta no puede ser de desarrollo y de seleccion multiple a la vez.");
+    }
+    // La clave de una fila de seleccion multiple no representa "que subconjunto
+    // es correcto" (es una letra), asi que se trata igual que las abiertas para
+    // el proposito de la clave/puntaje: fuera del calculo automatico (ver
+    // computeQuizScore en src/lib/grading.ts).
+    const unscoredQuestions = [...new Set([...openQuestions, ...multiSelectQuestions])].sort((a, b) => a - b);
     const rawAnswerKey = formData.get("answer_key_clean") ?? formData.get("answer_key");
     // Con preguntas de desarrollo la clave SIEMPRE es posicional (slots): las
     // abiertas quedan "-" fijo y no pueden colapsar el resto de la clave.
-    const answerKey = allowPartial || openQuestions.length > 0
-      ? applyOpenSlots(normalizeAnswerKeySlots(rawAnswerKey, numOptions, numQuestions), openQuestions)
+    const answerKey = allowPartial || unscoredQuestions.length > 0
+      ? applyOpenSlots(normalizeAnswerKeySlots(rawAnswerKey, numOptions, numQuestions), unscoredQuestions)
       : normalizeAnswerKeyForOptions(rawAnswerKey, numOptions);
     const evalType = String(formData.get("evaluation_type") ?? "custom");
     const evalVariant = String(formData.get("evaluation_variant") ?? "") || null;
@@ -86,7 +100,7 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     const exigencia = rawExigencia ? Math.max(0, Math.min(1, Number(rawExigencia) || 0.60)) : null;
     if (!title) throw new Error("Ingresa un titulo para el ensayo.");
     const filledSlots = answerKey.split("").filter((ch) => ch !== "-").length;
-    if (!allowPartial && filledSlots !== numQuestions - openQuestions.length) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
+    if (!allowPartial && filledSlots !== numQuestions - unscoredQuestions.length) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
 
     // N. de columnas derivado del tamano de UNA pagina (sobre seguro validado
     // por test:omr, ver sheet_generator.allowedColumns), no del total del
@@ -110,6 +124,8 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
       option_labels: optionLabelsFor(numOptions).split("").join(","),
       answer_key: answerKey,
       open_questions: serializeOpenQuestions(openQuestions),
+      option_overrides: serializeOptionOverrides(optionOverrides),
+      multi_select_questions: serializeMultiSelectQuestions(multiSelectQuestions),
       subject: String(formData.get("subject") ?? "") || null,
       grade,
       course_id: courseId,
@@ -122,6 +138,16 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
       let { error } = await supabase.from("quizzes").insert(insertPayload);
       if (error && isMissingColumnError(error, "course_id")) {
         insertPayload = withoutCourseId(insertPayload);
+        error = (await supabase.from("quizzes").insert(insertPayload)).error;
+      }
+      if (error && isMissingColumnError(error, "option_overrides")) {
+        if (Object.keys(optionOverrides).length > 0) throw new Error("Nº de opciones por pregunta requiere actualizar la base de datos (migracion option_overrides).");
+        insertPayload = withoutOptionOverrides(insertPayload);
+        error = (await supabase.from("quizzes").insert(insertPayload)).error;
+      }
+      if (error && isMissingColumnError(error, "multi_select_questions")) {
+        if (multiSelectQuestions.length > 0) throw new Error("Preguntas de seleccion multiple requieren actualizar la base de datos (migracion option_overrides).");
+        insertPayload = withoutMultiSelectQuestions(insertPayload);
         error = (await supabase.from("quizzes").insert(insertPayload)).error;
       }
       if (error && isMissingColumnError(error, "open_questions")) {
@@ -181,13 +207,19 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
     const allowPartial = formData.get("allow_partial_key") === "on";
     const openQuestions = parseOpenQuestions(formData.get("open_questions"), numQuestions);
     if (openQuestions.length >= numQuestions) throw new Error("Debe quedar al menos 1 pregunta de alternativas (no puede ser todo desarrollo).");
+    const optionOverrides = parseOptionOverrides(formData.get("option_overrides"), numQuestions);
+    const multiSelectQuestions = parseMultiSelectQuestions(formData.get("multi_select_questions"), numQuestions);
+    if (multiSelectQuestions.some((q) => openQuestions.includes(q))) {
+      throw new Error("Una pregunta no puede ser de desarrollo y de seleccion multiple a la vez.");
+    }
+    const unscoredQuestions = [...new Set([...openQuestions, ...multiSelectQuestions])].sort((a, b) => a - b);
     const rawAnswerKey = formData.get("answer_key_clean") ?? formData.get("answer_key");
-    const answerKey = allowPartial || openQuestions.length > 0
-      ? applyOpenSlots(normalizeAnswerKeySlots(rawAnswerKey, numOptions, numQuestions), openQuestions)
+    const answerKey = allowPartial || unscoredQuestions.length > 0
+      ? applyOpenSlots(normalizeAnswerKeySlots(rawAnswerKey, numOptions, numQuestions), unscoredQuestions)
       : normalizeAnswerKeyForOptions(rawAnswerKey, numOptions);
     if (!title) throw new Error("Ingresa un titulo para el ensayo.");
     const filledSlots = answerKey.split("").filter((ch) => ch !== "-").length;
-    if (!allowPartial && filledSlots !== numQuestions - openQuestions.length) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
+    if (!allowPartial && filledSlots !== numQuestions - unscoredQuestions.length) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
 
     const numColumns = suggestColumns(Math.min(numQuestions, QUIZ_MAX_QUESTIONS));
     const evalType = String(formData.get("evaluation_type") ?? "custom");
@@ -205,6 +237,8 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
       option_labels: optionLabelsFor(numOptions).split("").join(","),
       answer_key: answerKey,
       open_questions: serializeOpenQuestions(openQuestions),
+      option_overrides: serializeOptionOverrides(optionOverrides),
+      multi_select_questions: serializeMultiSelectQuestions(multiSelectQuestions),
       subject: String(formData.get("subject") ?? "") || null,
       grade,
       course_id: courseId,
@@ -216,12 +250,23 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
 
     const keyChanged = String(existing.answer_key ?? "") !== answerKey;
     const structureChanged = existing.num_questions !== numQuestions || existing.options_per_question !== numOptions;
-    const openChanged = String(existing.open_questions ?? "") !== String(updatePayload.open_questions ?? "");
+    const openChanged = String(existing.open_questions ?? "") !== String(updatePayload.open_questions ?? "")
+      || String(existing.multi_select_questions ?? "") !== String(updatePayload.multi_select_questions ?? "");
 
     let effectivePayload: Record<string, unknown> = updatePayload;
     let { error: updateError } = await supabase.from("quizzes").update(effectivePayload).eq("id", id);
     if (updateError && isMissingColumnError(updateError, "course_id")) {
       effectivePayload = withoutCourseId(effectivePayload);
+      updateError = (await supabase.from("quizzes").update(effectivePayload).eq("id", id)).error;
+    }
+    if (updateError && isMissingColumnError(updateError, "option_overrides")) {
+      if (Object.keys(optionOverrides).length > 0) throw new Error("Nº de opciones por pregunta requiere actualizar la base de datos (migracion option_overrides).");
+      effectivePayload = withoutOptionOverrides(effectivePayload);
+      updateError = (await supabase.from("quizzes").update(effectivePayload).eq("id", id)).error;
+    }
+    if (updateError && isMissingColumnError(updateError, "multi_select_questions")) {
+      if (multiSelectQuestions.length > 0) throw new Error("Preguntas de seleccion multiple requieren actualizar la base de datos (migracion option_overrides).");
+      effectivePayload = withoutMultiSelectQuestions(effectivePayload);
       updateError = (await supabase.from("quizzes").update(effectivePayload).eq("id", id)).error;
     }
     if (updateError && isMissingColumnError(updateError, "open_questions")) {
@@ -357,6 +402,18 @@ function withoutCourseId<T extends { course_id?: unknown }>(payload: T) {
 function withoutOpenQuestions<T extends { open_questions?: unknown }>(payload: T) {
   const { open_questions: _openQuestions, ...rest } = payload;
   void _openQuestions;
+  return rest;
+}
+
+function withoutOptionOverrides<T extends { option_overrides?: unknown }>(payload: T) {
+  const { option_overrides: _optionOverrides, ...rest } = payload;
+  void _optionOverrides;
+  return rest;
+}
+
+function withoutMultiSelectQuestions<T extends { multi_select_questions?: unknown }>(payload: T) {
+  const { multi_select_questions: _multiSelectQuestions, ...rest } = payload;
+  void _multiSelectQuestions;
   return rest;
 }
 

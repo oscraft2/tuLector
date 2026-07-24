@@ -24,6 +24,7 @@ export function AnswerKeyGrid({
   optionLabels,
   onAnswerChange,
   openQuestions,
+  multiSelectQuestions,
 }: {
   answerKey: string;
   numQuestions: number;
@@ -32,6 +33,9 @@ export function AnswerKeyGrid({
   onAnswerChange?: (index: number, letter: string) => void;
   /** Indices 0-indexados de preguntas de desarrollo: chip distinto, sin letra editable. */
   openQuestions?: Set<number>;
+  /** Indices 0-indexados de preguntas de seleccion multiple: chip distinto, sin letra editable
+   *  (una letra no representa "que subconjunto es correcto", se lee pero no se autocorrige). */
+  multiSelectQuestions?: Set<number>;
 }) {
   const editable = Boolean(onAnswerChange && optionLabels);
   const [selected, setSelected] = useState<number | null>(null);
@@ -53,8 +57,12 @@ export function AnswerKeyGrid({
     el?.scrollIntoView({ block: "nearest" });
   }
 
+  function isLocked(index: number): boolean {
+    return (openQuestions?.has(index) ?? false) || (multiSelectQuestions?.has(index) ?? false);
+  }
+
   function applyLetter(index: number, letter: string) {
-    if (openQuestions?.has(index)) return; // desarrollo: sin letra editable
+    if (isLocked(index)) return; // desarrollo/seleccion multiple: sin letra editable
     onAnswerChange?.(index, letter);
   }
 
@@ -91,23 +99,31 @@ export function AnswerKeyGrid({
               {letters.slice(from, to).map((answer, i) => {
                 const q = from + i;
                 const isOpen = openQuestions?.has(q) ?? false;
+                const isMulti = !isOpen && (multiSelectQuestions?.has(q) ?? false);
                 const empty = answer === "-";
                 const isSelected = selected === q;
+                const lockedLabel = isOpen
+                  ? `Pregunta ${q + 1} — desarrollo (se resuelve al reverso)`
+                  : isMulti
+                  ? `Pregunta ${q + 1} — selección múltiple (varias marcas válidas)`
+                  : `Pregunta ${q + 1}`;
                 const chip = (
                   <span
                     className={`grid h-8 w-8 place-items-center rounded-full text-xs font-bold transition ${
                       isOpen
                         ? "border border-dashed border-[#f0b429] bg-[#fffbeb] text-[#b45309]"
+                        : isMulti
+                        ? "border border-dashed border-[#8b5cf6] bg-[#f5f3ff] text-[#6d28d9]"
                         : empty
                         ? "border border-dashed border-[#d8dde3] text-[#9ca3af]"
                         : "bg-[#eef4ff] text-[#07305f]"
                     } ${isSelected ? "ring-2 ring-[#111827] ring-offset-1" : ""}`}
                   >
-                    {isOpen ? "✎" : answer}
+                    {isOpen ? "✎" : isMulti ? "▤" : answer}
                   </span>
                 );
                 return (
-                  <div key={q} className="flex flex-col items-center gap-0.5" title={isOpen ? `Pregunta ${q + 1} — desarrollo (se resuelve al reverso)` : `Pregunta ${q + 1}`}>
+                  <div key={q} className="flex flex-col items-center gap-0.5" title={lockedLabel}>
                     <span className="text-[9px] font-medium leading-none text-[#9ca3af]">{q + 1}</span>
                     {editable ? (
                       <button
@@ -116,7 +132,7 @@ export function AnswerKeyGrid({
                         onClick={() => focusIndex(q)}
                         onFocus={() => setSelected(q)}
                         onKeyDown={(event) => handleKeyDown(event, q)}
-                        aria-label={isOpen ? `Pregunta ${q + 1}, de desarrollo (se resuelve al reverso)` : `Pregunta ${q + 1}, respuesta ${empty ? "sin definir" : answer}`}
+                        aria-label={isOpen || isMulti ? lockedLabel : `Pregunta ${q + 1}, respuesta ${empty ? "sin definir" : answer}`}
                         className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[#111827]"
                       >
                         {chip}
@@ -139,13 +155,15 @@ export function AnswerKeyGrid({
               ? "Elige una pregunta arriba"
               : openQuestions?.has(selected)
               ? `Pregunta ${selected + 1}: de desarrollo (se resuelve al reverso)`
+              : multiSelectQuestions?.has(selected)
+              ? `Pregunta ${selected + 1}: selección múltiple (varias marcas válidas)`
               : `Pregunta ${selected + 1}:`}
           </span>
           {optionLabels.split("").map((letter) => (
             <button
               key={letter}
               type="button"
-              disabled={selected === null || (openQuestions?.has(selected) ?? false)}
+              disabled={selected === null || isLocked(selected)}
               onClick={() => {
                 if (selected === null) return;
                 applyLetter(selected, letter);
@@ -158,7 +176,7 @@ export function AnswerKeyGrid({
           ))}
           <button
             type="button"
-            disabled={selected === null || (openQuestions?.has(selected) ?? false)}
+            disabled={selected === null || isLocked(selected)}
             onClick={() => {
               if (selected === null) return;
               applyLetter(selected, "");

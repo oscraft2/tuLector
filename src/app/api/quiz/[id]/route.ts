@@ -11,11 +11,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   let result = await supabase
     .from("quizzes")
-    .select("id,title,subject,grade,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions")
+    .select("id,title,subject,grade,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions")
     .eq("id", id)
     .eq("school_id", school.id)
     .is("archived_at", null)
     .single();
+
+  if (result.error && (isMissingColumnError(result.error, "option_overrides") || isMissingColumnError(result.error, "multi_select_questions"))) {
+    result = await supabase
+      .from("quizzes")
+      .select("id,title,subject,grade,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions")
+      .eq("id", id)
+      .eq("school_id", school.id)
+      .is("archived_at", null)
+      .single();
+  }
 
   if (result.error && isMissingColumnError(result.error, "open_questions")) {
     result = await supabase

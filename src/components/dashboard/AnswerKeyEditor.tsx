@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect, useRef } from "react";
-import { QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE, optionLabelsFor, extractAnswerLetters, parseOpenQuestions, serializeOpenQuestions } from "@/lib/quiz_constraints";
+import { QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE, optionLabelsFor, extractAnswerLetters, parseOpenQuestions, serializeOpenQuestions, parseOptionOverrides, serializeOptionOverrides, parseMultiSelectQuestions, serializeMultiSelectQuestions } from "@/lib/quiz_constraints";
 import { resolveCountryProfile } from "@/lib/country_profiles";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
 
@@ -13,6 +13,8 @@ export function AnswerKeyEditor({
   defaultOptions = 5,
   defaultValue = "",
   defaultOpenQuestions = "",
+  defaultOptionOverrides = "",
+  defaultMultiSelectQuestions = "",
   countryCode = "CL",
 }: {
   name?: string;
@@ -21,6 +23,10 @@ export function AnswerKeyEditor({
   defaultValue?: string;
   /** CSV de preguntas de desarrollo ("18,27,33") tal como viene de BD. */
   defaultOpenQuestions?: string;
+  /** CSV de overrides de opciones por pregunta ("20:3,29:6") tal como viene de BD. */
+  defaultOptionOverrides?: string;
+  /** CSV de preguntas de seleccion multiple ("29") tal como viene de BD. */
+  defaultMultiSelectQuestions?: string;
   countryCode?: string;
 }) {
   const [evalType, setEvalType] = useState<EvaluationType>("custom");
@@ -36,6 +42,8 @@ export function AnswerKeyEditor({
   const [questionCount, setQuestionCount] = useState(questions);
   const [optionCount, setOptionCount] = useState(defaultOptions);
   const [openText, setOpenText] = useState(defaultOpenQuestions);
+  const [overridesText, setOverridesText] = useState(defaultOptionOverrides);
+  const [multiText, setMultiText] = useState(defaultMultiSelectQuestions);
   const [allowPartial, setAllowPartial] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -101,6 +109,14 @@ export function AnswerKeyEditor({
   // queda "-" bloqueado (una abierta nunca tiene letra correcta).
   const openQuestions = useMemo(() => parseOpenQuestions(openText, questionCount), [openText, questionCount]);
   const openSet0 = useMemo(() => new Set(openQuestions.map((q) => q - 1)), [openQuestions]);
+  const optionOverrides = useMemo(() => parseOptionOverrides(overridesText, questionCount), [overridesText, questionCount]);
+  const multiSelectQuestions = useMemo(() => parseMultiSelectQuestions(multiText, questionCount), [multiText, questionCount]);
+  const multiSet0 = useMemo(() => new Set(multiSelectQuestions.map((q) => q - 1)), [multiSelectQuestions]);
+  const multiOverlapsOpen = useMemo(() => multiSelectQuestions.some((q) => openSet0.has(q - 1)), [multiSelectQuestions, openSet0]);
+  // "No corregibles automaticamente" = abiertas + seleccion multiple (una letra
+  // no representa "que subconjunto es correcto") -- mismo tratamiento que el
+  // server (dashboard/actions.ts) y computeQuizScore (src/lib/grading.ts).
+  const unscoredSet0 = useMemo(() => new Set([...openSet0, ...multiSet0]), [openSet0, multiSet0]);
   const slots = useMemo(() => {
     const chars = value
       .toUpperCase()
@@ -108,15 +124,15 @@ export function AnswerKeyEditor({
       .filter((char) => allowed.has(char) || char === "-")
       .slice(0, questionCount);
     while (chars.length < questionCount) chars.push("-");
-    for (const i of openSet0) if (i < chars.length) chars[i] = "-";
+    for (const i of unscoredSet0) if (i < chars.length) chars[i] = "-";
     return chars.join("");
-  }, [value, allowed, questionCount, openSet0]);
+  }, [value, allowed, questionCount, unscoredSet0]);
   const filledCount = slots.split("").filter((char) => char !== "-").length;
-  const closedCount = questionCount - openQuestions.length;
+  const closedCount = questionCount - unscoredSet0.size;
   const valid = filledCount === closedCount;
 
   function handleGridAnswerChange(index: number, letter: string) {
-    if (openSet0.has(index)) return; // desarrollo: slot bloqueado
+    if (unscoredSet0.has(index)) return; // desarrollo/seleccion multiple: slot bloqueado
     const chars = slots.split("");
     chars[index] = letter || "-";
     setValue(chars.join(""));
@@ -325,6 +341,46 @@ export function AnswerKeyEditor({
       </label>
       <input type="hidden" name="open_questions" value={serializeOpenQuestions(openQuestions) ?? ""} />
 
+      <details className="rounded-md border border-[#eef0f3]">
+        <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-[#4b5563]">
+          Opciones avanzadas (replicar un instrumento externo, ej. DIA)
+        </summary>
+        <div className="space-y-3 border-t border-[#eef0f3] p-3">
+          <label className="block text-sm font-semibold">
+            Preguntas de selección múltiple (opcional)
+            <input
+              value={multiText}
+              onChange={(event) => setMultiText(event.target.value)}
+              placeholder="Ej: 29"
+              className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal"
+            />
+            <span className="mt-1 block text-[11px] font-normal text-[#5b6472]">
+              {multiSelectQuestions.length > 0
+                ? `${multiSelectQuestions.length} pregunta(s) tipo "marca todas las correctas" (${multiSelectQuestions.join(", ")}); varias marcas son una respuesta válida y quedan fuera del puntaje automático.`
+                : "Pregunta tipo “marca todas las correctas”: se imprime como una fila numerada (no A-B-C-D) y el lector acepta cualquier combinación de marcas."}
+              {multiOverlapsOpen && " ⚠ No puede repetirse una pregunta que ya está en “Preguntas de desarrollo”."}
+            </span>
+          </label>
+          <label className="block text-sm font-semibold">
+            Nº de opciones por pregunta puntual (opcional)
+            <input
+              value={overridesText}
+              onChange={(event) => setOverridesText(event.target.value)}
+              placeholder="Ej: 20:3, 29:6"
+              className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal"
+            />
+            <span className="mt-1 block text-[11px] font-normal text-[#5b6472]">
+              Formato &ldquo;pregunta:opciones&rdquo; separado por comas. Solo para preguntas que
+              tengan un nº de opciones distinto al general de este ensayo (ej. una hoja DIA con una
+              pregunta A-B-C en vez de A-B-C-D, o los 6 casilleros de una fila de selección
+              múltiple).
+            </span>
+          </label>
+        </div>
+      </details>
+      <input type="hidden" name="multi_select_questions" value={serializeMultiSelectQuestions(multiSelectQuestions) ?? ""} />
+      <input type="hidden" name="option_overrides" value={serializeOptionOverrides(optionOverrides) ?? ""} />
+
       <input type="hidden" name="option_labels" value={labels.split("").join(",")} />
       <label className="block text-sm font-semibold text-[#111827]" htmlFor={name}>Clave de respuestas</label>
       <p className="mt-1 text-xs text-[#6b7280]">Marca las respuestas directo en la grilla, tipea la clave completa, o subela desde un archivo.</p>
@@ -336,6 +392,7 @@ export function AnswerKeyEditor({
           optionLabels={labels}
           onAnswerChange={handleGridAnswerChange}
           openQuestions={openSet0}
+          multiSelectQuestions={multiSet0}
         />
       </div>
 
@@ -377,6 +434,7 @@ export function AnswerKeyEditor({
           ? `${filledCount}/${closedCount} respuestas cargadas — podrás completar el resto despues desde "Editar".`
           : `${filledCount}/${closedCount} respuestas validas ${labels}.`}
         {openQuestions.length > 0 && ` (${openQuestions.length} de desarrollo, sin clave)`}
+        {multiSelectQuestions.length > 0 && ` (${multiSelectQuestions.length} de selección múltiple, sin clave)`}
       </p>
     </div>
   );

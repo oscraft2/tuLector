@@ -8,7 +8,7 @@ import {
   paginateQuiz, chunkOpenQuestions, renderOpenAnswersSheet, MIN_QUESTIONS, MAX_QUESTIONS,
   type Branding, type GroundTruthEntry, type SheetMarks, type QuizPage,
 } from "@/lib/sheet_generator";
-import { parseOpenQuestions } from "@/lib/quiz_constraints";
+import { parseOpenQuestions, parseOptionOverrides, parseMultiSelectQuestions } from "@/lib/quiz_constraints";
 import { resolveNationalId } from "@/lib/national_id";
 import { countryProfiles, resolveCountryProfile } from "@/lib/country_profiles";
 import { resolveIdBlock } from "@/lib/country_id_blocks";
@@ -85,6 +85,13 @@ export default function SheetPage() {
   // en la hoja frontal la fila imprime "Resolver al reverso" (sin burbujas) y
   // el PDF intercala una pagina de reverso con recuadros para escribir.
   const [openQuestions, setOpenQuestions] = useState<number[]>([]);
+  // Nº de opciones por pregunta puntual y preguntas de seleccion multiple del
+  // ensayo (pensado para replicar instrumentos externos, ej. DIA) -- SOLO en
+  // numeracion GLOBAL=LOCAL (1 sola hoja); en multipagina se ignoran, mismo
+  // motivo documentado que openQuestions (numeracion local desconocida hasta
+  // decodificar el codigo de hoja).
+  const [optionOverrides, setOptionOverrides] = useState<Record<number, number>>({});
+  const [multiSelectQuestions, setMultiSelectQuestions] = useState<number[]>([]);
 
   // Parsea la lista pegada (acepta "id" o "id,nombre,curso" por línea, salta
   // encabezado). Devuelve IDs válidos (segun el pais elegido) normalizados, sin duplicados.
@@ -133,6 +140,10 @@ export default function SheetPage() {
     numColumns: safeColumns(pageGridSize, numColumns),
     idBlock,
     ...(openQuestions.length > 0 ? { openQuestions: openForPage(p) } : {}),
+    // Sin remapeo de numeracion: solo se aplican con 1 sola pagina (p.from=1,
+    // global=local), igual que hace openForPage en ese mismo caso.
+    ...(!isMultipage && Object.keys(optionOverrides).length > 0 ? { optionOverrides } : {}),
+    ...(!isMultipage && multiSelectQuestions.length > 0 ? { multiSelectQuestions } : {}),
   });
   const marksForPage = (p: QuizPage): SheetMarks => ({
     ...(fillRut ? { rut, filled: true } : {}),
@@ -163,10 +174,12 @@ export default function SheetPage() {
       localStorage.setItem("tulector_scan_config", JSON.stringify({
         numQuestions, numOptions, numColumns,
         openQuestions: isMultipage ? [] : openQuestions,
+        optionOverrides: isMultipage ? {} : optionOverrides,
+        multiSelectQuestions: isMultipage ? [] : multiSelectQuestions,
       }));
     } catch { /* sin storage */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numQuestions, numOptions, numColumns, isMultipage, JSON.stringify(openQuestions)]);
+  }, [numQuestions, numOptions, numColumns, isMultipage, JSON.stringify(openQuestions), JSON.stringify(optionOverrides), JSON.stringify(multiSelectQuestions)]);
 
   // Detecta si corremos en el APK (para mostrar botón "Compartir" nativo).
   useEffect(() => {
@@ -184,7 +197,7 @@ export default function SheetPage() {
     const ctx = canvas.getContext("2d");
     if (ctx) renderSheet(ctx, marks, cfg, branding);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numQuestions, numOptions, numColumns, countryCode, title, school, logo, fillRut, rut, quizInfo, openQuestions]);
+  }, [numQuestions, numOptions, numColumns, countryCode, title, school, logo, fillRut, rut, quizInfo, openQuestions, optionOverrides, multiSelectQuestions]);
 
   // Carga el ensayo desde ?quiz=<id> y hace que la hoja HEREDE su formato + codigo.
   useEffect(() => {
@@ -210,6 +223,8 @@ export default function SheetPage() {
         }
         setQuizInfo({ id: String(q.id), title: String(q.title ?? ""), sheetCode: q.sheet_code ?? null, answerKey: String(q.answer_key ?? "") });
         setOpenQuestions(parseOpenQuestions(q.open_questions ?? "", nq));
+        setOptionOverrides(parseOptionOverrides(q.option_overrides ?? "", nq));
+        setMultiSelectQuestions(parseMultiSelectQuestions(q.multi_select_questions ?? "", nq));
       } catch { /* sin ensayo -> generador manual */ }
     })();
   }, []);

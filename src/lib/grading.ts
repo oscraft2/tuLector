@@ -1,6 +1,6 @@
 import "server-only";
 import { calculateGrade } from "@/lib/latam";
-import { parseOpenQuestions } from "@/lib/quiz_constraints";
+import { parseOpenQuestions, parseMultiSelectQuestions } from "@/lib/quiz_constraints";
 
 /**
  * Lee la letra esperada de una clave en una posicion dada. Preserva "-"
@@ -29,6 +29,12 @@ export type ScoreableQuiz = {
   /** CSV canonico "18,27,33" de preguntas de desarrollo (ver parseOpenQuestions):
    *  quedan FUERA del puntaje automatico (numerador y denominador). */
   open_questions?: string | null;
+  /** CSV canonico de preguntas de seleccion MULTIPLE (ver
+   *  parseMultiSelectQuestions): un letra-esperada-unica no representa "que
+   *  subconjunto es correcto", asi que quedan FUERA del puntaje automatico
+   *  igual que las abiertas (numerador y denominador). El motor SI las lee
+   *  (ver src/tulector/omr.ts) -- solo el auto-grading las excluye. */
+  multi_select_questions?: string | null;
   evaluation_type?: string | null;
   exigencia?: number | null;
 };
@@ -53,12 +59,13 @@ export function computeQuizScore(
   countryCode: string,
 ) {
   const numQ = Number(quiz.num_questions ?? answers.length);
-  // Las preguntas de desarrollo (abiertas) no se corrigen automaticamente:
-  // la nota es correctas / preguntas-de-alternativas.
+  // Las preguntas de desarrollo (abiertas) y de seleccion multiple no se
+  // corrigen automaticamente: la nota es correctas / preguntas-de-alternativas.
   const open = new Set(parseOpenQuestions(quiz.open_questions ?? "", numQ));
-  const total = Math.max(1, numQ - open.size);
+  const multi = new Set(parseMultiSelectQuestions(quiz.multi_select_questions ?? "", numQ));
+  const total = Math.max(1, numQ - open.size - multi.size);
   const score = answers.reduce((sum, answer) => {
-    if (open.has(answer.q)) return sum;
+    if (open.has(answer.q) || multi.has(answer.q)) return sum;
     const expected = answerKeyAt(String(quiz.answer_key ?? ""), answer.q - 1);
     return sum + (answer.a !== "-" && answer.a === expected ? 1 : 0);
   }, 0);
