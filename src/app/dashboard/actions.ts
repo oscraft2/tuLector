@@ -749,6 +749,30 @@ export async function logExport(formData: FormData) {
 }
 
 
+/**
+ * Confirma (o ajusta) el puntaje sugerido por la IA para una pregunta de
+ * desarrollo (Fase 3, docs/plan-correccion-ia-abiertas.md). Principio del
+ * plan: la IA sugiere, el profesor decide -- este es el ÚNICO lugar donde
+ * `confirmed_points` se escribe; hasta que esto corre, el puntaje de la IA
+ * no cuenta para nada (computeQuizScore sigue excluyendo las abiertas).
+ */
+export async function confirmOpenAnswer(formData: FormData) {
+  const { supabase, school } = await getDashboardContext();
+  const paperId = String(formData.get("paper_id") ?? "");
+  const question = Number(formData.get("question"));
+  const quizId = String(formData.get("quiz_id") ?? "");
+  const points = Number(formData.get("points"));
+  if (!paperId || !Number.isInteger(question) || !Number.isFinite(points)) throw new Error("Datos invalidos.");
+  const { error } = await supabase
+    .from("open_answers")
+    .update({ confirmed_points: Math.max(0, points), confirmed_at: new Date().toISOString() })
+    .eq("paper_id", paperId)
+    .eq("question", question)
+    .eq("school_id", school.id);
+  if (error) throw new Error(error.message);
+  if (quizId) revalidatePath(`/dashboard/quizzes/${quizId}`);
+}
+
 export async function startScanForQuiz(formData: FormData) {
   const { supabase } = await getDashboardContext();
   const quizId = String(formData.get("quiz_id") ?? "");

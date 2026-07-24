@@ -4,7 +4,7 @@ import { getDashboardContext } from "@/lib/supabase_server";
 import { calculateGrade } from "@/lib/latam";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { StatusPill } from "@/components/AppShell";
-import { startScanForQuiz } from "@/app/dashboard/actions";
+import { startScanForQuiz, confirmOpenAnswer } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { QuizStats } from "@/components/dashboard/QuizStats";
 import { canonicalRut } from "@/lib/rut";
@@ -204,7 +204,25 @@ export default async function QuizDetailPage({ params }: PageProps) {
                         <td className="px-3 py-2 max-w-sm truncate" title={oa.transcripcion ?? ""}>{oa.transcripcion || "-"}{oa.legible === false && " ⚠"}</td>
                         <td className="px-3 py-2">{oa.puntaje ?? "-"}/{oa.max_points ?? "-"}</td>
                         <td className="px-3 py-2">{oa.confianza ?? "-"}</td>
-                        <td className="px-3 py-2">{oa.confirmed_points != null ? `${oa.confirmed_points} pts` : <span className="text-[#b45309]">pendiente</span>}</td>
+                        <td className="px-3 py-2">
+                          {oa.confirmed_points != null ? (
+                            <span className="font-semibold text-[#0f766e]">✓ {oa.confirmed_points} pts</span>
+                          ) : (
+                            <form action={confirmOpenAnswer} className="flex items-center gap-1.5">
+                              <input type="hidden" name="paper_id" value={oa.paper_id} />
+                              <input type="hidden" name="question" value={oa.question} />
+                              <input type="hidden" name="quiz_id" value={quiz.id} />
+                              <input
+                                type="number" name="points" step={0.5} min={0} max={oa.max_points ?? undefined}
+                                defaultValue={oa.puntaje ?? 0}
+                                className="w-14 rounded border border-[#cfd6df] px-1.5 py-1 text-sm"
+                              />
+                              <button className="rounded border border-[#0f766e] px-2 py-1 text-xs font-semibold text-[#0f766e] hover:bg-[#f0fdfa]">
+                                Confirmar
+                              </button>
+                            </form>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -212,9 +230,9 @@ export default async function QuizDetailPage({ params }: PageProps) {
               </div>
             )}
             <p className="mt-2 text-xs text-[#8a93a1]">
-              La IA sugiere — el puntaje NO cuenta para la nota hasta confirmarlo (la pantalla de
-              confirmación todavía no está construida; por ahora esta es solo una vista de
-              auditoría).
+              La IA sugiere — el puntaje no cuenta para la nota hasta que lo confirmes (el número
+              ya viene precargado con la sugerencia; ajústalo si no estás de acuerdo antes de
+              confirmar).
             </p>
           </section>
         )}
