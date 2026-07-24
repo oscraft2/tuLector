@@ -5,7 +5,7 @@ import Link from "next/link";
 import { SHEET_W, SHEET_H, type SheetConfig } from "@/lib/sheet_layout";
 import {
   renderSheet, randomValidNationalId, randomAnswers, randomPartialAnswers, safeColumns, allowedColumns,
-  paginateQuiz, chunkOpenQuestions, renderOpenAnswersSheet, MIN_QUESTIONS, MAX_QUESTIONS,
+  paginateQuiz, chunkOpenQuestions, renderOpenAnswersSheet, reversoSheetCode, MIN_QUESTIONS, MAX_QUESTIONS,
   type Branding, type GroundTruthEntry, type SheetMarks, type QuizPage,
 } from "@/lib/sheet_generator";
 import { parseOpenQuestions, parseOptionOverrides, parseMultiSelectQuestions } from "@/lib/quiz_constraints";
@@ -257,13 +257,19 @@ export default function SheetPage() {
     return c.toDataURL("image/png");
   };
 
-  /** Renderiza UNA pagina de reverso (recuadros de desarrollo) a dataURL PNG. */
-  const renderOpenPageToDataUrl = (questions: number[], pageInfo?: string) => {
+  /** Renderiza UNA pagina de reverso (recuadros de desarrollo) a dataURL PNG.
+   *  Si el ensayo tiene sheetCode, el reverso sale ESCANEABLE (anclas + codigo
+   *  con la convencion reversoSheetCode) -- sin sheetCode (generador libre sin
+   *  ?quiz=<id>) queda solo impreso, como antes. */
+  const renderOpenPageToDataUrl = (questions: number[], frontPage: number, chunkIndex: number, pageInfo?: string) => {
     const c = document.createElement("canvas");
     c.width = SHEET_W * 2; c.height = SHEET_H * 2;
     const ctx = c.getContext("2d")!;
     ctx.scale(2, 2);
-    renderOpenAnswersSheet(ctx, questions, branding, pageInfo ? { pageInfo } : {});
+    const code = quizInfo && quizInfo.sheetCode != null
+      ? reversoSheetCode(frontPage, chunkIndex, { version: SHEET_CODE_VERSION, country: countryIdx, sheetId: quizInfo.sheetCode })
+      : undefined;
+    renderOpenAnswersSheet(ctx, questions, branding, { ...(pageInfo ? { pageInfo } : {}), ...(code ? { code } : {}) });
     return c.toDataURL("image/png");
   };
 
@@ -282,7 +288,7 @@ export default function SheetPage() {
     pages.flatMap((p) => [
       renderPageToDataUrl(p),
       ...openChunksForPage(p).map((qs, i, arr) =>
-        renderOpenPageToDataUrl(qs, arr.length > 1 || isMultipage ? `Reverso ${i + 1} de ${arr.length}${isMultipage ? ` — Hoja ${p.page}` : ""}` : undefined)),
+        renderOpenPageToDataUrl(qs, p.page, i + 1, arr.length > 1 || isMultipage ? `Reverso ${i + 1} de ${arr.length}${isMultipage ? ` — Hoja ${p.page}` : ""}` : undefined)),
     ]),
     fillRut ? `hoja_tulector_${rut}.pdf` : "hoja_tulector.pdf",
   );

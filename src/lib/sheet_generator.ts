@@ -3,11 +3,12 @@
  * la parte funcional y agrega branding SOLO en zonas libres (no toca el motor).
  * Ver docs/generador-hojas-spec.md y docs/plan-pruebas-lector.md.
  */
-import { drawSheet, type Ctx2D } from "@/lib/sheet_render";
+import { drawSheet, drawSheetCode, type Ctx2D } from "@/lib/sheet_render";
 import { computeRutDV } from "@/lib/omr";
-import { SHEET_H, SHEET_W, type SheetConfig } from "@/lib/sheet_layout";
+import { SHEET_H, SHEET_W, CORNER_CENTERS, ANCHOR_SIZE, type SheetConfig } from "@/lib/sheet_layout";
 import { type SheetCodeData } from "@/lib/sheet_code";
 import { resolveIdBlock, resolveIdReadConfig } from "@/lib/country_id_blocks";
+import { QUIZ_MAX_PAGES } from "@/lib/quiz_constraints";
 
 export interface Branding {
   title?: string;     // título del ensayo
@@ -153,16 +154,52 @@ export function chunkOpenQuestions(open: number[], maxPerPage: number = OPEN_BOX
   return pages;
 }
 
+// ─── Reverso ESCANEABLE (Fase 1, correccion IA de abiertas) ───────────────
+// Convencion de "pagina reverso" que reusa el MISMO codec del codigo de hoja
+// (src/tulector/sheet_code.ts) SIN tocarlo: una pagina frontal real usa
+// page=1..QUIZ_MAX_PAGES; un reverso usa page=QUIZ_MAX_PAGES+paginaFrontal
+// (nunca choca con una pagina frontal real) y reusa el campo pagesTotal para
+// guardar el nº de CHUNK de reverso (1-indexado) de esa pagina frontal, no el
+// total de paginas. El lector no necesita saber QUE preguntas trae este chunk
+// desde el codigo: vuelve a correr chunkOpenQuestions(openQuestions) de la BD
+// (funcion pura, mismo resultado que al imprimir) e indexa por chunkIndex-1.
+export function isReversoPage(page: number): boolean {
+  return page > QUIZ_MAX_PAGES;
+}
+export function reversoFrontPage(page: number): number {
+  return page - QUIZ_MAX_PAGES;
+}
+export function reversoSheetCode(
+  frontPage: number,
+  chunkIndex: number,
+  base: Omit<SheetCodeData, "page" | "pagesTotal">,
+): SheetCodeData {
+  return { ...base, page: QUIZ_MAX_PAGES + frontPage, pagesTotal: chunkIndex };
+}
+
+/** Rectangulo (x,y,w,h) del recuadro `index` (0-indexado) de `count` totales
+ *  en una pagina de reverso -- MISMA fuente de verdad para dibujar (abajo) y
+ *  para recortar al leer (src/lib/open_answer_capture.ts). */
+export function openAnswerBoxRect(index: number, count: number): { x: number; y: number; w: number; h: number } {
+  const top = 200, bottom = SHEET_H - 40, gap = 24;
+  const n = Math.max(1, count);
+  const boxH = Math.floor((bottom - top - gap * (n - 1)) / n);
+  return { x: 80, y: top + index * (boxH + gap), w: SHEET_W - 160, h: boxH };
+}
+
 /**
- * Dibuja UNA pagina de reverso (1200x1650, igual que la hoja OMR): encabezado
- * con titulo + linea manuscrita de Nombre/ID, y un recuadro grande por pregunta
- * repartiendo el alto util. `questions` en numeracion GLOBAL del ensayo.
+ * Dibuja UNA pagina de reverso (1200x1650, igual que la hoja OMR): 4 anclas de
+ * esquina + codigo de hoja (si se pasa `opts.code`, la hace ESCANEABLE — sin
+ * eso, queda como antes: solo impresa, sin registro), encabezado con titulo +
+ * linea manuscrita de Nombre/ID (respaldo visual, no OMR), y un recuadro
+ * grande por pregunta repartiendo el alto util via openAnswerBoxRect.
+ * `questions` en numeracion GLOBAL del ensayo.
  */
 export function renderOpenAnswersSheet(
   ctx: CanvasRenderingContext2D,
   questions: number[],
   branding: Branding = {},
-  opts: { pageInfo?: string } = {},
+  opts: { pageInfo?: string; code?: SheetCodeData } = {},
 ): void {
   ctx.save();
   ctx.fillStyle = "#ffffff";
@@ -170,7 +207,19 @@ export function renderOpenAnswersSheet(
   ctx.fillStyle = "#000000";
   ctx.textBaseline = "alphabetic";
 
-  // Encabezado (y=0..190)
+  // Anclas de esquina: solo 4 (no las 12 de la hoja frontal) -- este reverso
+  // solo necesita perspectiva plana para recortar recuadros grandes, no la
+  // precision de burbuja del warp por bloques.
+  for (const [cx, cy] of CORNER_CENTERS) {
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(cx - ANCHOR_SIZE / 2, cy - ANCHOR_SIZE / 2, ANCHOR_SIZE, ANCHOR_SIZE);
+  }
+  if (opts.code) drawSheetCode(ctx as unknown as Ctx2D, opts.code);
+
+  // Encabezado (y=0..190; el codigo de hoja ocupa la franja y≈172-188 bajo el
+  // titulo, misma banda que en la hoja frontal -- el texto de instruccion se
+  // sube a y=155 para no compartir esa franja con la tinta del codigo).
+  ctx.fillStyle = "#000000";
   ctx.textAlign = "center";
   ctx.font = "bold 26px sans-serif";
   ctx.fillText("HOJA DE DESARROLLO", SHEET_W / 2, 52);
@@ -180,15 +229,15 @@ export function renderOpenAnswersSheet(
   }
   ctx.textAlign = "left";
   ctx.font = "15px sans-serif";
-  ctx.fillText("Nombre:", 80, 140);
+  ctx.fillText("Nombre:", 80, 118);
   ctx.strokeStyle = "#000000";
   ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(150, 144); ctx.lineTo(720, 144); ctx.stroke();
-  ctx.fillText("RUT / ID:", 760, 140);
-  ctx.beginPath(); ctx.moveTo(845, 144); ctx.lineTo(1120, 144); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(150, 122); ctx.lineTo(720, 122); ctx.stroke();
+  ctx.fillText("RUT / ID:", 760, 118);
+  ctx.beginPath(); ctx.moveTo(845, 122); ctx.lineTo(1120, 122); ctx.stroke();
   ctx.font = "12px sans-serif";
   ctx.fillStyle = "#555555";
-  ctx.fillText("Escribe tu desarrollo dentro del recuadro de cada pregunta.", 80, 172);
+  ctx.fillText("Escribe tu desarrollo dentro del recuadro de cada pregunta.", 80, 150);
   if (opts.pageInfo) {
     ctx.textAlign = "right";
     ctx.font = "bold 11px sans-serif";
@@ -196,18 +245,15 @@ export function renderOpenAnswersSheet(
     ctx.textAlign = "left";
   }
 
-  // Recuadros: reparto del area util y=200..1610
-  const top = 200, bottom = SHEET_H - 40, gap = 24;
-  const n = Math.max(1, questions.length);
-  const boxH = Math.floor((bottom - top - gap * (n - 1)) / n);
+  // Recuadros: reparto del area util y=200..1610 (openAnswerBoxRect).
   questions.forEach((q, i) => {
-    const y = top + i * (boxH + gap);
+    const box = openAnswerBoxRect(i, questions.length);
     ctx.strokeStyle = "#000000";
     ctx.lineWidth = 2;
-    ctx.strokeRect(80, y, SHEET_W - 160, boxH);
+    ctx.strokeRect(box.x, box.y, box.w, box.h);
     ctx.fillStyle = "#000000";
     ctx.font = "bold 18px sans-serif";
-    ctx.fillText(`Pregunta ${q}`, 96, y + 30);
+    ctx.fillText(`Pregunta ${q}`, box.x + 16, box.y + 30);
   });
   ctx.restore();
 }
