@@ -7,6 +7,10 @@ dia-bot (Fase B, no construida). Ver "Pendientes" al final.**
 Rama de trabajo: `feature/dia-motor-beta` (no pusheada a `master` — ver "Estrategia de trabajo
 seguro"). Commits: `c59c46f` (motor), `525aa50` (dashboard/DB).
 
+Catálogo de las 4 evaluaciones reales (5°/6° básico, Lenguaje/Lectura y Matemática, Monitoreo
+Intermedio 2026) con la config exacta de `openQuestions`/`optionOverrides`/`multiSelectQuestions`
+de cada una: ver `docs/dia-instrumentos-monitoreo-2026.md`.
+
 ## 1. Contexto y objetivo
 
 El usuario compartió `hoja_de_respuestas_matematica_monitoreo_2026_6_basico.pdf`: la hoja OFICIAL
