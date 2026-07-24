@@ -120,8 +120,11 @@ function drawRut(ctx: Ctx2D, marks: SheetMarks, idCfg: L.IdBlockConfig = L.ID_BL
   }
 }
 
-/** Dibuja la franja del código de hoja (celdas llenas=1, contorno tenue=0). */
-function drawSheetCode(ctx: Ctx2D, data: SheetCodeData): void {
+/** Dibuja la franja del código de hoja (celdas llenas=1, contorno tenue=0).
+ *  Exportada (sin cambiar el cuerpo) para reusarla en paginas fuera de la
+ *  hoja principal (ej. el reverso de desarrollo en sheet_generator.ts) sin
+ *  duplicar la codificacion de bits. */
+export function drawSheetCode(ctx: Ctx2D, data: SheetCodeData): void {
   const bits = encodeSheetCode(data);
   const s = L.CODE_CELL, half = s / 2;
   for (let i = 0; i < bits.length; i++) {
