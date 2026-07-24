@@ -3,6 +3,7 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import { QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE, optionLabelsFor, extractAnswerLetters, parseOpenQuestions, serializeOpenQuestions, parseOptionOverrides, serializeOptionOverrides, parseMultiSelectQuestions, serializeMultiSelectQuestions } from "@/lib/quiz_constraints";
 import { resolveCountryProfile } from "@/lib/country_profiles";
+import { DIA_PRESETS, DIA_CUSTOM_ID, findDiaPreset } from "@/lib/dia_presets";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
 
 export type EvaluationType = "custom" | "paes" | "simce" | "dia";
@@ -70,6 +71,19 @@ export function AnswerKeyEditor({
         setQuestionCount(40);
         setOptionCount(4);
       }
+    } else if (evalType === "dia") {
+      // Preset real de un instrumento DIA documentado (docs/dia-instrumentos-
+      // monitoreo-2026.md): precarga preguntas/opciones/abiertas/overrides. Con
+      // DIA_CUSTOM_ID (otro nivel/asignatura no auditado) no se toca nada -- el
+      // profesor sigue tipeando todo a mano, igual que el comportamiento previo.
+      const preset = findDiaPreset(evalVariant);
+      if (preset) {
+        setQuestionCount(preset.numQuestions);
+        setOptionCount(preset.numOptions);
+        setOpenText(preset.openQuestions);
+        setOverridesText(preset.optionOverrides);
+        setMultiText(preset.multiSelectQuestions);
+      }
     }
   }, [evalType, evalVariant]);
 
@@ -81,7 +95,7 @@ export function AnswerKeyEditor({
     } else if (type === "simce") {
       setEvalVariant("simce_4b_mate");
     } else if (type === "dia") {
-      setEvalVariant("dia");
+      setEvalVariant(DIA_PRESETS[0].id);
     } else {
       setEvalVariant("");
     }
@@ -244,14 +258,33 @@ export function AnswerKeyEditor({
           </label>
         )}
 
-        {isChile && evalType === "dia" && <input type="hidden" name="evaluation_variant" value="dia" />}
+        {isChile && evalType === "dia" && (
+          <label className="text-sm font-semibold">
+            Instrumento DIA
+            <select
+              name="evaluation_variant"
+              value={evalVariant}
+              onChange={(e) => setEvalVariant(e.target.value)}
+              className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal"
+            >
+              {DIA_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
+              <option value={DIA_CUSTOM_ID}>Otro nivel/asignatura (config manual)</option>
+            </select>
+          </label>
+        )}
       </div>
 
       {evalType === "dia" && (
         <div className="rounded-md bg-blue-50/50 border border-blue-100 p-3 text-xs text-blue-800 space-y-1">
           <p className="font-semibold">Ensayo para DIA (Diagnóstico Integral de Aprendizajes):</p>
           <p>• Puntaje = porcentaje de acierto simple (no aplica formula PAES/SIMCE).</p>
-          <p>• Ajusta preguntas/opciones segun el instrumento real de DIA para ese nivel — DIA no tiene un numero fijo, varia por curso y asignatura.</p>
+          {findDiaPreset(evalVariant) ? (
+            <p>• Preguntas, opciones, desarrollo{multiSelectQuestions.length > 0 ? " y selección múltiple" : ""} ya vienen precargados para <strong>{findDiaPreset(evalVariant)?.label}</strong> (Monitoreo Intermedio 2026) — puedes ajustarlos igual si el instrumento real de tu curso difiere.</p>
+          ) : (
+            <p>• Ajusta preguntas/opciones segun el instrumento real de DIA para ese nivel — solo 5° y 6° básico tienen preset automático por ahora; otros niveles se configuran a mano.</p>
+          )}
           <p>• Si el instrumento tiene preguntas de <strong>respuesta construida (desarrollo)</strong>, indícalas abajo en &ldquo;Preguntas de desarrollo&rdquo;: la hoja las imprime como &ldquo;Resolver al reverso&rdquo; con su recuadro atrás, y no cuentan en el puntaje automático.</p>
           <p>• Al exportar, el <strong>curso</strong> de este ensayo debe coincidir con el curso real en la plataforma DIA (revisa el formato en &ldquo;Exportar Formato Pruebas DIA&rdquo;).</p>
         </div>

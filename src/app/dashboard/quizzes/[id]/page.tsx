@@ -98,6 +98,11 @@ export default async function QuizDetailPage({ params }: PageProps) {
       simce_2m_mate: "SIMCE II Medio - Matemática",
       simce_2m_lectura: "SIMCE II Medio - Lectura",
       dia: "DIA (Diagnóstico Integral de Aprendizajes)",
+      dia_custom: "DIA (Diagnóstico Integral de Aprendizajes) - otro nivel/asignatura",
+      dia_5b_lectura: "DIA 5° Básico - Lectura",
+      dia_5b_matematica: "DIA 5° Básico - Matemática",
+      dia_6b_lectura: "DIA 6° Básico - Lectura",
+      dia_6b_matematica: "DIA 6° Básico - Matemática",
     };
     return labels[quiz.evaluation_variant] || String(quiz.evaluation_variant).replace(/_/g, " ");
   };
