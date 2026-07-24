@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { findCorners, gradeBubbles, readRut, readSheetCode, warpSheet, cropNameBox, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
 import { isNativeApp, captureNativePhoto, toggleTorch } from "@/lib/native/capacitor";
 import { enqueueScan, getQueueSize } from "@/lib/offline_queue";
@@ -129,6 +130,7 @@ function voteField(values: string[]): string {
 }
 
 export default function ScanPage() {
+ const router = useRouter();
  const videoRef = useRef<HTMLVideoElement>(null);
  const overlayRef = useRef<HTMLCanvasElement>(null);
  const hiddenCanvas = useRef<HTMLCanvasElement>(null);
@@ -359,6 +361,20 @@ export default function ScanPage() {
     } else {
      setSyncState("saved");
      setSyncMessage(`Sincronizado en dashboard (${scoreLabel})${multipageNote}.${quotaNote}`);
+     // Fase 1 de correccion IA (docs/plan-correccion-ia-abiertas.md): si el
+     // ensayo tiene preguntas de desarrollo Y el alumno quedo identificado con
+     // certeza (no manual_review), la camara pasa sola a "escanear el reverso
+     // de este alumno" -- el paper_id ya es conocido, cero ambiguedad de
+     // identidad (ver decision de diseno "pairing por flujo de escaneo").
+     if (payload.paperId && scanCfg.openQuestions.length > 0) {
+      const params = new URLSearchParams({
+       paper: String(payload.paperId),
+       open: scanCfg.openQuestions.join(","),
+       nq: String(scanCfg.numQuestions),
+      });
+      router.push(`/scan/reverso?${params.toString()}`);
+      return;
+     }
     }
    } catch (err) {
     // Si el error es de red (no conectado), encolar para sincronizar después
