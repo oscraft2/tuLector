@@ -103,6 +103,13 @@ export default async function QuizDetailPage({ params }: PageProps) {
       dia_5b_matematica: "DIA 5° Básico - Matemática",
       dia_6b_lectura: "DIA 6° Básico - Lectura",
       dia_6b_matematica: "DIA 6° Básico - Matemática",
+      dia_7b_lectura: "DIA 7° Básico - Lectura",
+      dia_7b_matematica: "DIA 7° Básico - Matemática",
+      dia_8b_lectura: "DIA 8° Básico - Lectura",
+      dia_Imedio_lectura: "DIA I Medio - Lectura",
+      dia_Imedio_matematica: "DIA I Medio - Matemática",
+      dia_IImedio_lectura: "DIA II Medio - Lectura",
+      dia_IImedio_matematica: "DIA II Medio - Matemática",
     };
     return labels[quiz.evaluation_variant] || String(quiz.evaluation_variant).replace(/_/g, " ");
   };

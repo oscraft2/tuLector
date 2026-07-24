@@ -5,10 +5,11 @@
  * abiertas y overrides correctos, sin tipearlos a mano.
  *
  * Fuente: hojas de respuesta oficiales de la Agencia de Calidad de la
- * Educación, documentadas en docs/dia-instrumentos-monitoreo-2026.md. SOLO
- * 5° y 6° básico (los únicos niveles auditados hasta ahora) -- agregar un
- * preset nuevo cuando se documente otro nivel/asignatura, nunca adivinar la
- * estructura de un instrumento que no se haya visto.
+ * Educación, documentadas en docs/dia-instrumentos-monitoreo-2026.md. 5°
+ * básico a II medio, Lectura y Matemática (11 de 12 posibles -- falta
+ * Matemática 8° básico, sin PDF disponible) -- agregar un preset nuevo cuando
+ * se documente otro nivel/asignatura, nunca adivinar la estructura de un
+ * instrumento que no se haya visto.
  */
 
 export interface DiaPreset {
@@ -62,6 +63,72 @@ export const DIA_PRESETS: DiaPreset[] = [
     openQuestions: "7,15,18",
     optionOverrides: "20:3",
     multiSelectQuestions: "29",
+  },
+  {
+    id: "dia_7b_lectura",
+    label: "7° Básico - Lectura",
+    numQuestions: 30,
+    numOptions: 4,
+    openQuestions: "25",
+    optionOverrides: "",
+    multiSelectQuestions: "",
+  },
+  {
+    id: "dia_7b_matematica",
+    label: "7° Básico - Matemática",
+    numQuestions: 35,
+    numOptions: 4,
+    openQuestions: "6,12,15,29,33",
+    optionOverrides: "16:3",
+    multiSelectQuestions: "",
+  },
+  {
+    id: "dia_8b_lectura",
+    label: "8° Básico - Lectura",
+    numQuestions: 31,
+    numOptions: 4,
+    openQuestions: "20",
+    optionOverrides: "",
+    multiSelectQuestions: "",
+  },
+  // 8° básico Matemática: sin PDF en el escritorio -- NO agregar hasta tenerlo.
+  {
+    id: "dia_Imedio_lectura",
+    label: "I Medio - Lectura",
+    numQuestions: 35,
+    numOptions: 4,
+    openQuestions: "6",
+    optionOverrides: "",
+    multiSelectQuestions: "",
+  },
+  {
+    id: "dia_Imedio_matematica",
+    label: "I Medio - Matemática",
+    numQuestions: 38,
+    numOptions: 4,
+    openQuestions: "9,12,32",
+    optionOverrides: "",
+    multiSelectQuestions: "",
+  },
+  {
+    id: "dia_IImedio_lectura",
+    label: "II Medio - Lectura",
+    numQuestions: 38,
+    numOptions: 4,
+    openQuestions: "27",
+    optionOverrides: "",
+    multiSelectQuestions: "",
+  },
+  {
+    id: "dia_IImedio_matematica",
+    label: "II Medio - Matemática",
+    numQuestions: 39,
+    numOptions: 4,
+    // Mismo instrumento ya visto por dia-bot en producción (FINDINGS.md §11.4):
+    // 27=ABIERTA_PAR_ORDENADO, 29=ABIERTA_SIMPLE, 33=ABIERTA_ENTERO_DECIMAL.
+    openQuestions: "27,29,33",
+    optionOverrides: "",
+    multiSelectQuestions: "",
   },
 ];
 

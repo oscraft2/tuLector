@@ -12,9 +12,11 @@ alcance hasta que se audite su propia hoja real; no se debe inventar su estructu
 Rama de trabajo: `feature/dia-motor-beta` (no pusheada a `master` — ver "Estrategia de trabajo
 seguro"). Commits: `c59c46f` (motor), `525aa50` (dashboard/DB).
 
-Catálogo de las 4 evaluaciones reales (5°/6° básico, Lenguaje/Lectura y Matemática, Monitoreo
-Intermedio 2026) con la config exacta de `openQuestions`/`optionOverrides`/`multiSelectQuestions`
-de cada una: ver `docs/dia-instrumentos-monitoreo-2026.md`.
+Catálogo de las evaluaciones reales (5° básico a II medio, Lenguaje/Lectura y Matemática,
+Monitoreo Intermedio 2026 — 11 de 12 instrumentos posibles, falta Matemática 8° básico) con la
+config exacta de `openQuestions`/`optionOverrides`/`multiSelectQuestions` de cada una: ver
+`docs/dia-instrumentos-monitoreo-2026.md`. Los 11 ya son presets automáticos en
+`src/lib/dia_presets.ts`.
 
 ## 1. Contexto y objetivo
 

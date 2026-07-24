@@ -1,145 +1,108 @@
-# Catálogo de instrumentos DIA — Monitoreo Intermedio 2026 (5° y 6° básico)
+# Catálogo de instrumentos DIA — Monitoreo Intermedio 2026 (5° básico a II medio)
 
-Documentación de la estructura real de las 4 hojas de respuesta oficiales de la Agencia de Calidad
+Documentación de la estructura real de las hojas de respuesta oficiales de la Agencia de Calidad
 de la Educación (plataforma **DIA**) que el usuario tiene en su Escritorio, para poder configurar
 el ensayo equivalente en tuLector de cada una (ver `docs/plan-hoja-dia-motor.md` para la
 arquitectura: tuLector genera su propia hoja con esta misma estructura, no lee el PDF oficial
-crudo) y así producir el CSV que alimenta a **dia-bot** (ya funcional en producción para
-`SELECCION_UNICA_SIMPLE`, ver `dia-bot/docs/FINDINGS.md`).
+crudo) y así producir el CSV que alimenta a **dia-bot**.
 
 **Método:** lectura visual directa de cada PDF de hoja de respuestas (no inferido ni adivinado).
-Existen además `ficha_tecnica_lectura_monitoreo_2026_5_basico.pdf`, `ficha_tecnica_matematica_
-monitoreo_2026_5_basico.pdf`, `pauta sexto leng.pdf` y `pauta sexto mat.pdf` en el mismo
-Escritorio — **están protegidos con contraseña, no se pudieron abrir** en esta sesión. Si el
-usuario tiene la contraseña, compartirlos permitiría confirmar el código exacto de
-`tipoPregunta` que usa la API de DIA para cada ítem abierto (`ABIERTA_SIMPLE` /
-`ABIERTA_PAR_ORDENADO` / `ABIERTA_ENTERO_DECIMAL`, ya vistos en vivo por dia-bot en otro
-instrumento — ver sección 3) en vez de inferirlo por la forma del casillero impreso.
+Existen además fichas técnicas y pautas de corrección en el mismo Escritorio — **están protegidas
+con contraseña, no se pudieron abrir** en esta sesión.
 
-## 1. Lectura 5° básico
+**Cobertura: 11 de 12 instrumentos posibles** (5°/6°/7°/8° básico + I/II medio, × Lectura y
+Matemática). **Falta Matemática 8° básico** — no hay PDF en el escritorio para ese; no se debe
+inventar su estructura ni agregar un preset para él hasta tenerlo.
 
-Archivo: `hoja_de_respuestas_lectura_monitoreo_2026_5_basico.pdf`. **27 preguntas**, todas
-selección única A-B-C-D salvo:
-- **P5, P17**: pregunta de desarrollo (casillero "Pregunta de desarrollo", sin burbujas).
+## Tabla completa
 
-Sin opciones variables, sin selección múltiple. Es la más simple de las 4 — **se puede configurar
-hoy mismo con el mecanismo `openQuestions` ya existente en producción**, sin necesitar las
-extensiones del motor (`optionOverrides`/`multiSelectQuestions`) hechas para esta feature.
-
-**Config tuLector:**
-```
-numQuestions = 27
-numOptions = 4
-openQuestions = 5, 17
-```
-
-## 2. Lectura 6° básico
-
-Archivo local: `hoja leng.pdf` (el nombre del archivo no sigue la convención `hoja_de_respuestas_
-lectura_monitoreo_2026_6_basico.pdf` de los demás — el título impreso confirma que es "Lectura 6º
-básico"; vale la pena renombrarlo para que la carpeta quede consistente). **28 preguntas**, todas
-A-B-C-D salvo:
-- **P5, P23**: pregunta de desarrollo.
-
-Misma estructura que Lectura 5° (solo cambia el total y la posición de las 2 abiertas). Tampoco
-necesita las extensiones nuevas del motor.
-
-**Config tuLector:**
-```
-numQuestions = 28
-numOptions = 4
-openQuestions = 5, 23
-```
-
-## 3. Matemática 5° básico
-
-Archivo: `hoja_de_respuestas_matematica_monitoreo_2026_5_basico.pdf`. **35 preguntas**, la más
-heterogénea de las 4 — tiene ítems que NO son "Pregunta de desarrollo" genérica sino variantes de
-respuesta corta/numérica con su propio casillero impreso:
-
-| Pregunta | Tipo impreso | Clasificación tuLector |
-|---|---|---|
-| 1, 2, 4, 8–10, 13–20, 22–24, 26–28, 30, 32–35 | A-B-C-D (4 opciones) | selección única, estándar |
-| **6, 11, 25, 29** | A-B-C (3 opciones) | selección única, `optionOverrides` |
-| **3** | "Ingresa los números" (4 casilleros) | abierta — numérica corta |
-| **7** | 1 casillero ("—") | abierta — corta (numérica o texto, no se puede saber por la hoja) |
-| **12** | `( □ ; □ )` — par ordenado | abierta — **par ordenado** |
-| **21** | "Pregunta de desarrollo" | abierta — desarrollo extenso |
-| **31** | 1 casillero sin etiqueta | abierta — corta (mismo caso que P7) |
-
-Sin ítems de selección múltiple ("marca todas las correctas").
-
-Para tuLector, **las 5 abiertas (3, 7, 12, 21, 31) se tratan todas igual** (sin burbujas, van al
-reverso, fuera del puntaje automático) — el motor no distingue subtipos de abierta, solo
-"tiene burbujas" vs "no tiene". La distinción de subtipo (par ordenado / numérica / desarrollo) SÍ
-importa más adelante para **dia-bot Fase B** (ver sección 3): el payload que espera la API de DIA
-para una `ABIERTA_PAR_ORDENADO` no es el mismo que para una `ABIERTA_ENTERO_DECIMAL`.
-
-**Config tuLector:**
-```
-numQuestions = 35
-numOptions = 4
-openQuestions = 3, 7, 12, 21, 31
-optionOverrides = 6:3, 11:3, 25:3, 29:3
-```
-
-## 4. Matemática 6° básico
-
-Archivo: `hoja_de_respuestas_matematica_monitoreo_2026_6_basico.pdf`. **35 preguntas** (ya
-documentado en detalle en `docs/plan-hoja-dia-motor.md`, resumen aquí para el catálogo):
-
-| Pregunta | Tipo | Clasificación tuLector |
-|---|---|---|
-| resto | A-B-C-D | selección única, estándar |
-| **20** | A-B-C (3 opciones) | selección única, `optionOverrides` |
-| **7, 15, 18** | "Pregunta de desarrollo" | abierta |
-| **29** | "Marca todas las correctas" (6 casillas 1-6) | **selección múltiple** |
-
-Es la única de las 4 con un ítem de selección múltiple — motivó la extensión
-`multiSelectQuestions` del motor (`docs/plan-hoja-dia-motor.md`).
-
-**Config tuLector:**
-```
-numQuestions = 35
-numOptions = 4
-openQuestions = 7, 15, 18
-optionOverrides = 20:3
-multiSelectQuestions = 29
-```
-
-## 5. Comparación rápida
-
-| Evaluación | Preguntas | Abiertas | Opciones variables | Selección múltiple | Requiere las extensiones nuevas del motor |
+| Nivel | Asignatura | Preguntas | Abiertas (nº: tipo) | Opciones variables | Selección múltiple |
 |---|---|---|---|---|---|
-| Lectura 5° | 27 | 5, 17 | — | — | No |
-| Lectura 6° | 28 | 5, 23 | — | — | No |
-| Matemática 5° | 35 | 3, 7, 12, 21, 31 | 6, 11, 25, 29 → 3 opc. | — | Sí (`optionOverrides`) |
-| Matemática 6° | 35 | 7, 15, 18 | 20 → 3 opc. | 29 | Sí (`optionOverrides` + `multiSelectQuestions`) |
+| 5° básico | Lectura | 27 | 5, 17: desarrollo | — | — |
+| 5° básico | Matemática | 35 | 3: numérica (4 casilleros), 7: corta, 12: par ordenado, 21: desarrollo, 31: corta | 6:3, 11:3, 25:3, 29:3 | — |
+| 6° básico | Lectura | 28 | 5, 23: desarrollo | — | — |
+| 6° básico | Matemática | 35 | 7, 15, 18: desarrollo | 20:3 | **29** (6 casillas) |
+| 7° básico | Lectura | 30 | 25: desarrollo | — | — |
+| 7° básico | Matemática | 35 | 6, 12, 29, 33: corta; 15: desarrollo | 16:3 | — |
+| 8° básico | Lectura | 31 | 20: desarrollo | — | — |
+| 8° básico | Matemática | **sin PDF — no documentado** | | | |
+| I medio | Lectura | 35 | 6: desarrollo | — | — |
+| I medio | Matemática | 38 | 9: desarrollo, 12: par ordenado, 32: corta | — | — |
+| II medio | Lectura | 38 | 27: desarrollo | — | — |
+| II medio | Matemática | 39 | 27: par ordenado, 29: desarrollo, 33: corta | — | — |
 
-**Patrón que se repite:** Lenguaje/Lectura en ambos grados es 100% selección única + desarrollo
-(el caso ya soportado desde antes de esta feature). Matemática en ambos grados agrega ítems
-"raros" que no son selección única simple ni desarrollo genérico — variables por instrumento
-(par ordenado y numérica en 5°, selección múltiple en 6°), lo que sugiere que **instrumentos DIA
-futuros de Matemática probablemente sigan trayendo tipos de ítem nuevos** que no calcen en las
-categorías ya vistas. La arquitectura elegida (openQuestions genérico + optionOverrides +
-multiSelectQuestions, todos aditivos) ya cubre lo visto hasta ahora; un tipo de ítem realmente
-nuevo (ej. arrastrar-y-soltar, emparejar columnas) requeriría evaluarse caso a caso cuando
-aparezca — no hay forma de anticiparlo sin verlo.
+Archivos fuente: `hoja_de_respuestas_<lectura|matematica>_monitoreo_2026_<nivel>.pdf` en el
+escritorio (6° Lectura vive como `hoja leng.pdf`, nombre inconsistente con el resto — vale la pena
+renombrarlo).
 
-## 6. Pendiente para conectar con dia-bot (Fase B, no construida)
+## Patrones confirmados (con 11 instrumentos ya vistos)
 
-Ninguna de las 4 evaluaciones se puede cargar hoy a la plataforma DIA vía dia-bot más allá de sus
-preguntas `SELECCION_UNICA_SIMPLE` (Fase 1 ya en producción). Antes de extender
-`dia-bot/src/answer_payload.js` para los tipos nuevos que aparecen en este catálogo, falta el
-mismo paso de **captura pasiva en vivo** que el proyecto ya usó para `ABIERTA_*`/`FINALIZAR`
-(`dia-bot/docs/FINDINGS.md` §11-12) — confirmar contra la API real de DIA:
-- El código exacto de `tipoPregunta` para "marca todas las correctas" (hipótesis:
-  `SELECCION_MULTIPLE`, no confirmado).
-- Los códigos y payloads de los subtipos de abierta vistos en Matemática 5°: par ordenado
-  (`ABIERTA_PAR_ORDENADO`, ya confirmado que existe como código real en otro instrumento — FINDINGS
-  §11.4) y numérica corta (`ABIERTA_ENTERO_DECIMAL`, misma fuente) — falta verificar cuál de los 3
-  ítems "raros" de Matemática 5° (P3, P7, P31) corresponde a cuál código exacto.
+- **Lenguaje/Lectura, en TODOS los niveles, es 100% uniforme**: selección única A-B-C-D + entre 1
+  y 2 preguntas de desarrollo genérico. Nunca opciones variables, nunca selección múltiple, nunca
+  ítems numéricos/par-ordenado. Se configura con `openQuestions` solamente — el mecanismo que ya
+  existía en tuLector antes de esta feature, sin necesitar `optionOverrides`/`multiSelectQuestions`.
+- **Matemática es la asignatura heterogénea**: opciones variables (3 en vez de 4) en 5°/6°/7°;
+  selección múltiple SOLO vista en 6° básico (P29, "marca todas las correctas") — no se repite en
+  ningún otro nivel de los 11 auditados; ítems de respuesta corta/numérica/par-ordenado presentes
+  en 5°, 7°, I medio y II medio (ausentes en 6°).
+- Las abiertas "raras" de Matemática (no "Pregunta de desarrollo" genérica) tienen 3 formas
+  impresas distintas, cada una mapeable a un subtipo:
+  - `( □ ; □ )` → **par ordenado**
+  - Un casillero corto suelto (con o sin guion "—") → **numérica corta**
+  - "Ingresa los números" con varios casilleros → **numérica de varias cifras** (mismo tipo que la
+    anterior, solo más dígitos)
+  - "Pregunta de desarrollo" (con más espacio) → **desarrollo extenso**
 
-Sin este paso, cualquier extensión de `answer_payload.js` para estos tipos sería una suposición no
-verificada — mismo criterio que ya costó una sesión larga de debugging con `ABIERTA_*` la primera
-vez (FINDINGS.md §11.3-11.4).
+## Hallazgo clave: códigos reales de DIA para las abiertas de Matemática (confirmado, no hipótesis)
+
+**Matemática II medio (39 preguntas, abiertas en 27/29/33) es el mismo instrumento que dia-bot ya
+cargó en producción** — `dia-bot/docs/FINDINGS.md` §11.4 documenta, con captura pasiva real contra
+la API de DIA: *"de 39 preguntas, solo 3 son de desarrollo de verdad: posiciones 27, 29 y 33
+(ABIERTA_PAR_ORDENADO, ABIERTA_SIMPLE, ABIERTA_ENTERO_DECIMAL respectivamente)"*.
+
+Esto **confirma** (deja de ser hipótesis) el mapeo forma-impresa → código real de DIA:
+
+| Forma impresa | Código DIA confirmado |
+|---|---|
+| `( □ ; □ )` par ordenado | `ABIERTA_PAR_ORDENADO` |
+| "Pregunta de desarrollo" | `ABIERTA_SIMPLE` |
+| Casillero corto suelto | `ABIERTA_ENTERO_DECIMAL` |
+| "Ingresa los números" (varios casilleros) | consistente con `ABIERTA_ENTERO_DECIMAL` (no confirmado 1:1, mismo tipo de dato) |
+
+Relevante para: (a) el prompt de la IA de corrección (`docs/plan-correccion-ia-abiertas.md`) — debe
+saber qué tipo de dato extraer por cada abierta, no tratarlas todas igual; (b) la Fase B de dia-bot
+— ya no hace falta una sesión nueva de captura pasiva solo para conocer estos 3 códigos, solo para
+confirmar el payload exacto de `SELECCION_MULTIPLE` (que sigue sin verse en ningún instrumento
+excepto 6° básico Matemática).
+
+## Config lista para tuLector (referencia — ya cableada en `src/lib/dia_presets.ts`)
+
+Los 11 instrumentos ya están como presets automáticos en el formulario de creación de ensayo
+(`AnswerKeyEditor.tsx`, selector "Instrumento DIA") — no hace falta tipear esta config a mano, se
+deja acá solo como referencia/auditoría:
+
+```
+5° Básico - Lectura:      27 preguntas, openQuestions=5,17
+5° Básico - Matemática:   35 preguntas, openQuestions=3,7,12,21,31, optionOverrides=6:3,11:3,25:3,29:3
+6° Básico - Lectura:      28 preguntas, openQuestions=5,23
+6° Básico - Matemática:   35 preguntas, openQuestions=7,15,18, optionOverrides=20:3, multiSelectQuestions=29
+7° Básico - Lectura:      30 preguntas, openQuestions=25
+7° Básico - Matemática:   35 preguntas, openQuestions=6,12,15,29,33, optionOverrides=16:3
+8° Básico - Lectura:      31 preguntas, openQuestions=20
+8° Básico - Matemática:   SIN PRESET (falta el PDF)
+I Medio - Lectura:        35 preguntas, openQuestions=6
+I Medio - Matemática:     38 preguntas, openQuestions=9,12,32
+II Medio - Lectura:       38 preguntas, openQuestions=27
+II Medio - Matemática:    39 preguntas, openQuestions=27,29,33
+```
+
+## Pendiente para conectar con dia-bot (Fase B, no construida)
+
+Ver `docs/plan-correccion-ia-abiertas.md` y el plan unificado de la sesión (Fase 3-4) para el
+detalle completo. Resumen:
+- **Selección múltiple** (solo 6° básico Matemática): falta captura pasiva del código real de
+  `tipoPregunta` (hipótesis `SELECCION_MULTIPLE`) + extender `dia-bot/src/answer_payload.js`.
+- **Abiertas**: los 3 códigos ya están confirmados (tabla arriba); falta que la Fase de IA entregue
+  un puntaje/transcripción CONFIRMADO por el profesor, extender el CSV de tuLector con esas
+  columnas, y extender `answer_payload.js` con una rama `ABIERTA_*` que escriba
+  `respuestaEscalar`/`respuestaAbierta` según el subtipo.
