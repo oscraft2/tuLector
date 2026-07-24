@@ -27,6 +27,16 @@ export interface OMRConfig {
    *  hoja las imprime SIN burbujas, asi que el motor no las muestrea — salen
    *  como "-" con flag "abierta". Ausente = hoja 100% de alternativas. */
   openQuestions?: number[];
+  /** Anula el nº de opciones de preguntas puntuales (1-indexadas → nº de
+   *  opciones de ESA fila). Debe calzar con lo impreso por sheet_render.ts
+   *  (mismo campo en SheetConfig). Ausente = usa numOptions global. */
+  optionOverrides?: Record<number, number>;
+  /** Preguntas de seleccion MULTIPLE (1-indexadas): CUALQUIER subconjunto de
+   *  burbujas marcadas es una respuesta valida — el motor NO aplica la logica
+   *  de "un solo ganador"/ambiguedad que usa para seleccion unica. La
+   *  respuesta sale como las etiquetas marcadas unidas por "|" (ej. "1|3|5"),
+   *  vacio si no se marco ninguna. Debe calzar con SheetConfig. */
+  multiSelectQuestions?: number[];
 }
 
 /** Confianza de una lectura: ok | revisar (dudosa) | blanco (sin marca) | abierta (desarrollo, sin burbujas). */
@@ -770,10 +780,12 @@ function darkAtBubbles(gray: Float32Array, w: number, h: number, rowY: number[],
   for (let row = 0; row < rowY.length; row++) {
     const cy = rowY[row];
     for (let col = 0; col < ql.numColumns; col++) {
+      const q = col * ql.rowsPerCol + row;
       // Celda de pregunta abierta: no hay burbujas impresas ahi (solo el texto
       // de instruccion) — no debe sesgar la busqueda de offset.
-      if (openSet?.has(col * ql.rowsPerCol + row + 1)) continue;
-      for (let o = 0; o < ql.numOptions; o++) {
+      if (openSet?.has(q + 1)) continue;
+      const nOpt = ql.optionsFor(q);
+      for (let o = 0; o < nOpt; o++) {
         const cx = ql.optX(o, col) + dx;
         for (let yy = -6; yy <= 6; yy++) {
           const py = cy + yy;
@@ -791,7 +803,10 @@ function darkAtBubbles(gray: Float32Array, w: number, h: number, rowY: number[],
 
 /** Fallback software cuando la pista de temporizacion no se lee: offset (dx,dy). */
 function findGridOffset(gray: Float32Array, w: number, h: number, config: OMRConfig): { dx: number; dy: number } {
-  const ql = L.questionLayout({ numQuestions: config.numQuestions, numOptions: config.numOptions, numColumns: config.numColumns });
+  const ql = L.questionLayout({
+    numQuestions: config.numQuestions, numOptions: config.numOptions, numColumns: config.numColumns,
+    optionOverrides: config.optionOverrides, multiSelectQuestions: config.multiSelectQuestions,
+  });
   const openSet = new Set(config.openQuestions ?? []);
   let bestDx = 0, bestDy = 0, bestDark = -1;
   for (let dy = -CALIB.gridSearchDy; dy <= CALIB.gridSearchDy; dy += CALIB.gridSearchStep) {
@@ -832,7 +847,6 @@ function markConfidence(answer: string, scores: number[]): { flag: MarkFlag; rea
 export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_CONFIG, corners?: [number, number][]): GradeReport {
   const { width, height, data } = imageData;
   const { numQuestions, numOptions } = config;
-  const labels = config.optionLabels.split("");
 
   const gray = new Float32Array(width * height);
   for (let i = 0; i < gray.length; i++) gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
@@ -858,7 +872,10 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
   }
 
   // Layout parametrico (default 20/5/1col reproduce la hoja actual).
-  const ql = L.questionLayout({ numQuestions, numOptions, numColumns: config.numColumns });
+  const ql = L.questionLayout({
+    numQuestions, numOptions, numColumns: config.numColumns,
+    optionOverrides: config.optionOverrides, multiSelectQuestions: config.multiSelectQuestions,
+  });
 
   // Registro de filas: preferimos los Y fisicos de la pista de temporizacion;
   // si no se leen las marcas, caemos al offset software. La pista tiene una marca
@@ -891,12 +908,18 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
     }
     const cy = rowY[ql.rowOf(q)];
     const col = ql.colOf(q);
+    // nº de opciones y etiquetas son POR PREGUNTA (optionOverrides/
+    // multiSelectQuestions); sin ninguno de los dos, es exactamente numOptions
+    // global y las letras A.. de siempre (mismo comportamiento que hoy).
+    const nOpt = ql.optionsFor(q);
+    const rowLabels = ql.labelsFor(q);
+    const isMulti = ql.isMultiSelect(q);
     const clScores: number[] = [];
     const glares: boolean[] = [];
     const feats: number[][] = [];
     const avgs: number[] = [];
 
-    for (let o = 0; o < numOptions; o++) {
+    for (let o = 0; o < nOpt; o++) {
       const cx = ql.optX(o, col) + gridDx;
       const { score, glare, features } = classifyBubble(gray, width, cx, cy, ql.gradeR);
       clScores.push(score);
@@ -932,24 +955,44 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
     if (winnerGlare) glareWarnings++;
 
     let answer = "-";
-    const sorted = [...scores].sort((a, b) => b - a);
-    const dominates = sorted[0] - sorted[1] > CALIB.dominance;
-    if (winnerGlare) {
-      answer = "?"; // marca probable bajo reflejo
-    } else if (marked.length === 0 && maxS > CALIB.minPick && dominates) {
-      answer = labels[maxIdx];
-    } else if (marked.length > 0 && marked.length <= 3) {
-      // Soporte combinado: hasta 3 letras
-      answer = marked.map(i => labels[i]).join("");
+    let flag: MarkFlag;
+    let flagReason: string | undefined;
+
+    if (isMulti) {
+      // Seleccion MULTIPLE (ej. "marca todas las correctas"): cada burbuja se
+      // evalua de forma INDEPENDIENTE, sin la logica de "un solo ganador" ni
+      // el tope de 3 marcas de una pregunta normal — 0..nOpt marcas son todas
+      // respuestas validas. `marked` ya viene del mismo umbral relativo al
+      // papel local que usa el resto del motor.
+      answer = marked.length > 0 ? marked.map(i => rowLabels[i]).join("|") : "-";
+      if (marked.length === 0) {
+        flag = "blanco";
+      } else if (marked.some(i => scores[i] < CONF.weakTop)) {
+        flag = "revisar"; flagReason = "marca debil";
+      } else {
+        flag = "ok";
+      }
+    } else {
+      const sorted = [...scores].sort((a, b) => b - a);
+      const dominates = sorted[0] - sorted[1] > CALIB.dominance;
+      if (winnerGlare) {
+        answer = "?"; // marca probable bajo reflejo
+      } else if (marked.length === 0 && maxS > CALIB.minPick && dominates) {
+        answer = rowLabels[maxIdx];
+      } else if (marked.length > 0 && marked.length <= 3) {
+        // Soporte combinado: hasta 3 letras
+        answer = marked.map(i => rowLabels[i]).join("");
+      }
+      const conf = markConfidence(answer, scores);
+      flag = conf.flag; flagReason = conf.reason;
     }
 
-    const conf = markConfidence(answer, scores);
     results.push({
       question: q + 1, answer,
       scores: scores.map(s => Math.round(s * 1000) / 1000),
       correct: null,
       features: feats,
-      flag: conf.flag, flagReason: conf.reason,
+      flag, flagReason,
     });
     sameCount[answer] = (sameCount[answer] || 0) + 1;
   }

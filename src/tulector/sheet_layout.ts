@@ -21,6 +21,10 @@ export const SHEET_H = 1650;
 export const NUM_QUESTIONS = 20;
 export const NUM_OPTIONS = 5;
 export const OPTION_LABELS = "ABCDE";
+// Etiquetas para filas de seleccion multiple (preguntas "marca todas las
+// correctas"): digitos en vez de letras, para diferenciarlas visualmente de
+// una pregunta de seleccion unica normal.
+export const MULTI_SELECT_LABELS = "123456789";
 
 export const ID_ROWS = 3;
 export const ID_COLS = 10;
@@ -220,6 +224,19 @@ export interface SheetConfig {
    *  imprime la instruccion "resolver al reverso". Ausente/vacio = hoja
    *  100% de alternativas (render identico al actual). */
   openQuestions?: number[];
+  /** Anula el nº de opciones de preguntas puntuales (1-indexadas → nº de
+   *  opciones de ESA fila). Ausente/sin entrada = usa numOptions global. Sirve
+   *  para hojas que replican un instrumento de terceros con nº de opciones
+   *  variable por pregunta (ej. una pregunta con solo A-B-C). */
+  optionOverrides?: Record<number, number>;
+  /** Preguntas de seleccion MULTIPLE (1-indexadas, numeracion LOCAL de esta
+   *  hoja): la fila se imprime con etiquetas numericas (MULTI_SELECT_LABELS)
+   *  en vez de letras, y CUALQUIER subconjunto de burbujas marcadas es una
+   *  respuesta valida (a diferencia de seleccion unica, donde mas de una
+   *  marca es ambiguedad/error). Ausente/vacio = hoja 100% de seleccion
+   *  unica. Combinar con optionOverrides para fijar cuantas burbujas tiene
+   *  la fila (ej. 6 casillas "marca todas las correctas"). */
+  multiSelectQuestions?: number[];
 }
 
 export const DEFAULT_SHEET: SheetConfig = { numQuestions: NUM_QUESTIONS, numOptions: NUM_OPTIONS };
@@ -239,6 +256,12 @@ export interface QLayout {
   rowCY(row: number): number; // centro Y de la fila (0..rowsPerCol-1)
   optX(o: number, col?: number): number; // centro X de la opcion o en la columna col
   qnumX(col: number): number; // X del numero de pregunta de la columna col
+  /** nº de opciones de la pregunta q (0-indexada): optionOverrides o numOptions global. */
+  optionsFor(q: number): number;
+  /** Etiquetas de la pregunta q (0-indexada): digitos si es multiSelect, letras si no. */
+  labelsFor(q: number): string;
+  /** true si la pregunta q (0-indexada) es de seleccion multiple. */
+  isMultiSelect(q: number): boolean;
 }
 
 const Q_BOTTOM = 1540;          // borde inferior del area de preguntas
@@ -272,6 +295,8 @@ export function questionLayout(cfg: SheetConfig = DEFAULT_SHEET): QLayout {
   const gradeR = Math.max(6, Math.min(10, bubbleR - 5));
   const rowOff = Math.round(rowH * 0.23);
   const g = COL_GEOM[numColumns];
+  const multiSet = new Set(cfg.multiSelectQuestions ?? []);
+  const optionsFor = (q: number) => cfg.optionOverrides?.[q + 1] ?? cfg.numOptions;
   return {
     numQuestions: n,
     numOptions: cfg.numOptions,
@@ -283,6 +308,12 @@ export function questionLayout(cfg: SheetConfig = DEFAULT_SHEET): QLayout {
     rowCY: (row) => qTop + row * rowH + rowOff,
     optX: (o, col = 0) => g.optX0[col] + o * g.optStep,
     qnumX: (col) => g.qnum[col],
+    optionsFor,
+    labelsFor: (q) => {
+      const nOpt = optionsFor(q);
+      return multiSet.has(q + 1) ? MULTI_SELECT_LABELS.slice(0, nOpt) : OPTION_LABELS.slice(0, nOpt);
+    },
+    isMultiSelect: (q) => multiSet.has(q + 1),
   };
 }
 

@@ -27,6 +27,16 @@ function celdaRespuesta(a: string | undefined): string {
   return a;
 }
 
+/** Mapea la respuesta cruda de una pregunta de SELECCION MULTIPLE ("marca
+ * todas las correctas"): el motor ya entrega las etiquetas marcadas unidas
+ * por "|" (ej. "1|3|5", ver src/tulector/omr.ts gradeBubbles) o "-" si no se
+ * marco ninguna. A diferencia de celdaRespuesta, un largo>1 NO es ambiguedad
+ * aca -- es el formato normal de una respuesta con varias marcas. */
+function celdaMultiSelect(a: string | undefined): string {
+  if (!a || a === "-") return "";
+  return a;
+}
+
 function csvEscape(value: string): string {
   return /[",\n;]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
@@ -42,6 +52,7 @@ export function buildDiaCsv({
   subject,
   grade,
   openQuestions = [],
+  multiSelectQuestions = [],
 }: {
   papers: ExportPaper[];
   numQuestions: number;
@@ -51,6 +62,12 @@ export function buildDiaCsv({
    *  Responde"), aunque el motor haya leido ruido — la extension dia-bot ya
    *  salta las preguntas no-SELECCION_UNICA_SIMPLE al ingresar. */
   openQuestions?: number[];
+  /** Preguntas de seleccion MULTIPLE (1-indexadas, ej. "marca todas las
+   *  correctas"): su celda lleva las etiquetas marcadas tal cual las entrega
+   *  el motor ("1|3|5"), sin pasar por celdaRespuesta (que colapsaria un
+   *  largo>1 a "NULA" -- correcto para una doble marca en seleccion unica,
+   *  incorrecto aca donde varias marcas son la respuesta normal). */
+  multiSelectQuestions?: number[];
 }): string {
   const headers = [
     "rut",
@@ -61,6 +78,7 @@ export function buildDiaCsv({
   ];
 
   const openSet = new Set(openQuestions);
+  const multiSet = new Set(multiSelectQuestions);
   const rows = papers.map((paper) => {
     const porPregunta = new Map<number, string>();
     if (Array.isArray(paper.answers)) {
@@ -69,7 +87,12 @@ export function buildDiaCsv({
         if (Number.isInteger(q)) porPregunta.set(q, String(item?.a ?? ""));
       }
     }
-    const celdas = Array.from({ length: numQuestions }, (_, i) => (openSet.has(i + 1) ? "" : celdaRespuesta(porPregunta.get(i + 1))));
+    const celdas = Array.from({ length: numQuestions }, (_, i) => {
+      const qNum = i + 1;
+      if (openSet.has(qNum)) return "";
+      if (multiSet.has(qNum)) return celdaMultiSelect(porPregunta.get(qNum));
+      return celdaRespuesta(porPregunta.get(qNum));
+    });
     return [
       formatRutConGuion(paper.student_rut_norm),
       paper.student_name ?? "",

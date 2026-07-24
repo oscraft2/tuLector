@@ -28,6 +28,10 @@ export interface Ctx2D {
 export interface SheetMarks {
   /** Respuesta marcada por pregunta (indice 0..4) o -1 si en blanco. */
   answers?: number[];
+  /** Para preguntas de seleccion MULTIPLE (multiSelectQuestions): opciones
+   *  marcadas por pregunta (1-indexada → indices 0..nOpt-1 marcados).
+   *  Independiente de `answers`, que asume una sola opcion por pregunta. */
+  multiAnswers?: Record<number, number[]>;
   /** RUT a rellenar (cuerpo + DV, ej. "12345678-5" o "123456785"; DV puede ser K). */
   rut?: string;
   /** Si true, rellena las marcas (para el fixture de prueba). */
@@ -205,18 +209,25 @@ export function drawSheet(ctx: Ctx2D, marks: SheetMarks = {}, cfg: L.SheetConfig
       continue;
     }
 
-    // burbujas de opciones
-    for (let o = 0; o < ql.numOptions; o++) {
-      const marked = !!(marks.filled && marks.answers?.[q] === o);
+    // burbujas de opciones — nº de opciones y etiquetas son POR PREGUNTA
+    // (optionOverrides/multiSelectQuestions); sin ninguno de los dos, es
+    // exactamente ql.numOptions/ql.labels de siempre.
+    const nOpt = ql.optionsFor(q);
+    const rowLabels = ql.labelsFor(q);
+    const isMulti = ql.isMultiSelect(q);
+    for (let o = 0; o < nOpt; o++) {
+      const marked = isMulti
+        ? !!(marks.filled && marks.multiAnswers?.[q + 1]?.includes(o))
+        : !!(marks.filled && marks.answers?.[q] === o);
       const cx = ql.optX(o, col);
       bubble(ctx, cx, cy, ql.bubbleR, marked);
       if (!marked) {
-        // letra en gris claro dentro de la burbuja
+        // letra/digito en gris claro dentro de la burbuja
         ctx.fillStyle = GRAY;
         ctx.font = `${lblFont}px sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(ql.labels[o], cx, cy);
+        ctx.fillText(rowLabels[o], cx, cy);
         ctx.textAlign = "left";
         ctx.textBaseline = "alphabetic";
       }

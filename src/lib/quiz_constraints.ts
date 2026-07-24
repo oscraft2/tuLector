@@ -90,6 +90,47 @@ export function serializeOpenQuestions(open: number[]): string | null {
 }
 
 /**
+ * Preguntas de seleccion MULTIPLE ("marca todas las correctas": varias
+ * burbujas marcadas son una respuesta valida, a diferencia de seleccion
+ * unica). Mismo formato/semantica que openQuestions (lista de nº de pregunta
+ * 1-indexados, unica, ordenada, CSV "20,29") -- se reusan las MISMAS
+ * funciones a proposito, no hace falta duplicar el parser.
+ */
+export const parseMultiSelectQuestions = parseOpenQuestions;
+export const serializeMultiSelectQuestions = serializeOpenQuestions;
+
+/**
+ * Parsea overrides de nº de opciones por pregunta puntual ("20:3,29:6" o como
+ * lo tipee el profesor) a un mapa {pregunta: nOpciones}, 1-indexado. Sirve
+ * para replicar instrumentos de terceros con nº de opciones variable por
+ * pregunta (ej. una hoja DIA con una pregunta A-B-C en vez de A-B-C-D, u otra
+ * de seleccion multiple con 6 casillas). Tolerante a separadores/basura;
+ * descarta pares fuera de rango en vez de fallar.
+ */
+export function parseOptionOverrides(
+  value: FormDataEntryValue | string | null | undefined,
+  numQuestions: number,
+): Record<number, number> {
+  const out: Record<number, number> = {};
+  const pairs = String(value ?? "").split(/[,;\s]+/).filter(Boolean);
+  for (const pair of pairs) {
+    const m = pair.match(/^(\d+)\s*[:=]\s*(\d+)$/);
+    if (!m) continue;
+    const q = Number(m[1]), n = Number(m[2]);
+    // 2..9 opciones: el motor soporta hasta 9 vía MULTI_SELECT_LABELS/OPTION_LABELS.
+    if (q >= 1 && q <= numQuestions && n >= 2 && n <= 9) out[q] = n;
+  }
+  return out;
+}
+
+/** Serializa a la forma canonica de BD ("20:3,29:6") o null si no hay overrides. */
+export function serializeOptionOverrides(overrides: Record<number, number>): string | null {
+  const entries = Object.entries(overrides).map(([q, n]) => [Number(q), n] as const);
+  if (entries.length === 0) return null;
+  return entries.sort((a, b) => a[0] - b[0]).map(([q, n]) => `${q}:${n}`).join(",");
+}
+
+/**
  * Fuerza "-" en los slots de preguntas abiertas de una clave ya normalizada
  * por slots (normalizeAnswerKeySlots): una abierta nunca tiene letra correcta.
  */

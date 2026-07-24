@@ -587,6 +587,79 @@ async function main() {
     fail(`Barrido de configs: ${sweepFail.length}/${sweepTotal} no leyeron 100% (ver arriba)`);
   }
   console.log(`Config sweep guard passed: ${sweepOk}/${sweepTotal} configuraciones (preg×opc×col) leídas 100%`);
+
+  // ─── Guardia de OVERRIDE DE OPCIONES POR PREGUNTA (pensado para replicar
+  // instrumentos de terceros con nº de opciones variable, ej. hoja DIA donde
+  // una pregunta trae solo A-B-C en vez de A-B-C-D). Config global 4 opciones,
+  // q20 con optionOverrides={20:3} → solo A-C. Sin overrides, comportamiento
+  // identico a hoy (guardias de arriba lo prueban). ───
+  const ansOv = Array.from({ length: 20 }, (_, i) => (i + 1 === 20 ? i % 3 : i % 4));
+  const cfgOv = { numQuestions: 20, numOptions: 4, optionOverrides: { 20: 3 } };
+  const sheetOv = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetOv.getContext("2d") as unknown as Ctx2D, { answers: ansOv, rut: "12345678-5", filled: true }, cfgOv);
+  const imgOv = await loadImage(sheetOv.toDataURL("image/png"));
+  const capOv = createCanvas(imgOv.width, imgOv.height);
+  capOv.getContext("2d").drawImage(imgOv, 0, 0);
+  const frameOv = capOv.getContext("2d").getImageData(0, 0, capOv.width, capOv.height) as unknown as globalThis.ImageData;
+  const cornersOv = findCorners(frameOv) ?? fail("option-override: esquinas no detectadas");
+  const warpedOv = warpImageData(frameOv, cornersOv);
+  const configOv = { ...DEFAULT_CONFIG, numQuestions: 20, numOptions: 4, optionLabels: "ABCD", optionOverrides: { 20: 3 } };
+  const reportOv = gradeBubbles(warpedOv, configOv, cornersOv);
+  if (!reportOv.valid) fail(`option-override invalido: ${reportOv.reason}`);
+  const expOv = ansOv.map((a) => "ABCD"[a]);
+  const missOv = reportOv.results.filter((r, i) => r.answer !== expOv[i]).length;
+  if (missOv > 0) {
+    const first = reportOv.results.findIndex((r, i) => r.answer !== expOv[i]);
+    fail(`option-override: ${missOv}/20 erradas (ej q${first + 1}: leyo '${reportOv.results[first].answer}' esperaba '${expOv[first]}')`);
+  }
+  console.log(`Per-question option override guard passed: 20/20 OK, q20 con solo 3 opciones (A-C)`);
+
+  // ─── Guardia de FILA DE SELECCION MULTIPLE (pensado para "marca todas las
+  // correctas" tipo DIA): q20 con 6 casillas numericas (optionOverrides={20:6}
+  // + multiSelectQuestions=[20]). A diferencia de seleccion unica, VARIAS
+  // marcas son una respuesta valida — se lee como "1|3|5" (labels unidas). ───
+  const multiQ = 20;
+  const multiMarks = [0, 2, 4]; // -> etiquetas "1", "3", "5"
+  const ansMs = Array.from({ length: 20 }, (_, i) => (i + 1 === multiQ ? -1 : i % 4));
+  const cfgMs = { numQuestions: 20, numOptions: 4, optionOverrides: { [multiQ]: 6 }, multiSelectQuestions: [multiQ] };
+  const sheetMs = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetMs.getContext("2d") as unknown as Ctx2D, { answers: ansMs, multiAnswers: { [multiQ]: multiMarks }, rut: "12345678-5", filled: true }, cfgMs);
+  const imgMs = await loadImage(sheetMs.toDataURL("image/png"));
+  const capMs = createCanvas(imgMs.width, imgMs.height);
+  capMs.getContext("2d").drawImage(imgMs, 0, 0);
+  const frameMs = capMs.getContext("2d").getImageData(0, 0, capMs.width, capMs.height) as unknown as globalThis.ImageData;
+  const cornersMs = findCorners(frameMs) ?? fail("multi-select: esquinas no detectadas");
+  const warpedMs = warpImageData(frameMs, cornersMs);
+  const configMs = { ...DEFAULT_CONFIG, numQuestions: 20, numOptions: 4, optionLabels: "ABCD", optionOverrides: { [multiQ]: 6 }, multiSelectQuestions: [multiQ] };
+  const reportMs = gradeBubbles(warpedMs, configMs, cornersMs);
+  if (!reportMs.valid) fail(`multi-select invalido: ${reportMs.reason}`);
+  const expMs = ansMs.map((a, i) => (i + 1 === multiQ ? "1|3|5" : "ABCD"[a]));
+  const missMs = reportMs.results.filter((r, i) => r.answer !== expMs[i]).length;
+  if (missMs > 0) {
+    const first = reportMs.results.findIndex((r, i) => r.answer !== expMs[i]);
+    fail(`multi-select: ${missMs}/20 erradas (ej q${first + 1}: leyo '${reportMs.results[first].answer}' esperaba '${expMs[first]}')`);
+  }
+  const msRow = reportMs.results[multiQ - 1];
+  if (msRow.flag !== "ok") fail(`multi-select: flag '${msRow.flag}' inesperado para marcas limpias (esperaba 'ok')`);
+
+  // Fila multiSelect SIN marcas: debe leer "-" con flag "blanco" (no
+  // ambiguedad, a diferencia de una pregunta de seleccion unica en blanco).
+  const sheetMs0 = createCanvas(SHEET_W, SHEET_H);
+  drawSheet(sheetMs0.getContext("2d") as unknown as Ctx2D, { answers: ansMs, multiAnswers: { [multiQ]: [] }, rut: "12345678-5", filled: true }, cfgMs);
+  const imgMs0 = await loadImage(sheetMs0.toDataURL("image/png"));
+  const capMs0 = createCanvas(imgMs0.width, imgMs0.height);
+  capMs0.getContext("2d").drawImage(imgMs0, 0, 0);
+  const frameMs0 = capMs0.getContext("2d").getImageData(0, 0, capMs0.width, capMs0.height) as unknown as globalThis.ImageData;
+  const cornersMs0 = findCorners(frameMs0) ?? fail("multi-select-blanco: esquinas no detectadas");
+  const warpedMs0 = warpImageData(frameMs0, cornersMs0);
+  const reportMs0 = gradeBubbles(warpedMs0, configMs, cornersMs0);
+  if (!reportMs0.valid) fail(`multi-select-blanco invalido: ${reportMs0.reason}`);
+  const msRow0 = reportMs0.results[multiQ - 1];
+  if (msRow0.answer !== "-" || msRow0.flag !== "blanco") {
+    fail(`multi-select-blanco: q${multiQ} leyo '${msRow0.answer}' flag '${msRow0.flag}' (esperaba '-' / 'blanco')`);
+  }
+
+  console.log(`Multi-select row guard passed: 19/19 cerradas OK, q${multiQ} leyo "${msRow.answer}" (marcas) y "-" (blanco)`);
 }
 
 main().catch((error) => {
