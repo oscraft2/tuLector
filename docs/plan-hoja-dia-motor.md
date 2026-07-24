@@ -1,8 +1,13 @@
 # Hoja propia de tuLector para instrumentos DIA (selección múltiple + opciones variables)
 
-**Estado (2026-07-23/24): motor + dashboard/DB implementados y probados. Falta aplicar la
-migración en producción, cablear la pauta de corrección IA (Fase 4, no construida) y el lado
-dia-bot (Fase B, no construida). Ver "Pendientes" al final.**
+**Estado (2026-07-24): motor + dashboard/DB + presets automáticos de 5°/6° básico implementados
+y probados. Falta aplicar la migración en producción, cablear la pauta de corrección IA (Fase 4,
+no construida) y el lado dia-bot (Fase B, no construida). Ver "Pendientes" al final.**
+
+**Alcance confirmado con el usuario (2026-07-24): esta actualización cubre ÚNICAMENTE 5° y 6°
+básico** (los únicos niveles con hoja de respuestas real auditada — ver
+`docs/dia-instrumentos-monitoreo-2026.md`). Cualquier otro nivel (7°, 8°, medios) queda fuera de
+alcance hasta que se audite su propia hoja real; no se debe inventar su estructura.
 
 Rama de trabajo: `feature/dia-motor-beta` (no pusheada a `master` — ver "Estrategia de trabajo
 seguro"). Commits: `c59c46f` (motor), `525aa50` (dashboard/DB).
@@ -108,6 +113,24 @@ desincronización, contrario al principio ya acordado de que "la base [del motor
 desechable". El aislamiento real viene de (a) la rama de git y (b) que ambos campos nuevos son
 opcionales y gateados — ningún ensayo existente cambia de comportamiento aunque el código llegue a
 `master`.
+
+### 2.4 Presets automáticos en tulector.app (commit `a36d47b`)
+
+Pedido explícito del usuario: que crear un ensayo DIA de 5°/6° básico sea automático, sin tipear
+nº de preguntas/opciones/abiertas/overrides a mano cada vez. Implementado:
+
+- `src/lib/dia_presets.ts`: única fuente de verdad de las 4 config (misma info que
+  `docs/dia-instrumentos-monitoreo-2026.md`, no duplicada a ojo — si el catálogo cambia, hay que
+  actualizar ambos a mano por ahora, no hay generación automática desde el doc).
+- `AnswerKeyEditor.tsx`: nuevo selector "Instrumento DIA" (mismo patrón que las variantes
+  PAES/SIMCE ya existentes) con las 4 opciones + "Otro nivel/asignatura" (preserva el
+  comportamiento 100% manual de antes, para no bloquear ensayos DIA de otros niveles). Al elegir
+  un instrumento, precarga preguntas/opciones/desarrollo/overrides — el profesor puede seguir
+  ajustando cualquier campo después.
+- `evaluation_variant` ahora guarda el id real del preset (`dia_5b_lectura`, `dia_5b_matematica`,
+  `dia_6b_lectura`, `dia_6b_matematica`) en vez del genérico `"dia"` de antes; `getVariantLabel()`
+  en el detalle del ensayo (`dashboard/quizzes/[id]/page.tsx`) muestra el nombre del instrumento.
+  Ensayos viejos con `evaluation_variant = "dia"` (genérico) siguen funcionando igual, sin migrar.
 
 ## 3. Qué falta (explícitamente, no implementado)
 
