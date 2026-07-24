@@ -1,7 +1,12 @@
 "use client";
 
 import { useMemo, useState, useEffect, useRef } from "react";
-import { QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE, optionLabelsFor, extractAnswerLetters, parseOpenQuestions, serializeOpenQuestions, parseOptionOverrides, serializeOptionOverrides, parseMultiSelectQuestions, serializeMultiSelectQuestions } from "@/lib/quiz_constraints";
+import {
+  QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE, optionLabelsFor, extractAnswerLetters,
+  parseOpenQuestions, serializeOpenQuestions, parseOptionOverrides, serializeOptionOverrides,
+  parseMultiSelectQuestions, serializeMultiSelectQuestions, parseOpenQuestionRubrics, serializeOpenQuestionRubrics,
+  type OpenQuestionRubric, type OpenQuestionSubtype,
+} from "@/lib/quiz_constraints";
 import { resolveCountryProfile } from "@/lib/country_profiles";
 import { DIA_PRESETS, DIA_CUSTOM_ID, findDiaPreset } from "@/lib/dia_presets";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
@@ -16,6 +21,7 @@ export function AnswerKeyEditor({
   defaultOpenQuestions = "",
   defaultOptionOverrides = "",
   defaultMultiSelectQuestions = "",
+  defaultOpenQuestionRubrics = "",
   countryCode = "CL",
 }: {
   name?: string;
@@ -28,6 +34,8 @@ export function AnswerKeyEditor({
   defaultOptionOverrides?: string;
   /** CSV de preguntas de seleccion multiple ("29") tal como viene de BD. */
   defaultMultiSelectQuestions?: string;
+  /** JSON-string de rubricas por pregunta abierta tal como viene de BD. */
+  defaultOpenQuestionRubrics?: string;
   countryCode?: string;
 }) {
   const [evalType, setEvalType] = useState<EvaluationType>("custom");
@@ -45,6 +53,7 @@ export function AnswerKeyEditor({
   const [openText, setOpenText] = useState(defaultOpenQuestions);
   const [overridesText, setOverridesText] = useState(defaultOptionOverrides);
   const [multiText, setMultiText] = useState(defaultMultiSelectQuestions);
+  const [rubrics, setRubrics] = useState<Record<number, OpenQuestionRubric>>(() => parseOpenQuestionRubrics(defaultOpenQuestionRubrics));
   const [allowPartial, setAllowPartial] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -83,6 +92,22 @@ export function AnswerKeyEditor({
         setOpenText(preset.openQuestions);
         setOverridesText(preset.optionOverrides);
         setMultiText(preset.multiSelectQuestions);
+        // Precarga el SUBTIPO (simple/par_ordenado/entero_decimal) por
+        // pregunta abierta -- el texto de la rubrica no se conoce (no viene
+        // en la hoja de respuestas), asi que se preserva lo que el profesor
+        // ya haya tipeado para esa misma pregunta, si algo.
+        const openQs = parseOpenQuestions(preset.openQuestions, preset.numQuestions);
+        setRubrics((prev) => {
+          const next: Record<number, OpenQuestionRubric> = {};
+          for (const q of openQs) {
+            next[q] = {
+              rubric: prev[q]?.rubric ?? "",
+              max_points: prev[q]?.max_points ?? 2,
+              subtipo: preset.openQuestionSubtypes?.[q] ?? "simple",
+            };
+          }
+          return next;
+        });
       }
     }
   }, [evalType, evalVariant]);
@@ -373,6 +398,58 @@ export function AnswerKeyEditor({
         </span>
       </label>
       <input type="hidden" name="open_questions" value={serializeOpenQuestions(openQuestions) ?? ""} />
+
+      {openQuestions.length > 0 && (
+        <details className="rounded-md border border-[#eef0f3]">
+          <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-[#4b5563]">
+            Rúbrica por pregunta de desarrollo (opcional, para la corrección con IA)
+          </summary>
+          <div className="space-y-3 border-t border-[#eef0f3] p-3">
+            <p className="text-[11px] text-[#6b7280]">
+              Sin rúbrica, la pregunta se puede escanear igual pero la IA solo tendrá el enunciado
+              (si lo cargas) para sugerir un puntaje — con rúbrica el criterio es mucho más preciso.
+              Puedes completar esto después desde &ldquo;Editar&rdquo;.
+            </p>
+            {openQuestions.map((q) => {
+              const r = rubrics[q] ?? { rubric: "", max_points: 2, subtipo: "simple" as OpenQuestionSubtype };
+              const update = (patch: Partial<OpenQuestionRubric>) =>
+                setRubrics((prev) => ({ ...prev, [q]: { ...r, ...patch } }));
+              return (
+                <div key={q} className="rounded-md border border-[#eef0f3] p-2.5 space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-[#374151]">
+                    <span>Pregunta {q}</span>
+                    <select
+                      value={r.subtipo}
+                      onChange={(e) => update({ subtipo: e.target.value as OpenQuestionSubtype })}
+                      className="rounded border border-[#cfd6df] bg-white px-1.5 py-0.5 font-normal"
+                    >
+                      <option value="simple">Desarrollo / texto</option>
+                      <option value="par_ordenado">Par ordenado (x; y)</option>
+                      <option value="entero_decimal">Número (entero o decimal)</option>
+                    </select>
+                    <label className="ml-auto flex items-center gap-1 font-normal">
+                      Puntaje máx.
+                      <input
+                        type="number" min={0} step={0.5} value={r.max_points}
+                        onChange={(e) => update({ max_points: Math.max(0, Number(e.target.value) || 0) })}
+                        className="w-14 rounded border border-[#cfd6df] px-1.5 py-0.5"
+                      />
+                    </label>
+                  </div>
+                  <textarea
+                    value={r.rubric}
+                    onChange={(e) => update({ rubric: e.target.value })}
+                    placeholder='Ej: "2 pts: plantea y resuelve correctamente. 1 pt: plantea pero se equivoca en el cálculo. 0 pts: en blanco o sin relación."'
+                    rows={2}
+                    className="w-full rounded-md border border-[#cfd6df] px-2 py-1.5 text-xs font-normal"
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
+      <input type="hidden" name="open_question_rubrics" value={serializeOpenQuestionRubrics(rubrics) ?? ""} />
 
       <details className="rounded-md border border-[#eef0f3]">
         <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-[#4b5563]">

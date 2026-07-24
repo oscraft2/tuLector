@@ -12,6 +12,8 @@
  * instrumento que no se haya visto.
  */
 
+import type { OpenQuestionSubtype } from "@/lib/quiz_constraints";
+
 export interface DiaPreset {
   /** Usado como evaluation_variant en BD y como value del <select>. */
   id: string;
@@ -25,6 +27,10 @@ export interface DiaPreset {
   optionOverrides: string;
   /** CSV tal como espera el campo "Preguntas de selección múltiple". */
   multiSelectQuestions: string;
+  /** Subtipo por pregunta abierta (docs/dia-instrumentos-monitoreo-2026.md) --
+   *  decide qué le pide el prompt de la IA que transcriba. Ausente = todas
+   *  "simple" (el caso de Lectura/Lenguaje, siempre desarrollo genérico). */
+  openQuestionSubtypes?: Record<number, OpenQuestionSubtype>;
 }
 
 export const DIA_PRESETS: DiaPreset[] = [
@@ -45,6 +51,7 @@ export const DIA_PRESETS: DiaPreset[] = [
     openQuestions: "3,7,12,21,31",
     optionOverrides: "6:3,11:3,25:3,29:3",
     multiSelectQuestions: "",
+    openQuestionSubtypes: { 3: "entero_decimal", 7: "entero_decimal", 12: "par_ordenado", 21: "simple", 31: "entero_decimal" },
   },
   {
     id: "dia_6b_lectura",
@@ -81,6 +88,7 @@ export const DIA_PRESETS: DiaPreset[] = [
     openQuestions: "6,12,15,29,33",
     optionOverrides: "16:3",
     multiSelectQuestions: "",
+    openQuestionSubtypes: { 6: "entero_decimal", 12: "entero_decimal", 15: "simple", 29: "entero_decimal", 33: "entero_decimal" },
   },
   {
     id: "dia_8b_lectura",
@@ -109,6 +117,7 @@ export const DIA_PRESETS: DiaPreset[] = [
     openQuestions: "9,12,32",
     optionOverrides: "",
     multiSelectQuestions: "",
+    openQuestionSubtypes: { 9: "simple", 12: "par_ordenado", 32: "entero_decimal" },
   },
   {
     id: "dia_IImedio_lectura",
@@ -129,6 +138,7 @@ export const DIA_PRESETS: DiaPreset[] = [
     openQuestions: "27,29,33",
     optionOverrides: "",
     multiSelectQuestions: "",
+    openQuestionSubtypes: { 27: "par_ordenado", 29: "simple", 33: "entero_decimal" },
   },
 ];
 

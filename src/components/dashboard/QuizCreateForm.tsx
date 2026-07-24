@@ -45,6 +45,7 @@ type ExistingQuiz = {
   open_questions?: string | null;
   option_overrides?: string | null;
   multi_select_questions?: string | null;
+  open_question_rubrics?: string | null;
   exigencia: number | null;
 };
 
@@ -143,6 +144,7 @@ export function QuizCreateForm({
             defaultOpenQuestions={quiz?.open_questions ?? ""}
             defaultOptionOverrides={quiz?.option_overrides ?? ""}
             defaultMultiSelectQuestions={quiz?.multi_select_questions ?? ""}
+            defaultOpenQuestionRubrics={quiz?.open_question_rubrics ?? ""}
             countryCode={countryCode}
           />
 

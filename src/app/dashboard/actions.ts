@@ -24,6 +24,8 @@ import {
   serializeOptionOverrides,
   parseMultiSelectQuestions,
   serializeMultiSelectQuestions,
+  parseOpenQuestionRubrics,
+  serializeOpenQuestionRubrics,
 } from "@/lib/quiz_constraints";
 import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
 import { type StudentCsvRow, guessColumnMapping, rowsFromMapping } from "@/lib/student_import";
@@ -83,6 +85,7 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     if (multiSelectQuestions.some((q) => openQuestions.includes(q))) {
       throw new Error("Una pregunta no puede ser de desarrollo y de seleccion multiple a la vez.");
     }
+    const openQuestionRubrics = parseOpenQuestionRubrics(String(formData.get("open_question_rubrics") ?? ""));
     // La clave de una fila de seleccion multiple no representa "que subconjunto
     // es correcto" (es una letra), asi que se trata igual que las abiertas para
     // el proposito de la clave/puntaje: fuera del calculo automatico (ver
@@ -126,6 +129,7 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
       open_questions: serializeOpenQuestions(openQuestions),
       option_overrides: serializeOptionOverrides(optionOverrides),
       multi_select_questions: serializeMultiSelectQuestions(multiSelectQuestions),
+      open_question_rubrics: serializeOpenQuestionRubrics(openQuestionRubrics),
       subject: String(formData.get("subject") ?? "") || null,
       grade,
       course_id: courseId,
@@ -148,6 +152,13 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
       if (error && isMissingColumnError(error, "multi_select_questions")) {
         if (multiSelectQuestions.length > 0) throw new Error("Preguntas de seleccion multiple requieren actualizar la base de datos (migracion option_overrides).");
         insertPayload = withoutMultiSelectQuestions(insertPayload);
+        error = (await supabase.from("quizzes").insert(insertPayload)).error;
+      }
+      if (error && isMissingColumnError(error, "open_question_rubrics")) {
+        // Degradacion SIEMPRE silenciosa (a diferencia de open_questions/
+        // option_overrides): perder la rubrica no rompe la hoja ni el
+        // puntaje, solo el profesor tiene que volver a tipearla despues.
+        insertPayload = withoutOpenQuestionRubrics(insertPayload);
         error = (await supabase.from("quizzes").insert(insertPayload)).error;
       }
       if (error && isMissingColumnError(error, "open_questions")) {
@@ -212,6 +223,7 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
     if (multiSelectQuestions.some((q) => openQuestions.includes(q))) {
       throw new Error("Una pregunta no puede ser de desarrollo y de seleccion multiple a la vez.");
     }
+    const openQuestionRubrics = parseOpenQuestionRubrics(String(formData.get("open_question_rubrics") ?? ""));
     const unscoredQuestions = [...new Set([...openQuestions, ...multiSelectQuestions])].sort((a, b) => a - b);
     const rawAnswerKey = formData.get("answer_key_clean") ?? formData.get("answer_key");
     const answerKey = allowPartial || unscoredQuestions.length > 0
@@ -239,6 +251,7 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
       open_questions: serializeOpenQuestions(openQuestions),
       option_overrides: serializeOptionOverrides(optionOverrides),
       multi_select_questions: serializeMultiSelectQuestions(multiSelectQuestions),
+      open_question_rubrics: serializeOpenQuestionRubrics(openQuestionRubrics),
       subject: String(formData.get("subject") ?? "") || null,
       grade,
       course_id: courseId,
@@ -267,6 +280,10 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
     if (updateError && isMissingColumnError(updateError, "multi_select_questions")) {
       if (multiSelectQuestions.length > 0) throw new Error("Preguntas de seleccion multiple requieren actualizar la base de datos (migracion option_overrides).");
       effectivePayload = withoutMultiSelectQuestions(effectivePayload);
+      updateError = (await supabase.from("quizzes").update(effectivePayload).eq("id", id)).error;
+    }
+    if (updateError && isMissingColumnError(updateError, "open_question_rubrics")) {
+      effectivePayload = withoutOpenQuestionRubrics(effectivePayload);
       updateError = (await supabase.from("quizzes").update(effectivePayload).eq("id", id)).error;
     }
     if (updateError && isMissingColumnError(updateError, "open_questions")) {
@@ -414,6 +431,12 @@ function withoutOptionOverrides<T extends { option_overrides?: unknown }>(payloa
 function withoutMultiSelectQuestions<T extends { multi_select_questions?: unknown }>(payload: T) {
   const { multi_select_questions: _multiSelectQuestions, ...rest } = payload;
   void _multiSelectQuestions;
+  return rest;
+}
+
+function withoutOpenQuestionRubrics<T extends { open_question_rubrics?: unknown }>(payload: T) {
+  const { open_question_rubrics: _openQuestionRubrics, ...rest } = payload;
+  void _openQuestionRubrics;
   return rest;
 }
 

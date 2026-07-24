@@ -44,6 +44,7 @@ export default async function QuizEditPage({ params }: PageProps) {
             open_questions: quiz.open_questions ?? null,
             option_overrides: quiz.option_overrides ?? null,
             multi_select_questions: quiz.multi_select_questions ?? null,
+            open_question_rubrics: quiz.open_question_rubrics ?? null,
             exigencia: quiz.exigencia ?? null,
           }}
           courses={courses ?? []}
