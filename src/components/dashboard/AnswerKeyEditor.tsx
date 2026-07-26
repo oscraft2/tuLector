@@ -10,6 +10,7 @@ import {
 import { resolveCountryProfile } from "@/lib/country_profiles";
 import { DIA_PRESETS, DIA_CUSTOM_ID, findDiaPreset } from "@/lib/dia_presets";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
+import { ChevronIcon } from "@/components/header/icons";
 
 export type EvaluationType = "custom" | "paes" | "simce" | "dia";
 
@@ -54,6 +55,7 @@ export function AnswerKeyEditor({
   const [overridesText, setOverridesText] = useState(defaultOptionOverrides);
   const [multiText, setMultiText] = useState(defaultMultiSelectQuestions);
   const [rubrics, setRubrics] = useState<Record<number, OpenQuestionRubric>>(() => parseOpenQuestionRubrics(defaultOpenQuestionRubrics));
+  const [rubricPanelOpen, setRubricPanelOpen] = useState(() => Object.values(parseOpenQuestionRubrics(defaultOpenQuestionRubrics)).some((r) => r.rubric.trim().length > 0));
   const [allowPartial, setAllowPartial] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -92,17 +94,22 @@ export function AnswerKeyEditor({
         setOpenText(preset.openQuestions);
         setOverridesText(preset.optionOverrides);
         setMultiText(preset.multiSelectQuestions);
-        // Precarga el SUBTIPO (simple/par_ordenado/entero_decimal) por
-        // pregunta abierta -- el texto de la rubrica no se conoce (no viene
-        // en la hoja de respuestas), asi que se preserva lo que el profesor
-        // ya haya tipeado para esa misma pregunta, si algo.
+        // Clave real (ficha tecnica de la Agencia, docs/fichas-tecnicas-dia-
+        // 2026.md) si el instrumento la tiene documentada; si no, se deja lo
+        // que el profesor ya haya tipeado (comportamiento previo).
+        if (preset.answerKey) setValue(preset.answerKey.toUpperCase());
+        // Precarga el SUBTIPO (simple/par_ordenado/entero_decimal) y, cuando
+        // la ficha tecnica trae la pauta oficial (codigos 2/1/0 o respuesta
+        // exacta), tambien el texto de la rubrica y el puntaje maximo -- sin
+        // pisar lo que el profesor ya haya tipeado para esa misma pregunta.
         const openQs = parseOpenQuestions(preset.openQuestions, preset.numQuestions);
         setRubrics((prev) => {
           const next: Record<number, OpenQuestionRubric> = {};
           for (const q of openQs) {
+            const official = preset.openQuestionRubrics?.[q];
             next[q] = {
-              rubric: prev[q]?.rubric ?? "",
-              max_points: prev[q]?.max_points ?? 2,
+              rubric: prev[q]?.rubric || official?.rubric || "",
+              max_points: prev[q]?.max_points ?? official?.max_points ?? 2,
               subtipo: preset.openQuestionSubtypes?.[q] ?? "simple",
             };
           }
@@ -152,6 +159,7 @@ export function AnswerKeyEditor({
   const multiSelectQuestions = useMemo(() => parseMultiSelectQuestions(multiText, questionCount), [multiText, questionCount]);
   const multiSet0 = useMemo(() => new Set(multiSelectQuestions.map((q) => q - 1)), [multiSelectQuestions]);
   const multiOverlapsOpen = useMemo(() => multiSelectQuestions.some((q) => openSet0.has(q - 1)), [multiSelectQuestions, openSet0]);
+  const rubricCount = useMemo(() => openQuestions.filter((q) => (rubrics[q]?.rubric ?? "").trim().length > 0).length, [openQuestions, rubrics]);
   // "No corregibles automaticamente" = abiertas + seleccion multiple (una letra
   // no representa "que subconjunto es correcto") -- mismo tratamiento que el
   // server (dashboard/actions.ts) y computeQuizScore (src/lib/grading.ts).
@@ -400,54 +408,75 @@ export function AnswerKeyEditor({
       <input type="hidden" name="open_questions" value={serializeOpenQuestions(openQuestions) ?? ""} />
 
       {openQuestions.length > 0 && (
-        <details className="rounded-md border border-[#eef0f3]">
-          <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-[#4b5563]">
-            Rúbrica por pregunta de desarrollo (opcional, para la corrección con IA)
-          </summary>
-          <div className="space-y-3 border-t border-[#eef0f3] p-3">
-            <p className="text-[11px] text-[#6b7280]">
-              Sin rúbrica, la pregunta se puede escanear igual pero la IA solo tendrá el enunciado
-              (si lo cargas) para sugerir un puntaje — con rúbrica el criterio es mucho más preciso.
-              Puedes completar esto después desde &ldquo;Editar&rdquo;.
-            </p>
-            {openQuestions.map((q) => {
-              const r = rubrics[q] ?? { rubric: "", max_points: 2, subtipo: "simple" as OpenQuestionSubtype };
-              const update = (patch: Partial<OpenQuestionRubric>) =>
-                setRubrics((prev) => ({ ...prev, [q]: { ...r, ...patch } }));
-              return (
-                <div key={q} className="rounded-md border border-[#eef0f3] p-2.5 space-y-2">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-[#374151]">
-                    <span>Pregunta {q}</span>
-                    <select
-                      value={r.subtipo}
-                      onChange={(e) => update({ subtipo: e.target.value as OpenQuestionSubtype })}
-                      className="rounded border border-[#cfd6df] bg-white px-1.5 py-0.5 font-normal"
-                    >
-                      <option value="simple">Desarrollo / texto</option>
-                      <option value="par_ordenado">Par ordenado (x; y)</option>
-                      <option value="entero_decimal">Número (entero o decimal)</option>
-                    </select>
-                    <label className="ml-auto flex items-center gap-1 font-normal">
-                      Puntaje máx.
-                      <input
-                        type="number" min={0} step={0.5} value={r.max_points}
-                        onChange={(e) => update({ max_points: Math.max(0, Number(e.target.value) || 0) })}
-                        className="w-14 rounded border border-[#cfd6df] px-1.5 py-0.5"
+        <div className="rounded-md border border-[#e1e5ea] bg-white">
+          <button
+            type="button"
+            onClick={() => setRubricPanelOpen((v) => !v)}
+            aria-expanded={rubricPanelOpen}
+            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+          >
+            <div>
+              <p className="text-sm font-semibold text-[#111827]">Rúbrica de corrección (IA)</p>
+              <p className="mt-0.5 text-xs text-[#6b7280]">
+                {rubricCount > 0
+                  ? `${rubricCount} de ${openQuestions.length} pregunta(s) de desarrollo con criterio cargado`
+                  : `Opcional — precisa la corrección automática de las ${openQuestions.length} pregunta(s) de desarrollo`}
+              </p>
+            </div>
+            <ChevronIcon className={`h-4 w-4 shrink-0 text-[#6b7280] transition-transform ${rubricPanelOpen ? "rotate-180" : ""}`} />
+          </button>
+
+          {rubricPanelOpen && (
+            <div className="space-y-3 border-t border-[#eef0f3] px-4 py-4">
+              <p className="text-xs text-[#6b7280]">
+                Sin rúbrica, la IA solo tiene el enunciado (si lo cargas) para sugerir un puntaje —
+                con rúbrica el criterio es mucho más preciso. Puedes completarlo después desde
+                &ldquo;Editar&rdquo;.
+              </p>
+              <div className="space-y-2.5">
+                {openQuestions.map((q) => {
+                  const r = rubrics[q] ?? { rubric: "", max_points: 2, subtipo: "simple" as OpenQuestionSubtype };
+                  const update = (patch: Partial<OpenQuestionRubric>) =>
+                    setRubrics((prev) => ({ ...prev, [q]: { ...r, ...patch } }));
+                  return (
+                    <div key={q} className="rounded-md border border-[#eef0f3] bg-[#fafbfc] p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex h-6 items-center justify-center rounded-full border border-dashed border-[#f0b429] bg-[#fffbeb] px-2 text-[11px] font-bold text-[#b45309]">
+                          P{q}
+                        </span>
+                        <select
+                          value={r.subtipo}
+                          onChange={(e) => update({ subtipo: e.target.value as OpenQuestionSubtype })}
+                          className="rounded-md border border-[#cfd6df] bg-white px-2 py-1 text-xs font-medium text-[#374151]"
+                        >
+                          <option value="simple">Desarrollo / texto</option>
+                          <option value="par_ordenado">Par ordenado (x; y)</option>
+                          <option value="entero_decimal">Número (entero o decimal)</option>
+                        </select>
+                        <label className="ml-auto flex items-center gap-1.5 text-xs font-medium text-[#6b7280]">
+                          Máx.
+                          <input
+                            type="number" min={0} step={0.5} value={r.max_points}
+                            onChange={(e) => update({ max_points: Math.max(0, Number(e.target.value) || 0) })}
+                            className="w-14 rounded-md border border-[#cfd6df] bg-white px-2 py-1 text-xs text-[#111827]"
+                          />
+                          <span className="text-[#9ca3af]">pts</span>
+                        </label>
+                      </div>
+                      <textarea
+                        value={r.rubric}
+                        onChange={(e) => update({ rubric: e.target.value })}
+                        placeholder='Ej: "2 pts: plantea y resuelve correctamente. 1 pt: plantea pero se equivoca en el cálculo. 0 pts: en blanco o sin relación."'
+                        rows={2}
+                        className="mt-2.5 w-full rounded-md border border-[#cfd6df] bg-white px-2.5 py-2 text-xs text-[#111827] placeholder:text-[#9ca3af]"
                       />
-                    </label>
-                  </div>
-                  <textarea
-                    value={r.rubric}
-                    onChange={(e) => update({ rubric: e.target.value })}
-                    placeholder='Ej: "2 pts: plantea y resuelve correctamente. 1 pt: plantea pero se equivoca en el cálculo. 0 pts: en blanco o sin relación."'
-                    rows={2}
-                    className="w-full rounded-md border border-[#cfd6df] px-2 py-1.5 text-xs font-normal"
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </details>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       )}
       <input type="hidden" name="open_question_rubrics" value={serializeOpenQuestionRubrics(rubrics) ?? ""} />
 
