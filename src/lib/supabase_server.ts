@@ -65,10 +65,30 @@ export async function createSupabaseServerClient() {
 // del MISMO request (ej. layout + page) — no ayuda entre navegaciones
 // distintas (cada una es un request nuevo), pero es gratis y evita repetir
 // la cadena de queries si en el futuro se llama desde mas de un lugar.
+// Path completo del request actual (pathname + query) expuesto por el
+// middleware en /dashboard/*. Sirve para devolver al usuario a su destino
+// original (ej. /dashboard/billing?plan=pro) tras el login u onboarding.
+// Fuera de /dashboard (route handlers, donde el middleware no corre) cae a
+// "/dashboard" como destino generico, que es lo que ya pasaba antes.
+async function currentRequestPath() {
+  const headerStore = await headers();
+  const full = headerStore.get("x-request-path");
+  return full && full.startsWith("/") ? full : "/dashboard";
+}
+
+// Preserva el destino del usuario a traves del onboarding. Si ya estamos en
+// /dashboard/onboarding, no lo encadenamos (evita loops). Si no, pasamos el
+// destino actual para que el form de onboarding lo capture y redirija alla.
+async function onboardingUrl() {
+  const dest = await currentRequestPath();
+  if (dest.startsWith("/dashboard/onboarding")) return "/dashboard/onboarding";
+  return `/dashboard/onboarding?next=${encodeURIComponent(dest)}`;
+}
+
 export const getDashboardContext = cache(async function getDashboardContext() {
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/auth");
+  if (!user) redirect(`/auth?next=${encodeURIComponent(await currentRequestPath())}`);
 
   const cookieStore = await cookies();
   const activeSchoolId = cookieStore.get("tulector_active_school_id")?.value;
@@ -159,7 +179,7 @@ export const getDashboardContext = cache(async function getDashboardContext() {
     }
   }
 
-  if (!membership) redirect("/dashboard/onboarding");
+  if (!membership) redirect(await onboardingUrl());
 
   // Solo hace falta un fetch aparte para el caso raro de impersonation de
   // staff (membership sintetico, sin fila real de school_members de donde
@@ -173,7 +193,7 @@ export const getDashboardContext = cache(async function getDashboardContext() {
       .maybeSingle();
     if (schoolError || !data) {
       console.warn("[getDashboardContext] School not found for membership:", membership?.school_id, schoolError?.message);
-      redirect("/dashboard/onboarding");
+      redirect(await onboardingUrl());
     }
     school = data;
   }

@@ -87,6 +87,10 @@ export async function middleware(request: NextRequest) {
       request: { headers: new Headers(request.headers) },
     });
     response.headers.set("x-pathname", pathname);
+    // Full path (con query, ej. /dashboard/billing?plan=pro) para que
+    // getDashboardContext pueda devolver al usuario a su destino tras el login.
+    const search = searchParams.toString();
+    response.headers.set("x-request-path", search ? `${pathname}?${search}` : pathname);
     return response;
   }
 

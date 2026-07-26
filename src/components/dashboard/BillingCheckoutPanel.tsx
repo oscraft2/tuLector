@@ -37,6 +37,8 @@ type Props = {
   items: CheckoutItem[];
   communes: CommuneOption[];
   paymentsReady: boolean;
+  /** Plan a preseleccionar (id del item, ej. "pro" o "school"). Se valida con los items disponibles. */
+  initialPlan?: string;
 };
 
 const fieldInputClass = "min-h-12 w-full rounded-2xl border border-[#d8dde3] bg-white px-3.5 py-3 text-[0.95rem] font-semibold outline-none focus:border-[#07305f] focus:shadow-[0_0_0_4px_rgba(7,48,95,0.12)]";
@@ -58,8 +60,10 @@ export function BillingCheckoutPanel({
   items,
   communes,
   paymentsReady,
+  initialPlan,
 }: Props) {
-  const [selectedItemId, setSelectedItemId] = useState(items[0]?.id ?? "");
+  const preselectedItem = initialPlan ? items.find((i) => i.id === initialPlan || i.plan === initialPlan) : null;
+  const [selectedItemId, setSelectedItemId] = useState(preselectedItem?.id ?? items[0]?.id ?? "");
   const [form, setForm] = useState<BillingFormState>({
     taxId: "",
     legalName: schoolName,

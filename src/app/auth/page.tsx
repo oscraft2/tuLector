@@ -7,6 +7,7 @@ import type { AuthError } from "@supabase/supabase-js";
 import { ZxcvbnFactory } from "@zxcvbn-ts/core";
 import { adjacencyGraphs, dictionary } from "@zxcvbn-ts/language-common";
 import { createClient } from "@/lib/supabase";
+import { safeNextPath } from "@/lib/safe_next";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
 import { isNativeApp, nativePlatform, openExternalUrl, googleNativeSignIn, appleNativeSignIn, biometricAvailable, plugin, OAUTH_DEEP_LINK } from "@/lib/native/capacitor";
 import { isBiometricLoginEnabled } from "@/lib/native/biometric_pref";
@@ -45,6 +46,13 @@ function AuthForm() {
     }
     return "";
   })();
+
+  // Destino seguro despues de login/registro (desde el enganche con precios,
+  // ej. "next=/dashboard/billing?plan=pro"). Si no hay next valido o el usuario
+  // esta en la app nativa, se va al destino por defecto (/dashboard o /app).
+  const nextParam = searchParams.get("next");
+  const nativeApp = isNativeApp() || searchParams.get("app") === "1";
+  const postAuthPath = nativeApp ? null : safeNextPath(nextParam, null);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -105,7 +113,7 @@ function AuthForm() {
     // a pedir la huella (sintoma: activo el toggle pero nunca la pide).
     if (isNativeApp() || searchParams.get("app") === "1") return;
     client.auth.getSession().then(({ data: { session } }) => {
-      if (session) router.replace(homeAfterAuth());
+      if (session) router.replace(postAuthPath ?? homeAfterAuth());
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client]);
@@ -205,7 +213,7 @@ function AuthForm() {
             // que usa Apple en Android) y canjea el code en el WebView. El
             // marcador ?from=app distingue este caso en auth/callback/route.ts
             // (pagina puente si el App Link no logra abrir la app).
-            emailRedirectTo: isNativeApp() ? `${OAUTH_DEEP_LINK}?from=app` : authCallbackUrl(),
+              emailRedirectTo: isNativeApp() ? `${OAUTH_DEEP_LINK}?from=app` : authCallbackUrl(postAuthPath ?? undefined),
           },
         });
         if (error) throw error;
@@ -213,7 +221,7 @@ function AuthForm() {
       } else {
         const { error } = await client.auth.signInWithPassword({ email: normalizedEmail, password });
         if (error) throw error;
-        router.replace(homeAfterAuth());
+        router.replace(postAuthPath ?? homeAfterAuth());
       }
     } catch (err) {
       const authErr = err as AuthError;
@@ -280,7 +288,7 @@ function AuthForm() {
       const { error } = await client.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: authCallbackUrl(),
+          redirectTo: authCallbackUrl(postAuthPath ?? undefined),
           queryParams: provider === "google" ? { access_type: "offline", prompt: "consent" } : undefined,
         },
       });

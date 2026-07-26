@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { completeOnboarding } from "./actions";
 import { countryProfiles, resolveCountryProfile } from "@/lib/country_profiles";
 import SeleccionarInstitucion from "@/components/SeleccionarInstitucion";
@@ -41,6 +42,8 @@ export function OnboardingForm({ nativeInitial }: { nativeInitial: boolean }) {
   const [rbd, setRbd] = useState("");
   const [institucionTipo, setInstitucionTipo] = useState<Tab>("colegio");
   const formRef = useRef<HTMLFormElement>(null);
+  const searchParams = useSearchParams();
+  const nextParam = searchParams.get("next");
 
   function handleSelect(item: Result) {
     setSelected({ item, tab: institucionTipo });
@@ -95,6 +98,7 @@ export function OnboardingForm({ nativeInitial }: { nativeInitial: boolean }) {
   // "chrome" que lo envuelve mas abajo.
   const formContent = (
     <form ref={formRef} onSubmit={handleSubmit} className="mt-6 grid gap-4">
+      {nextParam ? <input type="hidden" name="next" value={nextParam} /> : null}
 
       {/* Tipo de cuenta */}
       <div>

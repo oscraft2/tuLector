@@ -88,6 +88,10 @@ export default async function Precios({ params }: { params: Promise<{ locale: st
                   <Link href={`/${locale}/auth?mode=register`} className="block w-full rounded-lg bg-[#111827] px-4 py-3 text-center text-sm font-semibold text-white transition-all hover:bg-[#07305f]">
                     Empezar gratis
                   </Link>
+                ) : validLocale === "es-CL" ? (
+                  <Link href={`/dashboard/billing?plan=${plan.name.toLowerCase()}`} className="block w-full rounded-lg bg-[#111827] px-4 py-3 text-center text-sm font-semibold text-white transition-all hover:bg-[#07305f]">
+                    Contratar {plan.name}
+                  </Link>
                 ) : (
                   <a href={`mailto:${copy.footer.contact}?subject=Plan%20${encodeURIComponent(plan.name)}%20TuLector`} className="block w-full rounded-lg bg-[#111827] px-4 py-3 text-center text-sm font-semibold text-white transition-all hover:bg-[#07305f]">
                     Contactar ventas

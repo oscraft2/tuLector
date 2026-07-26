@@ -13,8 +13,14 @@ import { planHasFeature } from "@/lib/plan_gates";
 
 export const dynamic = "force-dynamic";
 
-export default async function BillingPage() {
+export default async function BillingPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { supabase, school, locale, isAdmin } = await getDashboardContext();
+  const sp = await searchParams;
+  const planParam = typeof sp.plan === "string" && ["pro", "school"].includes(sp.plan) ? sp.plan : undefined;
   // Apple/Google prohiben vender contenido digital (planes anuales)
   // DENTRO del APK sin usar su IAP. Como el pago nunca se procesa en la app
   // (Flow queda solo en la web), aca se oculta el checkout y se muestra una
@@ -96,6 +102,7 @@ export default async function BillingPage() {
             items={checkoutItems}
             communes={communeOptions}
             paymentsReady={paymentsReady}
+            initialPlan={planParam}
           />
         )}
         {school.country_code === "CL" && !planHasFeature(school.plan, "dia_sync") ? (

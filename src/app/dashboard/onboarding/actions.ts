@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase_server";
+import { safeNextPath } from "@/lib/safe_next";
 import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
 import { sendTemplatedEmail } from "@/lib/email";
 
@@ -74,5 +75,6 @@ export async function completeOnboarding(formData: FormData) {
   // dashboard/layout.tsx). En builds viejos sin el token, cae a /dashboard
   // y lo rescata NativeDashboardGuard client-side.
   const isNative = /TuLectorApp/i.test((await headers()).get("user-agent") ?? "");
-  redirect(isNative ? "/app" : "/dashboard");
+  const next = isNative ? null : safeNextPath(String(formData.get("next") ?? "").trim() || null, null);
+  redirect(next ?? (isNative ? "/app" : "/dashboard"));
 }
