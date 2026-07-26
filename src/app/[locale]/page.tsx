@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
+import { DiaExtensionBanner } from "@/components/DiaExtensionBanner";
 import { PublicFooter } from "@/components/PublicFooter";
 import { PublicHeaderServer } from "@/components/PublicHeaderServer";
 import { WorkflowShowcase } from "@/components/WorkflowShowcase";
@@ -113,6 +114,8 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
           </div>
         </div>
       </section>
+
+      {validLocale === "es-CL" && <DiaExtensionBanner locale={validLocale} />}
 
       <WorkflowShowcase locale={legacyLocale} />
 
