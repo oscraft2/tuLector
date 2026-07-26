@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
+import { NativeAwareLink } from "@/components/native/NativeAwareLink";
 
 type NavItem = {
   href: string;
@@ -51,17 +52,18 @@ export function AppShell({
 
             <nav className="flex-1 space-y-1 px-4 py-4" aria-label="Navegacion principal">
               {nav.map((item) => (
-                <Link
+                <NativeAwareLink
                   key={item.href}
                   href={item.href}
-                  aria-current={item.active ? "page" : undefined}
+                  external={item.href === "/dashboard/billing"}
+                  ariaCurrent={item.active ? "page" : undefined}
                   className={item.active
                     ? "flex items-center gap-3 rounded-md bg-[#eef4ff] px-4 py-3 text-sm font-semibold text-[#07305f]"
                     : "flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium text-[#1f2937] hover:bg-[#f4f6f8] hover:text-[#07305f]"}
                 >
                   <NavIcon active={Boolean(item.active)} />
                   <span>{item.label}</span>
-                </Link>
+                </NativeAwareLink>
               ))}
             </nav>
 
