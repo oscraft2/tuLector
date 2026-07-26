@@ -81,6 +81,12 @@ export default function SheetPage() {
 
   // Ensayo heredado via /sheet?quiz=<id>: la hoja toma su formato + clave + codigo.
   const [quizInfo, setQuizInfo] = useState<{ id: string; title: string; sheetCode: number | null; answerKey: string } | null>(null);
+  // Link de "volver" del header: al detalle del ensayo si se llego con
+  // ?quiz=<id> (desde el dashboard), a Inicio si es el generador libre. Se fija
+  // apenas se detecta el parametro -- sin esperar el fetch del ensayo -- para
+  // que "volver" nunca mande al usuario al sitio publico y tenga que renavegar
+  // todo el dashboard desde cero.
+  const [backLink, setBackLink] = useState({ href: "/", label: "← Inicio" });
   // Preguntas de desarrollo (abiertas) del ensayo, numeracion GLOBAL 1..N:
   // en la hoja frontal la fila imprime "Resolver al reverso" (sin burbujas) y
   // el PDF intercala una pagina de reverso con recuadros para escribir.
@@ -204,6 +210,7 @@ export default function SheetPage() {
     const id = new URLSearchParams(window.location.search).get("quiz");
     if (!id) return;
     (async () => {
+      setBackLink({ href: `/dashboard/quizzes/${id}`, label: "← Volver al ensayo" });
       try {
         const res = await fetch(`/api/quiz/${id}`, { credentials: "include", cache: "no-store" });
         if (!res.ok) return;
@@ -365,7 +372,7 @@ export default function SheetPage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-        <Link href="/" className="text-sm text-zinc-400 hover:text-white">&larr; Inicio</Link>
+        <Link href={backLink.href} className="text-sm text-zinc-400 hover:text-white">{backLink.label}</Link>
         <h1 className="text-lg font-bold">Generador de hojas</h1>
         <button onClick={pdfOne} className="px-3 py-1.5 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500">
           Descargar PDF
