@@ -8,12 +8,14 @@ const GA4_ID = process.env.NEXT_PUBLIC_GA4_MEASUREMENT_ID;
 
 /**
  * Carga el snippet de Google Analytics 4 y dispara page_view en cada
- * navegación. No hace nada si NEXT_PUBLIC_GA4_MEASUREMENT_ID no está
+ * navegacion. No hace nada si NEXT_PUBLIC_GA4_MEASUREMENT_ID no esta
  * definida o si corre dentro del APK nativo (TuLectorApp).
  *
- * send_page_view: false evita el page_view automático de la carga inicial;
+ * send_page_view: false evita el page_view automatico de la carga inicial;
  * lo disparamos manualmente desde el useEffect para trackear SPA (Next.js
  * client-side navigation) y rutas con query string.
+ *
+ * Env: NEXT_PUBLIC_GA4_MEASUREMENT_ID (G-XXXXXXXXXX)
  */
 export function GoogleAnalytics() {
   const pathname = usePathname();
