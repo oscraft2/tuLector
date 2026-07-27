@@ -4,18 +4,17 @@ import Script from "next/script";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
-const GA4_ID = process.env.NEXT_PUBLIC_GA4_MEASUREMENT_ID;
+const GA4_ID = "G-WGRG4DCH5D";
 
 /**
  * Carga el snippet de Google Analytics 4 y dispara page_view en cada
- * navegacion. No hace nada si NEXT_PUBLIC_GA4_MEASUREMENT_ID no esta
- * definida o si corre dentro del APK nativo (TuLectorApp).
+ * navegacion. No hace nada si corre dentro del APK nativo (TuLectorApp).
  *
  * send_page_view: false evita el page_view automatico de la carga inicial;
  * lo disparamos manualmente desde el useEffect para trackear SPA (Next.js
  * client-side navigation) y rutas con query string.
  *
- * Env: NEXT_PUBLIC_GA4_MEASUREMENT_ID (G-XXXXXXXXXX)
+ * El measurement ID de GA4 es publico (va en el HTML); no requiere env var.
  */
 export function GoogleAnalytics() {
   const pathname = usePathname();

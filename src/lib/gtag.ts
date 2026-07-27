@@ -1,4 +1,4 @@
-const GA4_ID = process.env.NEXT_PUBLIC_GA4_MEASUREMENT_ID;
+const GA4_ID = "G-WGRG4DCH5D";
 
 declare global {
   interface Window {
@@ -7,7 +7,7 @@ declare global {
 }
 
 function gtag(...args: unknown[]) {
-  if (typeof window === "undefined" || !window.gtag || !GA4_ID) return;
+  if (typeof window === "undefined" || !window.gtag) return;
   window.gtag(...args);
 }
 
