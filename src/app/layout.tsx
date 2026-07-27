@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import "./globals.css";
 import { NativeBootstrap } from "@/components/native/NativeBootstrap";
+import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 import { JsonLd } from "@/components/JsonLd";
 import { WhatsAppFloatingButton } from "@/components/WhatsAppFloatingButton";
 import { getWhatsappButtonConfig } from "@/lib/site_config";
@@ -118,6 +119,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-full flex flex-col bg-[#fafafa] text-[#0b1220]">
         <JsonLd data={[orgLd, webAppLd, webSiteLd]} />
         <NativeBootstrap />
+        <Suspense fallback={null}>
+          <GoogleAnalytics />
+        </Suspense>
         {children}
         <Suspense fallback={null}>
           <WhatsAppButtonSlot />
