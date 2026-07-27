@@ -32,6 +32,26 @@ export default async function ParaDocentes({ params }: { params: Promise<{ local
   const validLocale = locales.includes(locale as Locale) ? (locale as Locale) : defaultLocale;
   const copy = messages[validLocale as Locale];
 
+  const serviceLd = {
+    "@context": "https://schema.org",
+    "@type": "Service",
+    name: "TuLector para Docentes",
+    serviceType: "Lectura optica y correccion automatica de evaluaciones",
+    provider: { "@type": "Organization", name: "TuLector", url: "https://tulector.app", logo: "https://tulector.app/icon-512.png" },
+    areaServed: copy.areaServed,
+    audience: { "@type": "Audience", audienceType: "docentes, profesores" },
+  };
+
+  const faqLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: copy.faqs.map((f) => ({
+      "@type": "Question",
+      name: f.q,
+      acceptedAnswer: { "@type": "Answer", text: f.a },
+    })),
+  };
+
   return (
     <main className="min-h-screen bg-white text-[#111827]">
       <PublicHeaderServer currentLocale={validLocale} />
@@ -42,6 +62,8 @@ export default async function ParaDocentes({ params }: { params: Promise<{ local
           { name: "Para Docentes", href: `/${locale}/para-docentes` },
         ]} />
       </section>
+
+      <JsonLd data={[serviceLd, faqLd]} />
 
       <section className="mx-auto max-w-7xl px-5 pb-12 md:px-8 md:pb-16">
         <div className="grid gap-10 lg:grid-cols-2 lg:items-center">

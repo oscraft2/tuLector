@@ -68,7 +68,7 @@ const orgLd = {
   "@type": "Organization",
   name: "TuLector",
   url: "https://tulector.app",
-  logo: "https://tulector.app/tulector-hero.webp",
+  logo: "https://tulector.app/icon-512.png",
   sameAs: [
     "https://www.linkedin.com/company/tulector",
     "https://github.com/oscraft2/tuLector",

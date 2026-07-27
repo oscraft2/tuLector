@@ -43,9 +43,10 @@ export default async function LocaleLayout({
     "@type": "EducationalOrganization",
     name: "TuLector",
     url: `https://tulector.app/${locale}`,
+    logo: "https://tulector.app/icon-512.png",
     areaServed: m.areaServed,
     knowsAbout: m.knowsAbout,
-    publishingPrinciples: "https://tulector.app/security",
+    publishingPrinciples: `https://tulector.app/${locale}/security`,
   };
 
   return (

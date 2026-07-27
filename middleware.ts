@@ -38,8 +38,34 @@ function detectFromAccept(accept: string): string | null {
   return null;
 }
 
+const legacyPublicPaths = new Set([
+  "/support",
+  "/security",
+  "/privacy",
+  "/terms",
+  "/data-request",
+]);
+
+function resolvePublicLocale(request: NextRequest): string {
+  const cookieLocale = request.cookies.get("tulector-locale")?.value;
+  if (cookieLocale && localePrefixes.includes(cookieLocale)) return cookieLocale;
+  const geoDetected = detectFromGeo(request.headers.get("x-vercel-ip-country"));
+  if (geoDetected) return geoDetected;
+  const accept = request.headers.get("accept-language") ?? "";
+  return detectFromAccept(accept) ?? "es-MX";
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname, searchParams, origin } = request.nextUrl;
+
+  // Rutas publicas legacy sin locale → 308 al locale del visitante (cierra
+  // contenido duplicado indexable: /support vs /es-CL/support, etc.).
+  if (legacyPublicPaths.has(pathname)) {
+    const locale = resolvePublicLocale(request);
+    const url = new URL(`/${locale}${pathname}`, request.url);
+    url.search = searchParams.toString();
+    return NextResponse.redirect(url, 308);
+  }
 
   // i18n redirect: visitas a "/" sin locale → redirect a /<locale> segun Accept-Language
   if (pathname === "/" && !searchParams.has("code")) {
@@ -128,5 +154,14 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/admin/:path*", "/dashboard/:path*"],
+  matcher: [
+    "/",
+    "/admin/:path*",
+    "/dashboard/:path*",
+    "/support",
+    "/security",
+    "/privacy",
+    "/terms",
+    "/data-request",
+  ],
 };

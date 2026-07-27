@@ -45,6 +45,16 @@ export default async function ParaColegios({ params }: { params: Promise<{ local
     audience: { "@type": "Audience", audienceType: "colegios, escuelas, preuniversitarios" },
   };
 
+  const faqLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: copy.faqs.map((f) => ({
+      "@type": "Question",
+      name: f.q,
+      acceptedAnswer: { "@type": "Answer", text: f.a },
+    })),
+  };
+
   return (
     <main className="min-h-screen bg-white text-[#111827]">
       <PublicHeaderServer currentLocale={validLocale} />
@@ -56,7 +66,7 @@ export default async function ParaColegios({ params }: { params: Promise<{ local
         ]} />
       </section>
 
-      <JsonLd data={serviceLd} />
+      <JsonLd data={[serviceLd, faqLd]} />
 
       <section className="mx-auto max-w-7xl px-5 pb-12 md:px-8 md:pb-16">
         <div className="grid gap-10 lg:grid-cols-2 lg:items-center">

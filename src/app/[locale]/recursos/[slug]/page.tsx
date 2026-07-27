@@ -63,9 +63,22 @@ export default async function Articulo({ params }: { params: Promise<{ locale: s
     dateModified: modifiedAt,
     image: `${siteUrl}/${locale}/recursos/${slug}/opengraph-image`,
     isAccessibleForFree: true,
-    publisher: { "@type": "Organization", name: "TuLector" },
+    publisher: { "@type": "Organization", name: "TuLector", logo: `${siteUrl}/icon-512.png` },
     mainEntityOfPage: { "@type": "WebPage", "@id": `${siteUrl}/${locale}/recursos/${slug}` },
   };
+
+  const structuredData: Record<string, unknown>[] = [articleLd];
+  if (article.faqs.length > 0) {
+    structuredData.push({
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: article.faqs.map((f) => ({
+        "@type": "Question",
+        name: f.q,
+        acceptedAnswer: { "@type": "Answer", text: f.a },
+      })),
+    });
+  }
 
   return (
     <main className="min-h-screen bg-white text-[#111827]">
@@ -78,7 +91,7 @@ export default async function Articulo({ params }: { params: Promise<{ locale: s
           { name: article.title, href: `/${locale}/recursos/${slug}` },
         ]} />
 
-        <JsonLd data={articleLd} />
+        <JsonLd data={structuredData} />
 
         <header className="mt-8">
           <p className="text-sm font-bold uppercase tracking-[0.16em] text-[#2f6f5e]">{copy.nationalExam}</p>

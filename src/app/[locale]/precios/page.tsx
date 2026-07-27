@@ -53,6 +53,26 @@ export default async function Precios({ params }: { params: Promise<{ locale: st
     },
   }));
 
+  const pricingFaqs = [
+    { q: "Puedo cambiar de plan en cualquier momento?", a: "Si. Puedes mantener Gratis, subir a Pro o pasar a School cuando necesites administracion de equipo." },
+    { q: "Los precios pagados son anuales?", a: "Si. Pro y School son planes anuales. El plan gratis permanece disponible con 100 lecturas mensuales." },
+    { q: "Que metodos de pago aceptan?", a: "Aceptamos transferencia bancaria, tarjeta de credito y debito. En Mexico y Argentina ofrecemos MercadoPago. En Chile, Flow. En Brasil, PIX y boleto." },
+    { q: "Ofrecen facturacion?", a: "Si. Emitimos factura o boleta segun la normativa fiscal de tu pais. Solo necesitas proporcionar tu RUT/CURP/CPF al momento de la contratacion." },
+    ...(validLocale === "es-CL"
+      ? [{ q: "Como funciona el sync con la plataforma DIA?", a: "Con Plan Pro o School, instalas nuestra extension gratuita de Chrome y la conectas con tu sesion de TuLector y tu sesion de la plataforma DIA (nunca pedimos tu contrasena). La extension sube los resultados ya leidos por TuLector automaticamente, sin digitarlos uno por uno." }]
+      : []),
+  ];
+
+  const faqLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: pricingFaqs.map((f) => ({
+      "@type": "Question",
+      name: f.q,
+      acceptedAnswer: { "@type": "Answer", text: f.a },
+    })),
+  };
+
   return (
     <main className="min-h-screen bg-white text-[#111827]">
       <PublicHeaderServer currentLocale={validLocale} />
@@ -64,7 +84,7 @@ export default async function Precios({ params }: { params: Promise<{ locale: st
         ]} />
       </section>
 
-      <JsonLd data={offersLd} />
+      <JsonLd data={[...offersLd, faqLd]} />
 
       <section className="mx-auto max-w-7xl px-5 pb-12 text-center md:px-8">
         <h1 className="text-4xl font-semibold tracking-tight md:text-6xl">{copy.precios.title}</h1>
@@ -77,7 +97,7 @@ export default async function Precios({ params }: { params: Promise<{ locale: st
         <div className="grid gap-8 md:grid-cols-3">
           {plans.map((plan) => (
             <div key={plan.name} className={`rounded-xl border ${plan.name === "Pro" ? "border-[#111827] shadow-lg" : "border-[#e6e8eb]"} bg-white p-8`}>
-              <p className="text-sm font-bold uppercase tracking-[0.12em] text-[#2f6f5e]">{plan.name}</p>
+              <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-[#2f6f5e]">{plan.name}</h2>
               <p className="mt-4">
                 <span className="text-4xl font-bold text-[#111827]">{formatPrice(plan.price, plan.currency)}</span>
                 <span className="text-sm text-[#6b7280]">/{plan.price === 0 ? "mes" : "ano"}</span>
@@ -129,13 +149,7 @@ export default async function Precios({ params }: { params: Promise<{ locale: st
         <div className="mx-auto max-w-3xl px-5 text-center md:px-8">
           <h2 className="text-2xl font-semibold tracking-tight">Preguntas frecuentes sobre precios</h2>
           <div className="mt-8 space-y-4 text-left">
-            {[
-              { q: "Puedo cambiar de plan en cualquier momento?", a: "Si. Puedes mantener Gratis, subir a Pro o pasar a School cuando necesites administracion de equipo." },
-              { q: "Los precios pagados son anuales?", a: "Si. Pro y School son planes anuales. El plan gratis permanece disponible con 100 lecturas mensuales." },
-              { q: "Que metodos de pago aceptan?", a: "Aceptamos transferencia bancaria, tarjeta de credito y debito. En Mexico y Argentina ofrecemos MercadoPago. En Chile, Flow. En Brasil, PIX y boleto." },
-              { q: "Ofrecen facturacion?", a: "Si. Emitimos factura o boleta segun la normativa fiscal de tu pais. Solo necesitas proporcionar tu RUT/CURP/CPF al momento de la contratacion." },
-              ...(validLocale === "es-CL" ? [{ q: "Como funciona el sync con la plataforma DIA?", a: "Con Plan Pro o School, instalas nuestra extension gratuita de Chrome y la conectas con tu sesion de TuLector y tu sesion de la plataforma DIA (nunca pedimos tu contrasena). La extension sube los resultados ya leidos por TuLector automaticamente, sin digitarlos uno por uno." }] : []),
-            ].map((faq) => (
+            {pricingFaqs.map((faq) => (
               <details key={faq.q} className="group rounded-lg border border-[#e6e8eb] bg-white p-5">
                 <summary className="cursor-pointer text-sm font-semibold text-[#111827]">{faq.q}</summary>
                 <p className="mt-3 text-sm leading-6 text-[#4b5563]">{faq.a}</p>

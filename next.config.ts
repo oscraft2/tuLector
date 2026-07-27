@@ -25,9 +25,13 @@ const nextConfig: NextConfig = {
       { source: "/api/:path*", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] },
       { source: "/auth", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] },
       { source: "/consulta", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] },
+      { source: "/scan", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] },
+      { source: "/sheet", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] },
     ];
   },
   async redirects() {
+    // Las rutas legacy (/support, /security, etc.) se redirigen 308 al locale
+    // detectado en middleware.ts (cookie/geo/Accept-Language). No duplicar aqui.
     return [];
   },
   // View Transitions API (nativo del navegador) para las pantallas del APK
