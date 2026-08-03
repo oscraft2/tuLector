@@ -26,7 +26,11 @@ export const SCAN_PREFS = {
 } as const;
 
 export const SCAN_THRESHOLDS = {
-  scanCooldownMs: 2500,
+  // 1000ms (antes 2500ms): con el estado "clearing" (page.tsx) exigiendo que la
+  // hoja salga de cuadro antes de rearmar el disparo, este cooldown por tiempo
+  // es solo un piso minimo de seguridad, no la unica proteccion anti-doble-
+  // escaneo -- 2500ms ponia un techo duro de ~24 hojas/min al modo rafaga.
+  scanCooldownMs: 1000,
   badPaperThreshold: 45,
   outOfFocusThreshold: 50,
   debugFramesLogCount: 4,

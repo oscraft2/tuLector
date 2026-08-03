@@ -13,9 +13,14 @@ import { APP_VERSION } from "@/lib/version";
 import { safeColumns, allowedColumns } from "@/lib/sheet_generator";
 import { resolveIdReadConfig } from "@/lib/country_id_blocks";
 import { QUIZ_MAX_QUESTIONS, parseOpenQuestions, parseOptionOverrides, parseMultiSelectQuestions } from "@/lib/quiz_constraints";
+import { useSensoryFeedback, loadSensoryPrefs, saveSensoryPrefs, type SensoryStoredPrefs } from "@/lib/hooks/useSensoryFeedback";
 
-type ScanPhase = "detecting" | "scanning" | "result" | "cooldown";
+// "hud" = resultado NO bloqueante (caso feliz o error en modo ráfaga), auto-avanza solo.
+// "review" = modal bloqueante clásico (modo ráfaga apagado).
+// "clearing" = tras el HUD, esperando que la hoja salga de cuadro antes de rearmar el disparo automático.
+type ScanPhase = "detecting" | "scanning" | "hud" | "review" | "clearing";
 type ScanSyncState = "idle" | "saving" | "saved" | "review" | "error" | "queued" | "partial";
+type HudKind = "success" | "warning" | "error";
 
 // ─── Laplacian focus detector ─────
 function isFrameSharp(imageData: ImageData): number {
@@ -139,6 +144,7 @@ export default function ScanPage() {
  const [phase, setPhase] = useState<ScanPhase>("detecting");
  const [results, setResults] = useState<BubbleResult[]>([]);
  const [studentId, setStudentId] = useState<string[]>([]);
+ const [studentName, setStudentName] = useState<string | null>(null);
  const [stream, setStream] = useState<MediaStream | null>(null);
  const streamRef = useRef<MediaStream | null>(null);
  const [error, setError] = useState("");
@@ -146,6 +152,29 @@ export default function ScanPage() {
  const [inFocus, setInFocus] = useState(false);
  const [lastScan, setLastScan] = useState(0);
  const [scanCount, setScanCount] = useState(0);
+ // Modo ráfaga (docs/plan-mejora-scan-zipgrade.md): HUD no bloqueante + auto-avance.
+ const [sensoryPrefs, setSensoryPrefs] = useState<SensoryStoredPrefs>({ sound: true, vibration: true, burstMode: true });
+ useEffect(() => {
+  let alive = true;
+  Promise.resolve().then(() => { if (alive) setSensoryPrefs(loadSensoryPrefs()); });
+  return () => { alive = false; };
+ }, []);
+ const { fire: fireSensory, unlock: unlockSensory } = useSensoryFeedback(sensoryPrefs);
+ const [hudKind, setHudKind] = useState<HudKind>("success");
+ const [hudMessage, setHudMessage] = useState<string | null>(null);
+ const [pendingReviewCount, setPendingReviewCount] = useState(0);
+ const [showSettings, setShowSettings] = useState(false);
+ const [voteProgress, setVoteProgress] = useState(0);
+ const [sharpDisplay, setSharpDisplay] = useState(0);
+ // Mirrors en ref del phase/lastScan de estado -- el loop RAF los lee sin
+ // tenerlos en su dependencia (evita remount del loop en cada transición de fase).
+ const phaseRef = useRef<ScanPhase>("detecting");
+ const lastScanRef = useRef(0);
+ // Esquinas al momento del HUD, para detectar en "clearing" que la hoja salió
+ // de cuadro (distinto de lastCornersRef, que se muta cada frame para estabilidad).
+ const capturedCornersRef = useRef<[number, number][] | null>(null);
+ const clearingStartRef = useRef(0);
+ const wasDetectedRef = useRef(false);
  const [debugLog, setDebugLog] = useState<string[]>([]);
  const [showDebug, setShowDebug] = useState(false);
  const [lastDiag, setLastDiag] = useState<FrameDiag | null>(null);
@@ -191,6 +220,23 @@ export default function ScanPage() {
   const [torchOn, setTorchOn] = useState(false);
 
  useEffect(() => { let a = true; Promise.resolve().then(() => { if (a) setNative(isNativeApp()); }); return () => { a = false; }; }, []);
+ useEffect(() => { phaseRef.current = phase; }, [phase]);
+ useEffect(() => { lastScanRef.current = lastScan; }, [lastScan]);
+ // AudioContext queda "suspended" hasta un gesto real del usuario (iOS/Chrome).
+ // Se desbloquea con el primer toque en cualquier control de la pantalla.
+ useEffect(() => {
+  const unlock = () => unlockSensory();
+  window.addEventListener("pointerdown", unlock, { once: true });
+  return () => window.removeEventListener("pointerdown", unlock);
+ }, [unlockSensory]);
+ // Auto-dismiss del HUD: tras mostrarlo, pasa a "clearing" (espera a que la
+ // hoja salga de cuadro antes de rearmar el disparo automático).
+ useEffect(() => {
+  if (phase !== "hud" || !sensoryPrefs.burstMode) return;
+  const duration = hudKind === "error" ? 3000 : hudKind === "warning" ? 2200 : 1500;
+  const t = setTimeout(() => setPhase("clearing"), duration);
+  return () => clearTimeout(t);
+ }, [phase, hudKind, sensoryPrefs.burstMode]);
 
  // FASE 3 (dataset): el profe confirma que la lectura es correcta → guarda un
  // ejemplo ETIQUETADO (ground truth) para entrenar el clasificador. NO toca la captura.
@@ -214,6 +260,36 @@ export default function ScanPage() {
    return `Esta hoja parece de OTRO ensayo (codigo ${codeR.sheetId}, esperado ${activeSheetCode}). Verifica que sea la hoja correcta.`;
   }
   return null;
+ };
+
+ // RUT esperado completo (cuerpo + digitos verificadores) segun el pais activo.
+ const expectedRutLength = useMemo(() => idReadCfg.block.idDigits + idReadCfg.block.checkDigits, [idReadCfg]);
+
+ // Entra al resultado de una hoja ya calificada (kind "success"/"warning") o a
+ // un fallo de grading (kind "error"). Modo ráfaga ON -> HUD no bloqueante para
+ // TODO, con auto-avance via "clearing" (exige que la hoja salga de cuadro).
+ // Modo ráfaga OFF -> preserva el comportamiento clásico: error = banner no
+ // bloqueante + vuelta directa a "detecting" (como siempre fue); success/warning
+ // = modal "review" bloqueante con tap "Siguiente" (como el modal de toda la vida).
+ const enterResult = (kind: HudKind, message: string | null, corners: [number, number][] | null) => {
+  fireSensory(kind);
+  if (!sensoryPrefs.burstMode) {
+   if (kind === "error") {
+    setPhase("detecting");
+    setError(message || "");
+   } else {
+    setHudKind(kind);
+    setHudMessage(message);
+    setPhase("review");
+   }
+   return;
+  }
+  setLastScan(Date.now());
+  capturedCornersRef.current = corners;
+  clearingStartRef.current = Date.now();
+  setHudKind(kind);
+  setHudMessage(message);
+  setPhase("hud");
  };
 
  // Cargar la clave y formato desde una sesion autenticada de escaneo.
@@ -277,10 +353,20 @@ export default function ScanPage() {
  const stableFrames = useRef(0);
  const lastFrameTime = useRef(0);
  const lastCornersRef = useRef<[number, number][] | null>(null);
- const frameSkipMs = 66;
+ // 33ms (~30fps) en vez de 66ms, y 3 frames estables en vez de 5: la votación de
+ // 3 frames YA es la red de seguridad de precisión -- más frames de "espera"
+ // antes del disparo solo agregaban latencia (docs/plan-mejora-scan-zipgrade.md P0-D).
+ const frameSkipMs = 33;
 
  const cooldownMs = SCAN_THRESHOLDS.scanCooldownMs;
- const stableFramesNeeded = 5;
+ const stableFramesNeeded = 3;
+ // Canvas de deteccion a mitad de resolucion: findCorners/isFrameSharp corren
+ // sobre ~4x menos pixeles (el warp/grade real sigue a resolucion completa, solo
+ // la detección de esquinas en vivo se reduce). Las anclas son grandes y deberian
+ // seguir detectandose bien; si la tasa de deteccion baja en dispositivos reales,
+ // subir DETECT_SCALE hacia 1 (ver riesgo #11 del plan).
+ const DETECT_SCALE = 0.5;
+ const detectCanvasRef = useRef<HTMLCanvasElement | null>(null);
  // Config del lector = la del generador (nº preguntas/opciones/columnas). Esto
  // sincroniza el motor con la hoja impresa (antes estaba fijo en 20/5/1 columna).
  // useMemo: identidad estable → no re-dispara el loop de cámara (que depende de config).
@@ -326,6 +412,9 @@ export default function ScanPage() {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload?.error || "No se pudo guardar");
+    // Se setea ANTES de los early-return de abajo: la ruta devuelve studentName
+    // también en manual_review/multipágina, y el HUD lo quiere mostrar igual.
+    setStudentName(payload.studentName ?? null);
     const scoreLabel = `${payload.score ?? "-"}/${payload.total ?? config.numQuestions}`;
     const quotaNote = payload.quota?.warning ? ` ⚠ ${payload.quota.warning}` : "";
     const multipage = payload.multipage as { complete: boolean; page?: number; pagesTotal?: number; missingPages?: number[]; reason?: string } | undefined;
@@ -339,6 +428,9 @@ export default function ScanPage() {
       : multipage.reason === "sin_codigo_hoja" ? "No se pudo leer el codigo de la hoja -> no se pudo ubicar la pagina del ensayo."
       : "El ensayo multipágina aún no está habilitado en el servidor. Avisa al administrador."
      );
+     // Sorpresa tardía del servidor: el HUD ya pudo haberse cerrado. No se
+     // reabre nada, solo se suma al contador de revisión pendiente.
+     setPendingReviewCount((c) => c + 1);
      return;
     }
     // Pagina guardada, esperando el resto del ensayo multipagina.
@@ -353,11 +445,13 @@ export default function ScanPage() {
     if (sheetMismatch && typeof sheetMismatch.read === "number" && typeof sheetMismatch.expected === "number") {
      setSyncState("review");
      setSyncMessage(`Hoja de otro ensayo (codigo ${sheetMismatch.read}, esperado ${sheetMismatch.expected}) -> guardado para revision (${scoreLabel}).${quotaNote}`);
+     setPendingReviewCount((c) => c + 1);
      return;
     }
     if (payload.status === "manual_review") {
      setSyncState("review");
      setSyncMessage(`Guardado para revision (${scoreLabel})${multipageNote}. ${payload.studentCode ? "Alumno sin identificar." : "RUT no detectado."}${quotaNote}`);
+     setPendingReviewCount((c) => c + 1);
     } else {
      setSyncState("saved");
      setSyncMessage(`Sincronizado en dashboard (${scoreLabel})${multipageNote}.${quotaNote}`);
@@ -460,7 +554,8 @@ export default function ScanPage() {
    const report = gradeBubbles(warped, config, corners);
    const rutR = readRut(warped, config, idReadCfg);
    const codeR = readSheetCode(warped);
-   setSheetWarn(checkSheetCode(codeR));
+   const warn = checkSheetCode(codeR);
+   setSheetWarn(warn);
    const idRows = rutR.rut ? [rutR.rut] : [];
    const scores = (report.results ?? []).map(r => ({ q: r.question, a: r.answer, s: r.scores }));
    const nameCrop = cropNameBox(warped);
@@ -482,11 +577,10 @@ export default function ScanPage() {
    if (!report.valid) {
     addLog(`ERR[${SCAN_CODES.WRONG_FORMAT}]: ${report.reason}`);
     setDebugLog(logs);
-    setShowDebug(true);
-    setPhase("detecting");
-    // Mostrar la razon REAL (ancla, timing, curva, warp) en vez del generico.
-    setError(report.reason || SCAN_MESSAGES[SCAN_CODES.WRONG_FORMAT] || "Error");
+    if (!sensoryPrefs.burstMode) setShowDebug(true); // panel de debug solo estorba en modo rafaga
     await save("scan_fail", SCAN_CODES.WRONG_FORMAT, false);
+    // Mostrar la razon REAL (ancla, timing, curva, warp) en vez del generico.
+    enterResult("error", report.reason || SCAN_MESSAGES[SCAN_CODES.WRONG_FORMAT] || "Error", corners);
     return;
    }
 
@@ -496,9 +590,8 @@ export default function ScanPage() {
    if (answeredCount === 0) {
     addLog(`ERR[${SCAN_CODES.OUT_OF_FOCUS}]: Sin respuestas`);
     setDebugLog(logs);
-    setPhase("detecting");
-    setError(SCAN_MESSAGES[SCAN_CODES.OUT_OF_FOCUS]);
     await save("scan_fail", SCAN_CODES.OUT_OF_FOCUS, false);
+    enterResult("error", SCAN_MESSAGES[SCAN_CODES.OUT_OF_FOCUS], corners);
     return;
    }
 
@@ -507,9 +600,8 @@ export default function ScanPage() {
     const singleAns = [...answerSet][0];
     addLog(`WARN[${SCAN_CODES.CURVE_FAIL}]: ${answeredCount} respuestas "${singleAns}"`);
     setDebugLog(logs);
-    setPhase("detecting");
-    setError(SCAN_MESSAGES[SCAN_CODES.CURVE_FAIL]);
     await save("scan_fail", SCAN_CODES.CURVE_FAIL, false);
+    enterResult("error", SCAN_MESSAGES[SCAN_CODES.CURVE_FAIL], corners);
     return;
    }
 
@@ -522,19 +614,16 @@ export default function ScanPage() {
    setStudentId(idRows);
    setDebugLog(logs);
    setScanCount((c) => c + 1);
-   setPhase("result");
 
    const saved = await save("scan", SCAN_CODES.GRADED, true);
    addLog(saved ? "Diagnostico guardado OK" : "No se pudo guardar diagnostico (ver consola)");
    setDebugLog([...logs]);
    void syncResult({ rut: rutR.rut, answers: bubbleResults, photo: photoThumb, warp: warpThumb, source, dvOk: rutR.dvOk, code: codeR, nameImg });
 
-   if (navigator.vibrate) navigator.vibrate(100);
-   // El resultado queda en pantalla hasta que el profe pulse "Siguiente"
-   // (revisa las alternativas con calma). Sin temporizador automático.
+   const isHappy = idRows[0]?.length === expectedRutLength && rutR.dvOk === true && warn === null;
+   enterResult(isHappy ? "success" : "warning", warn, corners);
   } catch {
-   setError("Error al procesar. Intenta de nuevo.");
-   setPhase("detecting");
+   enterResult("error", "Error al procesar. Intenta de nuevo.", corners);
   }
  };
 
@@ -550,10 +639,13 @@ export default function ScanPage() {
   setPhase("scanning");
   setCapturing(true);
   setError("");
+  setVoteProgress(0);
 
   const ctx = canvas.getContext("2d")!;
   const sessions: { answers: string[]; rut: string; dvOk: boolean; scores: number[][]; features: (number[][] | undefined)[]; rutDiag: ReturnType<typeof readRut>["diag"] }[] = [];
-  const frameReads: string[] = [];   // lectura de cada frame valido (para diagnostico)
+  // Lectura de cada frame valido: respuestas + RUT (para diagnostico Y para la
+  // salida temprana de abajo -- ver nota). Formato: "A,B,C...|<rut>".
+  const frameReads: string[] = [];
   let lastFrame: ImageData | null = null;
   let lastCorners: [number, number][] | null = null;
   let lastWarp: ImageData | null = null;
@@ -579,20 +671,25 @@ export default function ScanPage() {
    const rutR = readRut(warped, config, idReadCfg);
    const reads = report.results.map((r) => r.answer);
    sessions.push({ answers: reads, rut: rutR.rut, dvOk: rutR.dvOk, scores: report.results.map((r) => r.scores), features: report.results.map((r) => r.features), rutDiag: rutR.diag });
-   frameReads.push(reads.join(","));
+   // Incluye el RUT en la clave: dos frames con las mismas respuestas pero RUT
+   // distinto (digito ambiguo) YA NO cortan el loop -- antes desempataba al azar.
+   frameReads.push(`${reads.join(",")}|${rutR.rut}`);
+   setVoteProgress(sessions.length);
    lastFrame = frame; lastCorners = corners; lastWarp = warped;
    lastTiming = report.diag?.timingRows ?? null;
-   // Salida temprana: 2 frames validos identicos = suficiente (rapido en buenas condiciones)
+   // Salida temprana: 2 frames validos identicos (respuestas Y rut) = suficiente.
    if (sessions.length >= 2 && frameReads[frameReads.length - 1] === frameReads[frameReads.length - 2]) break;
-   await sleep(40);
+   // 16ms (~1 frame a 60fps) en vez de 40ms: el sleep largo era tiempo muerto,
+   // pero CERO sleep arriesga leer el MISMO frame de video dos veces seguidas
+   // (drawImage no avanza solo porque el JS itera) y falsear el consenso.
+   await sleep(16);
   }
 
   const rejected = rejFocus + rejCorners + rejInvalid;
   setCapturing(false);
 
   if (sessions.length === 0 || !lastFrame || !lastCorners || !lastWarp) {
-   setError("No se logró un frame estable. Acerca, enfoca y mantén firme.");
-   setPhase("detecting");
+   enterResult("error", "No se logró un frame estable. Acerca, enfoca y mantén firme.", lastCorners);
    return;
   }
 
@@ -626,10 +723,12 @@ export default function ScanPage() {
    `Votación: ${sessions.length} frames válidos, ${rejected} descartados (foco:${rejFocus} esquinas:${rejCorners} inválido:${rejInvalid})`,
    ...frameReads.map((r, i) => `  frame ${i + 1}: ${r}`),
   ]);
-  setPhase("result");
 
+  // Codigo de hoja / aviso de "otro ensayo" ANTES de decidir la fase (no
+  // despues): el gate feliz/no-feliz necesita el warning para elegir HUD.
   const codeR = readSheetCode(lastWarp);
-  setSheetWarn(checkSheetCode(codeR));
+  const warn = checkSheetCode(codeR);
+  setSheetWarn(warn);
   // Recorte del nombre (identidad sin RUT): se guarda para identificar al alumno.
   const nameCropV = cropNameBox(lastWarp);
   const nameImgV = nameCropV ? imageDataToThumb(nameCropV, 480, 0.7) : null;
@@ -649,9 +748,8 @@ export default function ScanPage() {
   });
   void syncResult({ rut: votedRut, answers: bubbleResults, photo: photoThumb, warp: warpThumb, source: "camera", dvOk: votedDvOk, code: codeR, nameImg: nameImgV });
 
-  if (navigator.vibrate) navigator.vibrate(100);
-  // El resultado queda en pantalla hasta que el profe pulse "Siguiente"
-  // (revisa las alternativas con calma). Sin temporizador automático.
+  const isHappy = votedRut.length === expectedRutLength && votedDvOk === true && warn === null;
+  enterResult(isHappy ? "success" : "warning", warn, lastCorners);
  };
 
  // ─── MANUAL SHUTTER: capture frame, run diagnostics, try to scan ───
@@ -862,9 +960,35 @@ export default function ScanPage() {
   return [[tl.cx, tl.cy], [tr.cx, tr.cy], [br.cx, br.cy], [bl.cx, bl.cy]];
  }
 
- // Live detection loop (for corner overlay display)
+ // Reset completo hacia la próxima hoja. Lo usan tanto el botón "Siguiente" del
+ // modal clásico (ráfaga apagada) como el auto-avance de "clearing" (ráfaga on).
+ // Declarado ANTES del loop RAF (lo llama desde dentro) para que el linter/
+ // compilador de React lo trate como una dependencia estable, no un forward-ref.
+ const resetForNextScan = () => {
+  setPhase("detecting");
+  setLastScan(Date.now());
+  setLastDiag(null);
+  setDebugLog([]);
+  setWarpedThumb(null);
+  setLabeled(false);
+  setSyncState("idle");
+  setSyncMessage("");
+  setStudentName(null);
+  setHudMessage(null);
+  setSheetWarn(null);
+  setVoteProgress(0);
+  stableFrames.current = 0;
+  lastCornersRef.current = null;
+  capturedCornersRef.current = null;
+ };
+ const nextScan = resetForNextScan; // alias: botón "Siguiente" del modal clásico
+
+ // Live detection loop (overlay + disparo automático + "clearing" tras el HUD).
+ // Deps solo [stream, config]: phase/lastScan se leen de refs (phaseRef/
+ // lastScanRef) para que el loop NO se remonte en cada transición de fase --
+ // con 5 fases en modo ráfaga, remontar en cada una arriesgaba perder frames.
  useEffect(() => {
-  if (!stream || phase === "result") return;
+  if (!stream) return;
   let animId: number;
 
   const loop = () => {
@@ -880,41 +1004,61 @@ export default function ScanPage() {
    if (now - lastFrameTime.current < frameSkipMs) { animId = requestAnimationFrame(loop); return; }
    lastFrameTime.current = now;
 
-   octx.drawImage(video, 0, 0);
-   const frame = octx.getImageData(0, 0, overlay.width, overlay.height);
+   // Modal clásico bloqueante (ráfaga apagada): tapa toda la pantalla, no hay
+   // nada que dibujar ni detectar debajo -- mismo ahorro que el "result" original.
+   if (phaseRef.current === "review") { animId = requestAnimationFrame(loop); return; }
 
-   const corners = findCorners(frame, config);
-   const sharpScore = isFrameSharp(frame);
+   // Detección en canvas reducido (~4x menos píxeles): el warp/calificación real
+   // (runVotingScan/processScan) sigue leyendo el video a resolución completa
+   // por su cuenta -- esto solo acelera el preview en vivo.
+   const dCanvas = detectCanvasRef.current ?? (detectCanvasRef.current = document.createElement("canvas"));
+   const dw = Math.max(1, Math.round(overlay.width * DETECT_SCALE));
+   const dh = Math.max(1, Math.round(overlay.height * DETECT_SCALE));
+   dCanvas.width = dw; dCanvas.height = dh;
+   const dctx = dCanvas.getContext("2d")!;
+   dctx.drawImage(video, 0, 0, dw, dh);
+   const smallFrame = dctx.getImageData(0, 0, dw, dh);
+
+   const smallCorners = findCorners(smallFrame, config);
+   const invScale = 1 / DETECT_SCALE;
+   const corners: [number, number][] | null = smallCorners
+    ? (smallCorners.map(([x, y]) => [x * invScale, y * invScale]) as [number, number][])
+    : null;
+   // Nitidez solo si ya hay esquinas: evita el Laplaciano en la mayoría de
+   // frames (durante el cambio de hoja no hay nada que enfocar todavía).
+   const sharpScore = smallCorners ? isFrameSharp(smallFrame) : 0;
    const sharp = sharpScore > 40;
+   setSharpDisplay(Math.round(sharpScore));
 
-    octx.clearRect(0, 0, overlay.width, overlay.height);
+   octx.clearRect(0, 0, overlay.width, overlay.height);
 
-    // Guía de encuadre (siempre visible, orienta al usuario)
-    const guideRatio = SHEET_W / SHEET_H;
-    const guideW = overlay.width * 0.82;
-    const guideH = guideW / guideRatio;
-    const guideX = (overlay.width - guideW) / 2;
-    const guideY = (overlay.height - guideH) / 2;
-    octx.strokeStyle = "rgba(255,255,255,0.12)";
-    octx.lineWidth = 1;
-    octx.setLineDash([6, 4]);
-    octx.strokeRect(guideX, guideY, guideW, guideH);
-    octx.setLineDash([]);
-    // Esquinas decorativas del encuadre
-    const cl = 24;
-    octx.strokeStyle = "rgba(255,255,255,0.2)";
-    octx.lineWidth = 2;
-    for (const [cx, cy] of [[guideX, guideY], [guideX + guideW, guideY], [guideX + guideW, guideY + guideH], [guideX, guideY + guideH]]) {
-     const dx = cx === guideX ? 1 : -1;
-     const dy = cy === guideY ? 1 : -1;
-     octx.beginPath();
-     octx.moveTo(cx, cy + dy * cl);
-     octx.lineTo(cx, cy);
-     octx.lineTo(cx + dx * cl, cy);
-     octx.stroke();
-    }
+   // Guía de encuadre (siempre visible, orienta al usuario)
+   const guideRatio = SHEET_W / SHEET_H;
+   const guideW = overlay.width * 0.82;
+   const guideH = guideW / guideRatio;
+   const guideX = (overlay.width - guideW) / 2;
+   const guideY = (overlay.height - guideH) / 2;
+   octx.strokeStyle = "rgba(255,255,255,0.12)";
+   octx.lineWidth = 1;
+   octx.setLineDash([6, 4]);
+   octx.strokeRect(guideX, guideY, guideW, guideH);
+   octx.setLineDash([]);
+   // Esquinas decorativas del encuadre
+   const cl = 24;
+   octx.strokeStyle = "rgba(255,255,255,0.2)";
+   octx.lineWidth = 2;
+   for (const [cx, cy] of [[guideX, guideY], [guideX + guideW, guideY], [guideX + guideW, guideY + guideH], [guideX, guideY + guideH]]) {
+    const dx = cx === guideX ? 1 : -1;
+    const dy = cy === guideY ? 1 : -1;
+    octx.beginPath();
+    octx.moveTo(cx, cy + dy * cl);
+    octx.lineTo(cx, cy);
+    octx.lineTo(cx + dx * cl, cy);
+    octx.stroke();
+   }
 
-    if (corners && sharp) {
+   let quadValid = false;
+   if (corners) {
     goodFrameCount.current++;
     badFrameCount.current = 0;
     const [tl, tr, br, bl] = corners;
@@ -922,54 +1066,77 @@ export default function ScanPage() {
     const botW = Math.hypot(br[0] - bl[0], br[1] - bl[1]);
     const ratio = Math.max(topW, botW) / Math.max(Math.min(topW, botW), 1);
     const area = Math.abs((tr[0] - tl[0]) * (br[1] - tl[1]) - (tr[1] - tl[1]) * (br[0] - tl[0]));
-    const valid = ratio < 2.5 && area > 10000;
+    quadValid = ratio < 2.5 && area > 10000;
 
-    if (valid) {
-     setDetected(true);
-     setInFocus(true);
+    // Contorno completo de la hoja (antes: solo 4 puntos sueltos). Amarillo =
+    // detectado pero mal alineado/fuera de foco; verde = listo para disparar.
+    const color = quadValid && sharp ? "#22c55e" : "#eab308";
+    octx.strokeStyle = color;
+    octx.lineWidth = 2;
+    octx.beginPath();
+    octx.moveTo(tl[0], tl[1]);
+    octx.lineTo(tr[0], tr[1]);
+    octx.lineTo(br[0], br[1]);
+    octx.lineTo(bl[0], bl[1]);
+    octx.closePath();
+    octx.stroke();
+    for (const [cx, cy] of corners) {
+     octx.fillStyle = color;
+     octx.beginPath();
+     octx.arc(cx, cy, 5, 0, Math.PI * 2);
+     octx.fill();
+    }
+   } else {
+    badFrameCount.current++;
+    goodFrameCount.current = 0;
+   }
 
-     for (const [cx, cy] of corners) {
-      octx.strokeStyle = "#22c55e";
-      octx.lineWidth = 2;
-      octx.beginPath();
-      octx.arc(cx, cy, 12, 0, Math.PI * 2);
-      octx.stroke();
-      octx.strokeStyle = "rgba(34,197,94,0.25)";
-      octx.beginPath();
-      const midX = overlay.width / 2, midY = overlay.height / 2;
-      octx.moveTo(cx, cy);
-      octx.lineTo(midX + (cx - midX) * 0.7, midY + (cy - midY) * 0.7);
-      octx.stroke();
-     }
+   if (corners && quadValid && sharp) {
+    setDetected(true);
+    setInFocus(true);
+    // Bip de "enganchado" solo en el flanco no-detectado -> detectado, y solo
+    // mientras se busca una hoja nueva (evita re-bipear la MISMA hoja que
+    // sigue en cuadro durante el HUD/clearing del escaneo anterior).
+    if (!wasDetectedRef.current && phaseRef.current === "detecting") fireSensory("lock");
+    wasDetectedRef.current = true;
 
-     // Solo contar frames estables si las corners no se movieron >25px respecto al frame anterior
-     const prev = lastCornersRef.current;
-     const cornersStable = prev !== null && corners.every((c, i) =>
-       Math.hypot(c[0] - prev[i][0], c[1] - prev[i][1]) < 25
-     );
-     lastCornersRef.current = corners;
-     if (cornersStable) stableFrames.current++;
-     else stableFrames.current = 0;
+    // Solo contar frames estables si las corners no se movieron >25px respecto al frame anterior
+    const prev = lastCornersRef.current;
+    const cornersStable = prev !== null && corners.every((c, i) =>
+      Math.hypot(c[0] - prev[i][0], c[1] - prev[i][1]) < 25
+    );
+    lastCornersRef.current = corners;
+    if (cornersStable) stableFrames.current++;
+    else stableFrames.current = 0;
 
-     const canScan = Date.now() - lastScan > cooldownMs;
-     if (stableFrames.current >= stableFramesNeeded && canScan && phase === "detecting") {
-      stableFrames.current = 0;
-      setPhase("scanning");
-      runVotingScan();
-     }
-    } else {
+    const canScan = Date.now() - lastScanRef.current > cooldownMs;
+    if (stableFrames.current >= stableFramesNeeded && canScan && phaseRef.current === "detecting") {
      stableFrames.current = 0;
-     lastCornersRef.current = null;
-     setDetected(false);
-     setInFocus(false);
+     fireSensory("captureStart");
+     setPhase("scanning");
+     runVotingScan();
     }
    } else {
     stableFrames.current = 0;
     lastCornersRef.current = null;
-    badFrameCount.current++;
-    goodFrameCount.current = 0;
     setDetected(false);
     setInFocus(false);
+    wasDetectedRef.current = false;
+   }
+
+   // "clearing": tras el HUD, exige que la hoja salga de cuadro (o un timeout
+   // de seguridad) antes de rearmar el disparo automático -- evita re-escanear
+   // la misma hoja dos veces si el profe tarda en levantarla.
+   if (phaseRef.current === "clearing") {
+    const captured = capturedCornersRef.current;
+    const quadArea = (q: [number, number][]) =>
+     Math.abs((q[1][0] - q[0][0]) * (q[2][1] - q[0][1]) - (q[1][1] - q[0][1]) * (q[2][0] - q[0][0]));
+    const capturedArea = captured ? quadArea(captured) : 0;
+    const currentArea = corners ? quadArea(corners) : 0;
+    const areaChanged = capturedArea > 0 && Math.abs(currentArea - capturedArea) / capturedArea > 0.4;
+    const sheetGone = !corners || areaChanged;
+    const timedOut = Date.now() - clearingStartRef.current > 6000;
+    if (sheetGone || timedOut) resetForNextScan();
    }
 
    animId = requestAnimationFrame(loop);
@@ -977,18 +1144,14 @@ export default function ScanPage() {
 
   loop();
   return () => cancelAnimationFrame(animId);
- }, [stream, phase, lastScan, config]);
-
- const nextScan = () => {
-  setPhase("detecting");
-  setLastScan(Date.now());
-  setLastDiag(null);
-  setDebugLog([]);
-  setWarpedThumb(null);
-  setLabeled(false);
-  setSyncState("idle");
-  setSyncMessage("");
- };
+  // sensoryPrefs SÍ va en deps (a diferencia de phase/lastScan, que se leen de
+  // refs): cambia raras veces -- solo al tocar el drawer de config -- así que
+  // remontar el loop ahí es inofensivo, y evita que un toggle de sonido/ráfaga
+  // quede "pegado" al valor de cuando se montó la cámara. fireSensory/runVotingScan/
+  // cooldownMs quedan fuera a propósito (misma razón que phaseRef/lastScanRef):
+  // incluirlas haría que el loop se remonte en cada render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [stream, config, sensoryPrefs]);
 
  return (
   <div className="min-h-screen bg-black text-white flex flex-col overflow-hidden font-sans">
@@ -1000,9 +1163,23 @@ export default function ScanPage() {
      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Escaneando</span>
      <span className="text-xs font-bold">{scanCount} hojas</span>
     </div>
-    <button onClick={() => setShowDebug(!showDebug)} className="text-[10px] text-zinc-400 font-bold px-2 py-1">
-     {showDebug ? "Ocultar" : "Diagnostico"}
-    </button>
+    <div className="flex items-center gap-1">
+     {pendingReviewCount > 0 && (
+      <Link
+       href="/dashboard/papers"
+       className="text-[10px] font-black px-2 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40"
+       title="Hojas con avisos del servidor pendientes de revisar (no bloquean el escaneo)"
+      >
+       {pendingReviewCount} por revisar
+      </Link>
+     )}
+     <button onClick={() => setShowSettings(true)} className="text-[10px] text-zinc-400 font-bold px-2 py-1">
+      ⚙️
+     </button>
+     <button onClick={() => setShowDebug(!showDebug)} className="text-[10px] text-zinc-400 font-bold px-2 py-1">
+      {showDebug ? "Ocultar" : "Diagnostico"}
+     </button>
+    </div>
    </header>
 
    {/* Config del lector: DEBE coincidir con la hoja impresa (preg / opciones / columnas) */}
@@ -1026,13 +1203,27 @@ export default function ScanPage() {
     <canvas ref={hiddenCanvas} className="hidden" />
 
     {/* Status overlay */}
-    <div className="absolute top-4 left-0 right-0 flex justify-center z-20 pointer-events-none">
+    <div className="absolute top-4 left-0 right-0 flex flex-col items-center gap-1.5 z-20 pointer-events-none">
      <div className={`px-4 py-1.5 rounded-full backdrop-blur-lg border transition-all flex items-center gap-2 ${phase === "scanning" ? "bg-green-600/20 border-green-500/50" : "bg-black/40 border-zinc-800/50"}`}>
       <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${phase === "scanning" ? "bg-green-400" : detected && inFocus ? "bg-green-500" : "bg-zinc-600"}`} />
       <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-200">
-       {phase === "scanning" ? "Procesando..." : detected && inFocus ? "Detectado" : "Buscando hoja"}
+       {phase === "scanning" ? `Procesando${voteProgress > 0 ? ` ${voteProgress}/${VOTE_TARGET}` : "..."}`
+        : phase === "clearing" ? "Retira la hoja..."
+        : detected && inFocus ? "Detectado" : "Buscando hoja"}
       </span>
+      {phase === "scanning" && (
+       <span className="flex gap-0.5">
+        {Array.from({ length: VOTE_TARGET }, (_, i) => (
+         <span key={i} className={`w-1.5 h-1.5 rounded-full ${i < voteProgress ? "bg-green-400" : "bg-zinc-700"}`} />
+        ))}
+       </span>
+      )}
      </div>
+     {detected && sharpDisplay > 0 && phase === "detecting" && (
+      <div className="px-2 py-0.5 rounded-full bg-black/30 backdrop-blur text-[9px] font-bold text-zinc-400">
+       nitidez {sharpDisplay}
+      </div>
+     )}
     </div>
 
     {error && (
@@ -1186,8 +1377,8 @@ export default function ScanPage() {
      </div>
     )}
 
-    {/* Result Modal */}
-    {phase === "result" && (
+    {/* Result Modal (clásico, bloqueante) -- solo cuando el modo ráfaga está apagado */}
+    {phase === "review" && (
      <div className="absolute inset-0 flex items-center justify-center p-6 z-40 bg-black/60 backdrop-blur-sm animate-in fade-in zoom-in duration-200">
       <div className="w-full max-w-xs bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
        {(() => {
@@ -1205,6 +1396,7 @@ export default function ScanPage() {
             <div className="bg-green-500/10 text-green-500 px-3 py-1 rounded-full text-[10px] font-black border border-green-500/20">
              RUT: {studentId.join("") || "???"}
             </div>
+            {studentName && <div className="text-[10px] font-bold text-zinc-300">{studentName}</div>}
             <button onClick={() => setShowDebug(!showDebug)} className="text-[9px] text-zinc-600 underline font-bold">
              {showDebug ? "Ocultar Log" : "Ver Log"}
             </button>
@@ -1268,6 +1460,87 @@ export default function ScanPage() {
        <button onClick={nextScan} className="w-full py-4 bg-white text-black rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition">
         Siguiente
        </button>
+      </div>
+     </div>
+    )}
+
+    {/* HUD no bloqueante (modo ráfaga): reemplaza el modal para TODO caso --
+        feliz o no -- y se cierra solo ("clearing" espera a que la hoja salga
+        de cuadro). Deja la cámara visible para re-encuadrar la próxima hoja. */}
+    {(phase === "hud" || phase === "clearing") && (() => {
+     const openCount = results.filter((r) => r.flag === "abierta").length;
+     const correct = results.filter((r, i) => r.flag !== "abierta" && r.answer !== "-" && r.answer === answerKey[i]).length;
+     const tone = hudKind === "success" ? "border-green-500/50 bg-green-950/70 text-green-100"
+      : hudKind === "warning" ? "border-amber-500/50 bg-amber-950/70 text-amber-100"
+      : "border-red-500/50 bg-red-950/70 text-red-100";
+     return (
+      <div className="absolute bottom-28 left-4 right-4 z-30 pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-150">
+       <div className={`rounded-2xl border backdrop-blur-md px-4 py-3 shadow-2xl ${tone}`}>
+        <div className="flex items-center justify-between gap-3">
+         <div className="min-w-0">
+          {hudKind !== "error" ? (
+           <div className="text-lg font-black leading-tight">
+            {correct}<span className="opacity-60 text-sm font-bold">/{config.numQuestions - openCount}</span>
+           </div>
+          ) : (
+           <div className="text-xs font-black uppercase tracking-wide">Hoja no leída</div>
+          )}
+          <div className="text-[10px] font-bold truncate opacity-90">
+           {hudKind !== "error" ? `RUT ${studentId.join("") || "???"}${studentName ? ` · ${studentName}` : ""}` : hudMessage}
+          </div>
+          {hudKind === "warning" && hudMessage && <div className="text-[9px] opacity-80 mt-0.5">{hudMessage}</div>}
+          {hudKind !== "error" && syncState === "queued" && (
+           <div className="text-[9px] opacity-80 mt-0.5">Sin conexión — {studentName ? "guardado" : "nombre disponible"} al sincronizar</div>
+          )}
+          {hudKind !== "error" && syncState === "error" && (
+           <div className="text-[9px] opacity-80 mt-0.5">⚠ No se pudo sincronizar con el dashboard</div>
+          )}
+         </div>
+         <div className="text-[9px] font-bold uppercase tracking-widest opacity-70 shrink-0">
+          {phase === "clearing" ? "Retira la hoja" : "Escaneo " + scanCount}
+         </div>
+        </div>
+       </div>
+      </div>
+     );
+    })()}
+
+    {/* ─── Drawer de configuración: sonido / vibración / modo ráfaga ─── */}
+    {showSettings && (
+     <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end" onClick={() => setShowSettings(false)}>
+      <div
+       className="w-full bg-zinc-900 border-t border-zinc-800 rounded-t-3xl p-5 pb-8 animate-in slide-in-from-bottom duration-200"
+       onClick={(e) => e.stopPropagation()}
+      >
+       <div className="flex justify-between items-center mb-4">
+        <span className="text-sm font-black">Escaneo</span>
+        <button onClick={() => setShowSettings(false)} className="text-xs text-zinc-500 font-bold">CERRAR</button>
+       </div>
+       {([
+        { key: "burstMode" as const, label: "Modo ráfaga", hint: "Auto-avanza sin tocar la pantalla entre hojas" },
+        { key: "sound" as const, label: "Sonido", hint: "Tono al detectar, capturar y al terminar" },
+        { key: "vibration" as const, label: "Vibración", hint: "No disponible en iOS (limitación del sistema)" },
+       ]).map(({ key, label, hint }) => (
+        <div key={key} className="flex items-center justify-between py-2.5 border-b border-zinc-800/60 last:border-0">
+         <div>
+          <div className="text-xs font-bold text-zinc-200">{label}</div>
+          <div className="text-[9px] text-zinc-500">{hint}</div>
+         </div>
+         <button
+          onClick={() => {
+           const next = { ...sensoryPrefs, [key]: !sensoryPrefs[key] };
+           setSensoryPrefs(next);
+           saveSensoryPrefs(next);
+          }}
+          className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ${sensoryPrefs[key] ? "bg-green-600" : "bg-zinc-700"}`}
+         >
+          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${sensoryPrefs[key] ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+         </button>
+        </div>
+       ))}
+       <Link href="/dashboard/papers" className="block text-center text-[10px] text-zinc-500 underline mt-4">
+        Ver cola de revisión
+       </Link>
       </div>
      </div>
     )}
