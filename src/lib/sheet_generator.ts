@@ -144,8 +144,12 @@ export function suggestColumns(numQuestions: number): number {
 // en el PDF (calza con impresion duplex). Vive aqui, fuera del motor, porque no
 // participa de la lectura.
 
-/** Maximo de recuadros por pagina de reverso (menos = recuadros mas grandes). */
-export const OPEN_BOXES_PER_PAGE = 4;
+/** Maximo de recuadros por pagina de reverso (menos = recuadros mas grandes).
+ *  6 cubre con margen el maximo real de los presets DIA (5 abiertas en
+ *  dia_5b_matematica/dia_7b_matematica, ver dia_presets.ts) -- con 4 esas dos
+ *  hojas partian el reverso en 2 paginas de mas (1 frontal + 2 reversos = 3
+ *  hojas para un ensayo que cabe en 1 frontal + 1 reverso = 2). */
+export const OPEN_BOXES_PER_PAGE = 6;
 
 /** Reparte las preguntas abiertas en paginas de reverso. */
 export function chunkOpenQuestions(open: number[], maxPerPage: number = OPEN_BOXES_PER_PAGE): number[][] {
