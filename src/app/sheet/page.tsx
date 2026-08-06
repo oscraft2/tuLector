@@ -6,7 +6,6 @@ import { SHEET_W, SHEET_H, type SheetConfig } from "@/lib/sheet_layout";
 import {
   renderSheet, randomValidNationalId, randomAnswers, randomPartialAnswers, safeColumns, allowedColumns,
   paginateQuiz, chunkOpenQuestions, renderOpenAnswersSheet, reversoSheetCode, MIN_QUESTIONS, MAX_QUESTIONS,
-  OPEN_BOXES_PER_PAGE,
   type Branding, type GroundTruthEntry, type SheetMarks, type QuizPage,
 } from "@/lib/sheet_generator";
 import { parseOpenQuestions, parseOptionOverrides, parseMultiSelectQuestions } from "@/lib/quiz_constraints";
@@ -287,13 +286,6 @@ export default function SheetPage() {
     return chunkOpenQuestions(inPage);
   };
   const maxOpenChunks = Math.max(0, ...pages.map((p) => openChunksForPage(p).length));
-  // Tope duro "1 hoja fisica" (1 frontal + 1 reverso): si el frontal ya cabe
-  // en 1 sola pagina pero el reverso necesitaria mas de 1 (mas de
-  // OPEN_BOXES_PER_PAGE preguntas de desarrollo en esa hoja), no se genera
-  // el PDF en silencio con 3+ paginas -- se bloquea la descarga y se explica
-  // por que. La multipagina INTENCIONAL del frontal (ensayos >MAX_QUESTIONS,
-  // isMultipage=true) es un caso ya soportado y distinto, no se bloquea.
-  const reversoOverflow = !isMultipage && maxOpenChunks > 1;
 
   // Multipagina: exporta las N hojas como un solo PDF de N paginas (exportPdf
   // ya soporta multi-pagina, se reusa sin cambios). 1 pagina -> comportamiento
@@ -382,8 +374,7 @@ export default function SheetPage() {
       <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
         <Link href={backLink.href} className="text-sm text-zinc-400 hover:text-white">{backLink.label}</Link>
         <h1 className="text-lg font-bold">Generador de hojas</h1>
-        <button onClick={pdfOne} disabled={reversoOverflow} title={reversoOverflow ? "Bloqueado: el reverso necesita mas de 1 pagina — reduce las preguntas de desarrollo" : undefined}
-          className="px-3 py-1.5 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed">
+        <button onClick={pdfOne} className="px-3 py-1.5 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500">
           Descargar PDF
         </button>
       </header>
@@ -399,22 +390,16 @@ export default function SheetPage() {
               className="flex-1 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm font-semibold hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed">
               Descargar PNG
             </button>
-            <button onClick={pdfOne} disabled={reversoOverflow} title={reversoOverflow ? "Bloqueado: el reverso necesita mas de 1 pagina — reduce las preguntas de desarrollo" : undefined}
-              className="flex-1 py-2 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed">
+            <button onClick={pdfOne} className="flex-1 py-2 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500">
               Descargar PDF{isMultipage ? ` (${pages.length} hojas)` : ""}
             </button>
             {native && (
-              <button onClick={shareNative} disabled={sharing || isMultipage || reversoOverflow} title={isMultipage ? "Compartir solo envia la pagina 1 — usa Descargar PDF para las N hojas" : reversoOverflow ? "Bloqueado: el reverso necesita mas de 1 pagina — reduce las preguntas de desarrollo" : undefined}
+              <button onClick={shareNative} disabled={sharing || isMultipage} title={isMultipage ? "Compartir solo envia la pagina 1 — usa Descargar PDF para las N hojas" : undefined}
                 className="flex-1 py-2 bg-indigo-600 rounded-lg text-sm font-semibold hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed">
                 {sharing ? "Compartiendo..." : "Compartir"}
               </button>
             )}
           </div>
-          {reversoOverflow && (
-            <p className="text-xs text-red-400">
-              ⛔ Esta evaluación tiene {openQuestions.length} preguntas de desarrollo y no caben en 1 sola página de reverso (máx. {OPEN_BOXES_PER_PAGE}). Se generarían {maxOpenChunks} páginas de reverso + 1 frontal = {maxOpenChunks + 1} hojas. Descarga bloqueada: reduce las preguntas de desarrollo o divide la evaluación.
-            </p>
-          )}
           {isMultipage && (
             <p className="text-xs text-amber-400">
               ⚠ Este ensayo tiene {numQuestions} preguntas → se imprime en {pages.length} hojas (cada una con su propio bloque de ID, se pueden escanear en cualquier orden). Usa <strong>Descargar PDF</strong> para obtener las {pages.length} páginas.
