@@ -5,6 +5,7 @@ import type { DashboardActionState } from "@/app/dashboard/actions";
 import { ActionFeedbackDialog } from "@/components/dashboard/ActionFeedbackDialog";
 import { SubmitButton } from "@/components/dashboard/SubmitButton";
 import { guessColumnMapping, parseDelimitedText, detectDelimiter, type ColumnMapping } from "@/lib/student_import";
+import { toCsv } from "@/lib/csv";
 
 const initialState: DashboardActionState = { status: "idle" };
 
@@ -14,11 +15,42 @@ type CSVImportProps = {
   studentIdLabel?: string;
 };
 
+// Plantilla de ejemplo con 2 cursos distintos a proposito: la columna "curso"
+// es la que crea/reutiliza cursos oficiales del colegio al importar (ver
+// findOrCreateCourse en dashboard/actions.ts) -- el ejemplo deja claro que
+// un solo CSV puede traer alumnos de varios cursos a la vez.
+function downloadExampleCsv(studentIdLabel: string) {
+  const idHeader = studentIdLabel.toLowerCase();
+  const csv = toCsv(
+    [idHeader, "nombre", "curso", "nivel"],
+    [
+      ["12345678-5", "Ana Pérez", "IV Medio A", "IV Medio"],
+      ["9876543-2", "Juan Soto", "IV Medio B", "IV Medio"],
+      ["11222333-4", "María Rojas", "III Medio A", "III Medio"],
+    ],
+  );
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "alumnos_ejemplo.csv"; a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function CSVImport({ action, mappedAction, studentIdLabel = "RUT" }: CSVImportProps) {
   const [mode, setMode] = useState<"simple" | "smart">("simple");
 
   return (
     <div className="rounded-md border border-[#e6e8eb] bg-white p-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="text-xs text-[#6b7280]">Un mismo CSV puede traer alumnos de varios cursos: la columna &ldquo;curso&rdquo; crea o reutiliza cada curso automáticamente.</p>
+        <button
+          type="button"
+          onClick={() => downloadExampleCsv(studentIdLabel)}
+          className="shrink-0 rounded-md border border-[#cfd6df] bg-white px-3 py-1.5 text-xs font-semibold text-[#111827] hover:bg-[#f4f6f8]"
+        >
+          Descargar CSV de ejemplo
+        </button>
+      </div>
       <div className="mb-4 flex gap-2 border-b border-[#eef0f3]">
         <button
           type="button"
