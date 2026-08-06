@@ -11,11 +11,23 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   let result = await supabase
     .from("quizzes")
-    .select("id,title,subject,grade,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions")
+    .select("id,title,subject,grade,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions,open_boxes_per_page")
     .eq("id", id)
     .eq("school_id", school.id)
     .is("archived_at", null)
     .single();
+
+  if (result.error && isMissingColumnError(result.error, "open_boxes_per_page")) {
+    // BD sin migrar (open_boxes_per_page): degradacion SIEMPRE silenciosa --
+    // el ensayo cae al fallback LEGACY_OPEN_BOXES_PER_PAGE en /sheet.
+    result = await supabase
+      .from("quizzes")
+      .select("id,title,subject,grade,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions")
+      .eq("id", id)
+      .eq("school_id", school.id)
+      .is("archived_at", null)
+      .single();
+  }
 
   if (result.error && (isMissingColumnError(result.error, "option_overrides") || isMissingColumnError(result.error, "multi_select_questions"))) {
     result = await supabase

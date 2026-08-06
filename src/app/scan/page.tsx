@@ -10,7 +10,7 @@ import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H, rutColX, rutRowY, RUT_COLS, RUT_ROWS, RUT_R, questionLayout } from "@/lib/sheet_layout";
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
 import { APP_VERSION } from "@/lib/version";
-import { safeColumns, allowedColumns } from "@/lib/sheet_generator";
+import { safeColumns, allowedColumns, LEGACY_OPEN_BOXES_PER_PAGE } from "@/lib/sheet_generator";
 import { resolveIdReadConfig } from "@/lib/country_id_blocks";
 import { QUIZ_MAX_QUESTIONS, parseOpenQuestions, parseOptionOverrides, parseMultiSelectQuestions } from "@/lib/quiz_constraints";
 import { useSensoryFeedback, loadSensoryPrefs, saveSensoryPrefs, type SensoryStoredPrefs } from "@/lib/hooks/useSensoryFeedback";
@@ -186,6 +186,9 @@ export default function ScanPage() {
  const [scanCfg, setScanCfg] = useState({
   numQuestions: 20, numOptions: 5, numColumns: 1, optionLabels: "ABCDE", openQuestions: [] as number[],
   optionOverrides: {} as Record<number, number>, multiSelectQuestions: [] as number[],
+  // Regla de reparto de reverso EFECTIVA del ensayo activo (ver quizInfo.openBoxesPerPage
+  // en /sheet) -- default legacy hasta que se cargue el ensayo real.
+  openBoxesPerPage: LEGACY_OPEN_BOXES_PER_PAGE,
  });
  useEffect(() => {
   let alive = true;
@@ -201,6 +204,9 @@ export default function ScanPage() {
       openQuestions: Array.isArray(c.openQuestions) ? parseOpenQuestions(c.openQuestions.join(","), nq) : [],
       optionOverrides: c.optionOverrides && typeof c.optionOverrides === "object" ? c.optionOverrides : {},
       multiSelectQuestions: Array.isArray(c.multiSelectQuestions) ? parseOpenQuestions(c.multiSelectQuestions.join(","), nq) : [],
+      // Cache local sin este campo (versiones anteriores) -> legacy; se
+      // sobreescribe enseguida con el valor real al resolver /api/scan/active-quiz.
+      openBoxesPerPage: typeof c.openBoxesPerPage === "number" ? c.openBoxesPerPage : LEGACY_OPEN_BOXES_PER_PAGE,
      });
     }
    } catch { /* sin config guardada → default */ }
@@ -306,7 +312,7 @@ export default function ScanPage() {
      setError("Selecciona un ensayo desde el dashboard antes de escanear.");
      return;
     }
-    const data = await res.json() as { id?: string; answer_key?: string; title?: string; num_questions?: number; options_per_question?: number; option_labels?: string; num_columns?: number; sheet_code?: number | null; open_questions?: string | null; option_overrides?: string | null; multi_select_questions?: string | null; country_code?: string };
+    const data = await res.json() as { id?: string; answer_key?: string; title?: string; num_questions?: number; options_per_question?: number; option_labels?: string; num_columns?: number; sheet_code?: number | null; open_questions?: string | null; option_overrides?: string | null; multi_select_questions?: string | null; open_boxes_per_page?: number | null; country_code?: string };
     if (data.id) setActiveQuizId(String(data.id));
     setActiveSheetCode(typeof data.sheet_code === "number" ? data.sheet_code : null);
     if (data.country_code) setActiveCountryCode(data.country_code);
@@ -337,9 +343,13 @@ export default function ScanPage() {
     // hoja, asi que overrides/multiSelect solo se aplican si cabe en 1 hoja.
     const nextOptionOverrides = fitsOnePage ? parseOptionOverrides(data.option_overrides ?? "", nextQuestions) : {};
     const nextMultiSelect = fitsOnePage ? parseMultiSelectQuestions(data.multi_select_questions ?? "", nextQuestions) : [];
+    // Regla de reparto de reverso EFECTIVA del ensayo activo (ver
+    // quizInfo.openBoxesPerPage/LEGACY_OPEN_BOXES_PER_PAGE en /sheet): NULL =
+    // ensayo creado antes de la migracion open_boxes_per_page -> legacy.
+    const nextOpenBoxesPerPage = typeof data.open_boxes_per_page === "number" ? data.open_boxes_per_page : LEGACY_OPEN_BOXES_PER_PAGE;
     const nextCfg = {
      numQuestions: nextQuestions, numOptions: nextOptions, numColumns: nextColumns, optionLabels: nextLabels, openQuestions: nextOpen,
-     optionOverrides: nextOptionOverrides, multiSelectQuestions: nextMultiSelect,
+     optionOverrides: nextOptionOverrides, multiSelectQuestions: nextMultiSelect, openBoxesPerPage: nextOpenBoxesPerPage,
     };
     setScanCfg(nextCfg);
     try { localStorage.setItem("tulector_scan_config", JSON.stringify(nextCfg)); } catch { /* sin storage */ }
@@ -465,6 +475,7 @@ export default function ScanPage() {
        paper: String(payload.paperId),
        open: scanCfg.openQuestions.join(","),
        nq: String(scanCfg.numQuestions),
+       obpp: String(scanCfg.openBoxesPerPage),
       });
       router.push(`/scan/reverso?${params.toString()}`);
       return;

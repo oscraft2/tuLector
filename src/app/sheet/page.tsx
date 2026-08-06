@@ -6,6 +6,7 @@ import { SHEET_W, SHEET_H, type SheetConfig } from "@/lib/sheet_layout";
 import {
   renderSheet, randomValidNationalId, randomAnswers, randomPartialAnswers, safeColumns, allowedColumns,
   paginateQuiz, chunkOpenQuestions, renderOpenAnswersSheet, reversoSheetCode, MIN_QUESTIONS, MAX_QUESTIONS,
+  OPEN_BOXES_PER_PAGE, LEGACY_OPEN_BOXES_PER_PAGE,
   type Branding, type GroundTruthEntry, type SheetMarks, type QuizPage,
 } from "@/lib/sheet_generator";
 import { parseOpenQuestions, parseOptionOverrides, parseMultiSelectQuestions } from "@/lib/quiz_constraints";
@@ -80,7 +81,7 @@ export default function SheetPage() {
   const [markUpTo, setMarkUpTo] = useState(10);
 
   // Ensayo heredado via /sheet?quiz=<id>: la hoja toma su formato + clave + codigo.
-  const [quizInfo, setQuizInfo] = useState<{ id: string; title: string; sheetCode: number | null; answerKey: string } | null>(null);
+  const [quizInfo, setQuizInfo] = useState<{ id: string; title: string; sheetCode: number | null; answerKey: string; openBoxesPerPage: number | null } | null>(null);
   // Link de "volver" del header: al detalle del ensayo si se llego con
   // ?quiz=<id> (desde el dashboard), a Inicio si es el generador libre. Se fija
   // apenas se detecta el parametro -- sin esperar el fetch del ensayo -- para
@@ -228,7 +229,13 @@ export default function SheetPage() {
           setCountryCode(String(q.country_code));
           if (fillRut) setRut(randomValidNationalId(String(q.country_code)));
         }
-        setQuizInfo({ id: String(q.id), title: String(q.title ?? ""), sheetCode: q.sheet_code ?? null, answerKey: String(q.answer_key ?? "") });
+        setQuizInfo({
+          id: String(q.id), title: String(q.title ?? ""), sheetCode: q.sheet_code ?? null, answerKey: String(q.answer_key ?? ""),
+          // NULL = ensayo creado antes de la migracion open_boxes_per_page ->
+          // se lee/imprime con LEGACY_OPEN_BOXES_PER_PAGE, nunca con el valor
+          // vigente actual (ver effectiveOpenBoxesPerPage mas abajo).
+          openBoxesPerPage: typeof q.open_boxes_per_page === "number" ? q.open_boxes_per_page : null,
+        });
         setOpenQuestions(parseOpenQuestions(q.open_questions ?? "", nq));
         setOptionOverrides(parseOptionOverrides(q.option_overrides ?? "", nq));
         setMultiSelectQuestions(parseMultiSelectQuestions(q.multi_select_questions ?? "", nq));
@@ -280,12 +287,32 @@ export default function SheetPage() {
     return c.toDataURL("image/png");
   };
 
+  // Regla de reparto de reverso EFECTIVA para esta hoja: un ensayo real
+  // (quizInfo) usa el valor grabado en su fila (o el legacy si es NULL,
+  // ensayo creado antes de la migracion open_boxes_per_page) -- nunca el
+  // valor vigente actual, porque el codigo OMR de la hoja no guarda cuantas
+  // preguntas trae cada pagina de reverso y un cambio futuro de la constante
+  // desalinearia los recortes al leer (bug real, 2026-08-05). En modo
+  // sandbox (sin quizInfo, sin hoja fisica en juego) usa el valor vigente.
+  const effectiveOpenBoxesPerPage = quizInfo ? (quizInfo.openBoxesPerPage ?? LEGACY_OPEN_BOXES_PER_PAGE) : OPEN_BOXES_PER_PAGE;
+  // Ensayo creado ANTES de la migracion (columna NULL): el tope duro de mas
+  // abajo NUNCA se le aplica -- ya viene funcionando en N paginas de reverso
+  // desde siempre, bloquearlo dejaria a un profesor sin poder imprimir mas
+  // copias de un ensayo que ya usa.
+  const isLegacyQuiz = !!quizInfo && quizInfo.openBoxesPerPage == null;
+
   // Paginas de reverso que genera cada pagina frontal (para avisos de duplex).
   const openChunksForPage = (p: QuizPage) => {
     const inPage = openQuestions.filter((g) => g >= p.from && g <= p.to);
-    return chunkOpenQuestions(inPage);
+    return chunkOpenQuestions(inPage, effectiveOpenBoxesPerPage);
   };
   const maxOpenChunks = Math.max(0, ...pages.map((p) => openChunksForPage(p).length));
+  // Tope duro "1 hoja fisica" (1 frontal + 1 reverso): si el frontal ya cabe
+  // en 1 sola pagina pero el reverso necesitaria mas de 1, no se genera el
+  // PDF en silencio con 3+ paginas -- se bloquea la descarga y se explica
+  // por que. Solo aplica a ensayos NUEVOS (con valor propio grabado) o al
+  // modo sandbox; un ensayo legacy nunca se bloquea (ver isLegacyQuiz).
+  const reversoOverflow = !isLegacyQuiz && !isMultipage && maxOpenChunks > 1;
 
   // Multipagina: exporta las N hojas como un solo PDF de N paginas (exportPdf
   // ya soporta multi-pagina, se reusa sin cambios). 1 pagina -> comportamiento
@@ -374,7 +401,8 @@ export default function SheetPage() {
       <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
         <Link href={backLink.href} className="text-sm text-zinc-400 hover:text-white">{backLink.label}</Link>
         <h1 className="text-lg font-bold">Generador de hojas</h1>
-        <button onClick={pdfOne} className="px-3 py-1.5 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500">
+        <button onClick={pdfOne} disabled={reversoOverflow} title={reversoOverflow ? "Bloqueado: el reverso necesita mas de 1 pagina — reduce las preguntas de desarrollo" : undefined}
+          className="px-3 py-1.5 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed">
           Descargar PDF
         </button>
       </header>
@@ -390,16 +418,22 @@ export default function SheetPage() {
               className="flex-1 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm font-semibold hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed">
               Descargar PNG
             </button>
-            <button onClick={pdfOne} className="flex-1 py-2 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500">
+            <button onClick={pdfOne} disabled={reversoOverflow} title={reversoOverflow ? "Bloqueado: el reverso necesita mas de 1 pagina — reduce las preguntas de desarrollo" : undefined}
+              className="flex-1 py-2 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed">
               Descargar PDF{isMultipage ? ` (${pages.length} hojas)` : ""}
             </button>
             {native && (
-              <button onClick={shareNative} disabled={sharing || isMultipage} title={isMultipage ? "Compartir solo envia la pagina 1 — usa Descargar PDF para las N hojas" : undefined}
+              <button onClick={shareNative} disabled={sharing || isMultipage || reversoOverflow} title={isMultipage ? "Compartir solo envia la pagina 1 — usa Descargar PDF para las N hojas" : reversoOverflow ? "Bloqueado: el reverso necesita mas de 1 pagina — reduce las preguntas de desarrollo" : undefined}
                 className="flex-1 py-2 bg-indigo-600 rounded-lg text-sm font-semibold hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed">
                 {sharing ? "Compartiendo..." : "Compartir"}
               </button>
             )}
           </div>
+          {reversoOverflow && (
+            <p className="text-xs text-red-400">
+              ⛔ Esta evaluación tiene {openQuestions.length} preguntas de desarrollo y no caben en 1 sola página de reverso (máx. {effectiveOpenBoxesPerPage}). Se generarían {maxOpenChunks} páginas de reverso + 1 frontal = {maxOpenChunks + 1} hojas. Descarga bloqueada: reduce las preguntas de desarrollo o divide la evaluación.
+            </p>
+          )}
           {isMultipage && (
             <p className="text-xs text-amber-400">
               ⚠ Este ensayo tiene {numQuestions} preguntas → se imprime en {pages.length} hojas (cada una con su propio bloque de ID, se pueden escanear en cualquier orden). Usa <strong>Descargar PDF</strong> para obtener las {pages.length} páginas.

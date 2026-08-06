@@ -29,7 +29,7 @@ import {
 } from "@/lib/quiz_constraints";
 import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
 import { type StudentCsvRow, guessColumnMapping, rowsFromMapping } from "@/lib/student_import";
-import { suggestColumns } from "@/lib/sheet_generator";
+import { suggestColumns, OPEN_BOXES_PER_PAGE } from "@/lib/sheet_generator";
 import { sendTemplatedEmail } from "@/lib/email";
 import { calculateGrade } from "@/lib/latam";
 import { computeQuizScore } from "@/lib/grading";
@@ -130,6 +130,11 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
       option_overrides: serializeOptionOverrides(optionOverrides),
       multi_select_questions: serializeMultiSelectQuestions(multiSelectQuestions),
       open_question_rubrics: serializeOpenQuestionRubrics(openQuestionRubrics),
+      // Congela para SIEMPRE la regla de reparto de reverso vigente al crear
+      // este ensayo (ver src/lib/sheet_generator.ts LEGACY_OPEN_BOXES_PER_PAGE):
+      // asi imprimir y leer una misma hoja fisica nunca dependen de que la
+      // constante global no haya cambiado entre medio (bug real, 2026-08-05).
+      open_boxes_per_page: OPEN_BOXES_PER_PAGE,
       subject: String(formData.get("subject") ?? "") || null,
       grade,
       course_id: courseId,
@@ -159,6 +164,13 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
         // option_overrides): perder la rubrica no rompe la hoja ni el
         // puntaje, solo el profesor tiene que volver a tipearla despues.
         insertPayload = withoutOpenQuestionRubrics(insertPayload);
+        error = (await supabase.from("quizzes").insert(insertPayload)).error;
+      }
+      if (error && isMissingColumnError(error, "open_boxes_per_page")) {
+        // Degradacion SIEMPRE silenciosa: si la migracion no corrio aun, el
+        // ensayo simplemente cae al fallback LEGACY_OPEN_BOXES_PER_PAGE al
+        // imprimir/leer (mismo comportamiento que hoy, sin regresion).
+        insertPayload = withoutOpenBoxesPerPage(insertPayload);
         error = (await supabase.from("quizzes").insert(insertPayload)).error;
       }
       if (error && isMissingColumnError(error, "open_questions")) {
@@ -437,6 +449,12 @@ function withoutMultiSelectQuestions<T extends { multi_select_questions?: unknow
 function withoutOpenQuestionRubrics<T extends { open_question_rubrics?: unknown }>(payload: T) {
   const { open_question_rubrics: _openQuestionRubrics, ...rest } = payload;
   void _openQuestionRubrics;
+  return rest;
+}
+
+function withoutOpenBoxesPerPage<T extends { open_boxes_per_page?: unknown }>(payload: T) {
+  const { open_boxes_per_page: _openBoxesPerPage, ...rest } = payload;
+  void _openBoxesPerPage;
   return rest;
 }
 

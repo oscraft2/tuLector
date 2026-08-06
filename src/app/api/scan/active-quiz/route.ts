@@ -14,10 +14,21 @@ export async function GET() {
 
   let result = await supabase
     .from("quizzes")
-    .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions")
+    .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions,open_boxes_per_page")
     .eq("id", quizId)
     .is("archived_at", null)
     .single();
+
+  if (result.error && isMissingColumnError(result.error, "open_boxes_per_page")) {
+    // BD sin migrar (open_boxes_per_page): degradacion SIEMPRE silenciosa --
+    // /scan/reverso cae al fallback LEGACY_OPEN_BOXES_PER_PAGE.
+    result = await supabase
+      .from("quizzes")
+      .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions")
+      .eq("id", quizId)
+      .is("archived_at", null)
+      .single();
+  }
 
   if (result.error && (isMissingColumnError(result.error, "option_overrides") || isMissingColumnError(result.error, "multi_select_questions"))) {
     result = await supabase
@@ -62,6 +73,7 @@ export async function GET() {
     open_questions: (data as { open_questions?: string | null }).open_questions ?? null,
     option_overrides: (data as { option_overrides?: string | null }).option_overrides ?? null,
     multi_select_questions: (data as { multi_select_questions?: string | null }).multi_select_questions ?? null,
+    open_boxes_per_page: (data as { open_boxes_per_page?: number | null }).open_boxes_per_page ?? null,
     country_code: schoolRow?.country_code ?? "CL",
   });
 }

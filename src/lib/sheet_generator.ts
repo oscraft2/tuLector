@@ -144,8 +144,25 @@ export function suggestColumns(numQuestions: number): number {
 // en el PDF (calza con impresion duplex). Vive aqui, fuera del motor, porque no
 // participa de la lectura.
 
-/** Maximo de recuadros por pagina de reverso (menos = recuadros mas grandes). */
-export const OPEN_BOXES_PER_PAGE = 4;
+/** Maximo de recuadros por pagina de reverso (menos = recuadros mas grandes).
+ *  6 cubre con margen el maximo real de los presets DIA (5 abiertas en
+ *  dia_5b_matematica/dia_7b_matematica, ver dia_presets.ts). Seguro subirlo
+ *  de nuevo (venia en 4) porque desde la migracion open_boxes_per_page cada
+ *  ensayo NUEVO congela este valor en su propia fila al crearse -- ya no es
+ *  la unica fuente de verdad para hojas ya impresas (ver LEGACY_OPEN_BOXES_PER_PAGE). */
+export const OPEN_BOXES_PER_PAGE = 6;
+
+/** Valor historico con el que se imprimio TODO ensayo creado antes de la
+ *  migracion `open_boxes_per_page` (20260805000000): un ensayo cuya columna
+ *  quizzes.open_boxes_per_page es NULL debe leerse/re-imprimirse SIEMPRE con
+ *  este valor, nunca con el OPEN_BOXES_PER_PAGE vigente -- el codigo OMR de
+ *  la hoja no guarda cuantas preguntas trae cada pagina de reverso, asi que
+ *  imprimir y leer con valores distintos desalinea los recortes (bug real,
+ *  sesion 2026-08-05). Ver quizInfo.openBoxesPerPage en src/app/sheet/page.tsx
+ *  y el parametro `obpp` en src/app/scan/reverso/page.tsx. NO cambiar nunca
+ *  este numero retroactivamente: es un ancla historica, no una config.
+ */
+export const LEGACY_OPEN_BOXES_PER_PAGE = 4;
 
 /** Reparte las preguntas abiertas en paginas de reverso. */
 export function chunkOpenQuestions(open: number[], maxPerPage: number = OPEN_BOXES_PER_PAGE): number[][] {

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { detectReverso, cropOpenAnswerBox } from "@/lib/open_answer_capture";
-import { chunkOpenQuestions } from "@/lib/sheet_generator";
+import { chunkOpenQuestions, LEGACY_OPEN_BOXES_PER_PAGE } from "@/lib/sheet_generator";
 import { parseOpenQuestions } from "@/lib/quiz_constraints";
 
 /**
@@ -36,8 +36,15 @@ export default function ScanReversoPage() {
     const pid = params.get("paper");
     const nq = Number(params.get("nq") || 0);
     const openQuestions = parseOpenQuestions(params.get("open") ?? "", nq || 9999);
+    // Regla de reparto de reverso EFECTIVA del ensayo (viene de /scan, que la
+    // resuelve desde quizzes.open_boxes_per_page / LEGACY_OPEN_BOXES_PER_PAGE)
+    // -- NUNCA usar el default de chunkOpenQuestions aqui: debe coincidir
+    // exactamente con la regla usada al imprimir esta hoja fisica, sin
+    // importar que la constante global haya cambiado desde entonces.
+    const obppParam = Number(params.get("obpp"));
+    const obpp = Number.isFinite(obppParam) && obppParam > 0 ? obppParam : LEGACY_OPEN_BOXES_PER_PAGE;
     setPaperId(pid);
-    setChunks(chunkOpenQuestions(openQuestions));
+    setChunks(chunkOpenQuestions(openQuestions, obpp));
     if (!pid || openQuestions.length === 0) setError("Falta informacion del alumno o del ensayo (abre esta pagina desde /scan, no directo).");
   }, []);
 
