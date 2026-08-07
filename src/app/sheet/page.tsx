@@ -157,8 +157,12 @@ export default function SheetPage() {
     ...(!isMultipage && Object.keys(optionOverrides).length > 0 ? { optionOverrides } : {}),
     ...(!isMultipage && multiSelectQuestions.length > 0 ? { multiSelectQuestions } : {}),
   });
-  const marksForPage = (p: QuizPage): SheetMarks => ({
-    ...(fillRut ? { rut, filled: true } : {}),
+  // rutOverride: para generar N hojas reales (1 por alumno del roster, ver
+  // generateCourseSheets) sin depender del unico RUT manual del estado --
+  // tiene prioridad sobre fillRut/rut. Respuestas SIEMPRE en blanco (no se
+  // tocan aca), a diferencia del generador Beta de pruebas (generateBatch).
+  const marksForPage = (p: QuizPage, rutOverride?: string): SheetMarks => ({
+    ...(rutOverride ? { rut: rutOverride, filled: true } : fillRut ? { rut, filled: true } : {}),
     ...(quizInfo && quizInfo.sheetCode != null
       ? { code: { version: SHEET_CODE_VERSION, country: countryIdx, sheetId: quizInfo.sheetCode, page: p.page, pagesTotal: pages.length } as SheetCodeData }
       : {}),
@@ -299,12 +303,12 @@ export default function SheetPage() {
   };
 
   /** Renderiza UNA pagina especifica (multipagina) a dataURL. */
-  const renderPageToDataUrl = (p: QuizPage, format: "png" | "jpeg" = "png") => {
+  const renderPageToDataUrl = (p: QuizPage, format: "png" | "jpeg" = "png", rutOverride?: string) => {
     const c = document.createElement("canvas");
     c.width = SHEET_W * 2; c.height = SHEET_H * 2;
     const ctx = c.getContext("2d")!;
     ctx.scale(2, 2);
-    renderSheet(ctx, marksForPage(p), cfgForPage(p), brandingForPage(p));
+    renderSheet(ctx, marksForPage(p, rutOverride), cfgForPage(p), brandingForPage(p));
     return toDataUrl(c, format);
   };
 
@@ -363,6 +367,37 @@ export default function SheetPage() {
     ]),
     fillRut ? `hoja_tulector_${rut}.pdf` : "hoja_tulector.pdf",
   );
+
+  /** N hojas REALES del curso: 1 por alumno del roster (parsedRuts, real o
+   *  pegado a mano), RUT ya marcado, respuestas SIEMPRE en blanco -- a
+   *  diferencia de generateBatch (seccion "Beta"), que rellena respuestas
+   *  aleatorias solo para probar el lector, no para entregar a los alumnos.
+   *  Mismo patron de rendimiento ya construido para el Beta: JPEG + progreso
+   *  + cede el hilo entre alumno y alumno (evita cuelgues en cursos grandes). */
+  const generateCourseSheets = async () => {
+    if (parsedRuts.length === 0) {
+      alert(`Pega o carga al menos un ${countryProfile.studentIdLabel} válido del curso.`);
+      return;
+    }
+    setBusy(true);
+    setProgress({ done: 0, total: parsedRuts.length });
+    await new Promise((r) => setTimeout(r, 30)); // deja pintar el "Generando…"
+    const urls: string[] = [];
+    for (let i = 0; i < parsedRuts.length; i++) {
+      const studentRut = parsedRuts[i];
+      urls.push(...pages.flatMap((p) => [
+        renderPageToDataUrl(p, "jpeg", studentRut),
+        ...openChunksForPage(p).map((qs, ci, arr) =>
+          renderOpenPageToDataUrl(qs, p.page, ci + 1, arr.length > 1 || isMultipage ? `Reverso ${ci + 1} de ${arr.length}${isMultipage ? ` — Hoja ${p.page}` : ""}` : undefined, "jpeg")),
+      ]));
+      setProgress({ done: i + 1, total: parsedRuts.length });
+      await new Promise(requestAnimationFrame);
+    }
+    const baseName = (quizInfo?.title || title || "curso").trim().replace(/\s+/g, "_");
+    await exportPdf(urls, `hojas_${baseName}_${parsedRuts.length}_alumnos.pdf`);
+    setBusy(false);
+    setProgress(null);
+  };
 
   const downloadPNG = () => {
     const a = document.createElement("a");
@@ -476,6 +511,25 @@ export default function SheetPage() {
               </button>
             )}
           </div>
+          {parsedRuts.length > 0 && (
+            <div className="space-y-1">
+              <button onClick={generateCourseSheets} disabled={busy || isMultipage || reversoOverflow}
+                title={isMultipage ? "Todavía no soporta ensayos multipágina" : reversoOverflow ? "Bloqueado: el reverso necesita mas de 1 pagina — reduce las preguntas de desarrollo" : undefined}
+                className="w-full py-2 bg-emerald-600 rounded-lg text-sm font-semibold hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed">
+                {busy && progress
+                  ? `Generando… ${progress.done}/${progress.total} (${Math.round((progress.done / progress.total) * 100)}%)`
+                  : `Descargar hojas del curso (${parsedRuts.length} alumno${parsedRuts.length === 1 ? "" : "s"})`}
+              </button>
+              {busy && progress && (
+                <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-400 transition-[width] duration-150"
+                    style={{ width: `${Math.round((progress.done / progress.total) * 100)}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
           {reversoOverflow && (
             <p className="text-xs text-red-400">
               ⛔ Esta evaluación tiene {openQuestions.length} preguntas de desarrollo y no caben en 1 sola página de reverso (máx. {effectiveOpenBoxesPerPage}). Se generarían {maxOpenChunks} páginas de reverso + 1 frontal = {maxOpenChunks + 1} hojas. Descarga bloqueada: reduce las preguntas de desarrollo o divide la evaluación.
