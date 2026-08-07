@@ -216,7 +216,7 @@ export function renderOpenAnswersSheet(
   ctx: CanvasRenderingContext2D,
   questions: number[],
   branding: Branding = {},
-  opts: { pageInfo?: string; code?: SheetCodeData } = {},
+  opts: { pageInfo?: string; code?: SheetCodeData; studentName?: string; studentRut?: string } = {},
 ): void {
   ctx.save();
   ctx.fillStyle = "#ffffff";
@@ -252,6 +252,19 @@ export function renderOpenAnswersSheet(
   ctx.beginPath(); ctx.moveTo(150, 122); ctx.lineTo(720, 122); ctx.stroke();
   ctx.fillText("RUT / ID:", 760, 118);
   ctx.beginPath(); ctx.moveTo(845, 122); ctx.lineTo(1120, 122); ctx.stroke();
+  // Hoja generada para un alumno real (generateCourseSheets): imprime nombre
+  // y RUT SOBRE las lineas en vez de dejarlas en blanco -- antes solo la hoja
+  // frontal quedaba asociada al alumno, el reverso salia identico para todo
+  // el curso (bug real: sin forma de saber de quien era si se separaba de su
+  // hoja frontal).
+  if (opts.studentName) {
+    ctx.font = "bold 15px sans-serif";
+    ctx.fillText(opts.studentName.slice(0, 60), 160, 118);
+  }
+  if (opts.studentRut) {
+    ctx.font = "bold 15px sans-serif";
+    ctx.fillText(opts.studentRut, 855, 118);
+  }
   ctx.font = "12px sans-serif";
   ctx.fillStyle = "#555555";
   ctx.fillText("Escribe tu desarrollo dentro del recuadro de cada pregunta.", 80, 150);

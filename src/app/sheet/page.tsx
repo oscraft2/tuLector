@@ -106,22 +106,26 @@ export default function SheetPage() {
   const [multiSelectQuestions, setMultiSelectQuestions] = useState<number[]>([]);
 
   // Parsea la lista pegada (acepta "id" o "id,nombre,curso" por línea, salta
-  // encabezado). Devuelve IDs válidos (segun el pais elegido) normalizados, sin duplicados.
-  const parseRutList = (raw: string): string[] => {
-    const out: string[] = [];
+  // encabezado). Devuelve {rut, name} validos (segun el pais elegido)
+  // normalizados, sin duplicados -- el nombre se usa para personalizar cada
+  // hoja del curso (generateCourseSheets), no solo el RUT.
+  const parseRosterList = (raw: string): { rut: string; name: string }[] => {
+    const out: { rut: string; name: string }[] = [];
     const seen = new Set<string>();
     for (const line of raw.split(/\r?\n/)) {
-      const first = line.split(",")[0]?.trim() ?? "";
+      const cols = line.split(",");
+      const first = cols[0]?.trim() ?? "";
       if (!first || /rut|dni|cpf|cedula|c[eé]dula/i.test(first)) continue; // vacío o encabezado
       const resolved = resolveNationalId(first, countryCode);
       if (!resolved.valid) continue;
       if (seen.has(resolved.normalized)) continue;
       seen.add(resolved.normalized);
-      out.push(resolved.normalized);
+      out.push({ rut: resolved.normalized, name: (cols[1] ?? "").trim() });
     }
     return out;
   };
-  const parsedRuts = rutMode === "list" ? parseRutList(rutList) : [];
+  const parsedRoster = rutMode === "list" ? parseRosterList(rutList) : [];
+  const parsedRuts = parsedRoster.map((s) => s.rut);
   // Nº de preguntas que quedan auto-marcadas; el resto en blanco (marcado a mano).
   const effectiveMarkUpTo = partialMode ? Math.max(0, Math.min(markUpTo, numQuestions)) : numQuestions;
 
@@ -167,9 +171,14 @@ export default function SheetPage() {
       ? { code: { version: SHEET_CODE_VERSION, country: countryIdx, sheetId: quizInfo.sheetCode, page: p.page, pagesTotal: pages.length } as SheetCodeData }
       : {}),
   });
-  const brandingForPage = (p: QuizPage): Branding => ({
+  // studentName: reusa el slot pageInfo (zona de branding segura, ya
+  // dibujada por drawBranding fuera de las anclas/lectura) para imprimir el
+  // nombre del alumno en las hojas del curso -- sin tocar el motor OMR.
+  const brandingForPage = (p: QuizPage, studentName?: string): Branding => ({
     title, school, logo,
-    ...(isMultipage ? { pageInfo: `Página ${p.page} de ${pages.length} — Preguntas ${p.from}–${p.to}` } : {}),
+    ...((studentName || isMultipage)
+      ? { pageInfo: [studentName, isMultipage ? `Página ${p.page} de ${pages.length} — Preguntas ${p.from}–${p.to}` : null].filter(Boolean).join(" — ") }
+      : {}),
   });
 
   // Config/marcas/branding de la PRIMERA pagina: usados por la vista previa,
@@ -303,12 +312,12 @@ export default function SheetPage() {
   };
 
   /** Renderiza UNA pagina especifica (multipagina) a dataURL. */
-  const renderPageToDataUrl = (p: QuizPage, format: "png" | "jpeg" = "png", rutOverride?: string) => {
+  const renderPageToDataUrl = (p: QuizPage, format: "png" | "jpeg" = "png", rutOverride?: string, studentName?: string) => {
     const c = document.createElement("canvas");
     c.width = SHEET_W * 2; c.height = SHEET_H * 2;
     const ctx = c.getContext("2d")!;
     ctx.scale(2, 2);
-    renderSheet(ctx, marksForPage(p, rutOverride), cfgForPage(p), brandingForPage(p));
+    renderSheet(ctx, marksForPage(p, rutOverride), cfgForPage(p), brandingForPage(p, studentName));
     return toDataUrl(c, format);
   };
 
@@ -316,7 +325,7 @@ export default function SheetPage() {
    *  Si el ensayo tiene sheetCode, el reverso sale ESCANEABLE (anclas + codigo
    *  con la convencion reversoSheetCode) -- sin sheetCode (generador libre sin
    *  ?quiz=<id>) queda solo impreso, como antes. */
-  const renderOpenPageToDataUrl = (questions: number[], frontPage: number, chunkIndex: number, pageInfo?: string, format: "png" | "jpeg" = "png") => {
+  const renderOpenPageToDataUrl = (questions: number[], frontPage: number, chunkIndex: number, pageInfo?: string, format: "png" | "jpeg" = "png", studentName?: string, studentRut?: string) => {
     const c = document.createElement("canvas");
     c.width = SHEET_W * 2; c.height = SHEET_H * 2;
     const ctx = c.getContext("2d")!;
@@ -324,7 +333,10 @@ export default function SheetPage() {
     const code = quizInfo && quizInfo.sheetCode != null
       ? reversoSheetCode(frontPage, chunkIndex, { version: SHEET_CODE_VERSION, country: countryIdx, sheetId: quizInfo.sheetCode })
       : undefined;
-    renderOpenAnswersSheet(ctx, questions, branding, { ...(pageInfo ? { pageInfo } : {}), ...(code ? { code } : {}) });
+    renderOpenAnswersSheet(ctx, questions, branding, {
+      ...(pageInfo ? { pageInfo } : {}), ...(code ? { code } : {}),
+      ...(studentName ? { studentName } : {}), ...(studentRut ? { studentRut } : {}),
+    });
     return toDataUrl(c, format);
   };
 
@@ -375,26 +387,26 @@ export default function SheetPage() {
    *  Mismo patron de rendimiento ya construido para el Beta: JPEG + progreso
    *  + cede el hilo entre alumno y alumno (evita cuelgues en cursos grandes). */
   const generateCourseSheets = async () => {
-    if (parsedRuts.length === 0) {
+    if (parsedRoster.length === 0) {
       alert(`Pega o carga al menos un ${countryProfile.studentIdLabel} válido del curso.`);
       return;
     }
     setBusy(true);
-    setProgress({ done: 0, total: parsedRuts.length });
+    setProgress({ done: 0, total: parsedRoster.length });
     await new Promise((r) => setTimeout(r, 30)); // deja pintar el "Generando…"
     const urls: string[] = [];
-    for (let i = 0; i < parsedRuts.length; i++) {
-      const studentRut = parsedRuts[i];
+    for (let i = 0; i < parsedRoster.length; i++) {
+      const { rut: studentRut, name: studentName } = parsedRoster[i];
       urls.push(...pages.flatMap((p) => [
-        renderPageToDataUrl(p, "jpeg", studentRut),
+        renderPageToDataUrl(p, "jpeg", studentRut, studentName || undefined),
         ...openChunksForPage(p).map((qs, ci, arr) =>
-          renderOpenPageToDataUrl(qs, p.page, ci + 1, arr.length > 1 || isMultipage ? `Reverso ${ci + 1} de ${arr.length}${isMultipage ? ` — Hoja ${p.page}` : ""}` : undefined, "jpeg")),
+          renderOpenPageToDataUrl(qs, p.page, ci + 1, arr.length > 1 || isMultipage ? `Reverso ${ci + 1} de ${arr.length}${isMultipage ? ` — Hoja ${p.page}` : ""}` : undefined, "jpeg", studentName || undefined, studentRut)),
       ]));
-      setProgress({ done: i + 1, total: parsedRuts.length });
+      setProgress({ done: i + 1, total: parsedRoster.length });
       await new Promise(requestAnimationFrame);
     }
     const baseName = (quizInfo?.title || title || "curso").trim().replace(/\s+/g, "_");
-    await exportPdf(urls, `hojas_${baseName}_${parsedRuts.length}_alumnos.pdf`);
+    await exportPdf(urls, `hojas_${baseName}_${parsedRoster.length}_alumnos.pdf`);
     setBusy(false);
     setProgress(null);
   };
