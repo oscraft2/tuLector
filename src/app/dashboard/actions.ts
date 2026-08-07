@@ -766,7 +766,7 @@ export async function inviteMember(formData: FormData) {
     });
   }
 
-  revalidatePath("/dashboard/team");
+  revalidatePath("/dashboard/settings");
 }
 
 export async function revokeMember(formData: FormData) {
@@ -775,7 +775,7 @@ export async function revokeMember(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await supabase.from("school_members").delete().eq("id", id);
-  revalidatePath("/dashboard/team");
+  revalidatePath("/dashboard/settings");
 }
 
 export async function updateSchoolSettings(formData: FormData) {

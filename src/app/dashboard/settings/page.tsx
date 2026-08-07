@@ -2,7 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { StatusPill } from "@/components/AppShell";
-import { updateSchoolSettings } from "@/app/dashboard/actions";
+import { updateSchoolSettings, inviteMember, revokeMember } from "@/app/dashboard/actions";
 import { countryProfiles } from "@/lib/country_profiles";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { DisconnectButton } from "@/components/dashboard/DisconnectButton";
@@ -10,11 +10,25 @@ import { DeleteAccountButton } from "@/components/dashboard/DeleteAccountButton"
 import { LanguageSwitcher } from "@/components/dashboard/LanguageSwitcher";
 import { BiometricToggle } from "@/components/native/BiometricToggle";
 import { PortalLinkCard } from "@/components/dashboard/PortalLinkCard";
+import { InviteForm } from "@/components/dashboard/InviteForm";
+import { DataTable } from "@/components/dashboard/DataTable";
 
 export const dynamic = "force-dynamic";
 
+type TeamMemberRow = {
+  id: string;
+  user_id: string;
+  role: string;
+  created_at: string;
+  email: string;
+  quizCount: number;
+  paperCount: number;
+};
+
+type InvitationRow = { id: string; email: string; role: string; status: string; created_at: string };
+
 export default async function SettingsPage() {
-  const { school, countryProfile, member, user, locale, isAdmin } = await getDashboardContext();
+  const { supabase, school, countryProfile, member, user, locale, isAdmin } = await getDashboardContext();
   const email = user.email ?? "usuario@tulector.app";
   const initials = email.slice(0, 2).toUpperCase();
   const isOfficialSchool = !!school.rbd;
@@ -24,6 +38,59 @@ export default async function SettingsPage() {
   const host = headersList.get("host") ?? "localhost:3000";
   const proto = headersList.get("x-forwarded-proto") ?? "http";
   const baseUrl = `${proto}://${host}`;
+
+  const showTeamSection = isAdmin && school.plan === "school";
+  let teamMembers: TeamMemberRow[] = [];
+  let invitations: InvitationRow[] = [];
+
+  if (showTeamSection) {
+    const [{ data: members }, { data: invitationRows }, { data: quizRows }, { data: paperRows }] = await Promise.all([
+      supabase.from("school_members").select("id,user_id,role,created_at").eq("school_id", school.id).order("created_at"),
+      supabase.from("invitations").select("id,email,role,status,created_at").eq("school_id", school.id).order("created_at", { ascending: false }),
+      supabase.from("quizzes").select("id,created_by").eq("school_id", school.id),
+      supabase.from("papers").select("quiz_id").eq("school_id", school.id),
+    ]);
+    invitations = invitationRows ?? [];
+
+    // "Ensayos creados" y "Hojas escaneadas" por docente -- created_by solo
+    // vive en quizzes, asi que las hojas se cuentan uniendo papers.quiz_id
+    // en memoria (sin GROUP BY porque el cliente JS de Supabase no lo soporta).
+    const quizCountByCreator = new Map<string, number>();
+    const creatorByQuizId = new Map<string, string>();
+    for (const quiz of quizRows ?? []) {
+      if (!quiz.created_by) continue;
+      quizCountByCreator.set(quiz.created_by, (quizCountByCreator.get(quiz.created_by) ?? 0) + 1);
+      creatorByQuizId.set(quiz.id, quiz.created_by);
+    }
+    const paperCountByCreator = new Map<string, number>();
+    for (const paper of paperRows ?? []) {
+      const creator = paper.quiz_id ? creatorByQuizId.get(paper.quiz_id) : undefined;
+      if (creator) paperCountByCreator.set(creator, (paperCountByCreator.get(creator) ?? 0) + 1);
+    }
+
+    const emailByUserId = new Map<string, string>();
+    if (members && members.length > 0) {
+      const { createSupabaseAdminClient } = await import("@/lib/supabaseAdmin");
+      const admin = createSupabaseAdminClient();
+      await Promise.all(
+        members.map(async (m) => {
+          try {
+            const { data } = await admin.auth.admin.getUserById(m.user_id);
+            if (data?.user?.email) emailByUserId.set(m.user_id, data.user.email);
+          } catch {
+            // usuario ya no existe en auth o error puntual -- se muestra el id
+          }
+        })
+      );
+    }
+
+    teamMembers = (members ?? []).map((m) => ({
+      ...m,
+      email: emailByUserId.get(m.user_id) ?? m.user_id,
+      quizCount: quizCountByCreator.get(m.user_id) ?? 0,
+      paperCount: paperCountByCreator.get(m.user_id) ?? 0,
+    }));
+  }
 
   return (
     <>
@@ -102,6 +169,55 @@ export default async function SettingsPage() {
               </button>
             </form>
           </SectionCard>
+
+          {showTeamSection ? (
+            <SectionCard title="Equipo y administracion" description="Invita profesores, revisa su actividad y revoca accesos. Cada docente solo ve sus propios ensayos y resultados; tu como admin ves todo.">
+              <div className="space-y-4">
+                <InviteForm action={inviteMember} />
+                <DataTable
+                  columns={["Usuario", "Rol", "Ensayos", "Hojas", "Creado", "Accion"]}
+                  rows={teamMembers}
+                  empty="No hay miembros visibles."
+                  renderRow={(m) => (
+                    <tr key={m.id} className="border-b border-[#eef0f3] last:border-0">
+                      <td className="px-5 py-4">
+                        <span className="block font-semibold text-[#111827]">{m.email}</span>
+                      </td>
+                      <td className="px-5 py-4"><StatusPill>{roleLabel(m.role)}</StatusPill></td>
+                      <td className="px-5 py-4 text-[#5b6472]">{m.quizCount}</td>
+                      <td className="px-5 py-4 text-[#5b6472]">{m.paperCount}</td>
+                      <td className="px-5 py-4 text-[#5b6472]">{new Date(m.created_at).toLocaleDateString("es-CL")}</td>
+                      <td className="px-5 py-4">
+                        {m.user_id !== user.id ? (
+                          <form action={revokeMember}>
+                            <input type="hidden" name="id" value={m.id} />
+                            <button className="rounded-md border border-[#cfd6df] px-3 py-1.5 text-xs font-semibold hover:border-red-300 hover:text-red-700">Eliminar</button>
+                          </form>
+                        ) : (
+                          <span className="text-xs text-[#9aa3af]">Tu cuenta</span>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                />
+                {invitations.length > 0 ? (
+                  <DataTable
+                    columns={["Email", "Rol", "Estado", "Fecha"]}
+                    rows={invitations}
+                    empty="No hay invitaciones pendientes."
+                    renderRow={(invite) => (
+                      <tr key={invite.id} className="border-b border-[#eef0f3] last:border-0">
+                        <td className="px-5 py-4 font-semibold">{invite.email}</td>
+                        <td className="px-5 py-4">{roleLabel(invite.role)}</td>
+                        <td className="px-5 py-4"><StatusPill>{invite.status}</StatusPill></td>
+                        <td className="px-5 py-4 text-[#5b6472]">{new Date(invite.created_at).toLocaleDateString("es-CL")}</td>
+                      </tr>
+                    )}
+                  />
+                ) : null}
+              </div>
+            </SectionCard>
+          ) : null}
         </div>
 
         <div className="space-y-6">
@@ -113,7 +229,6 @@ export default async function SettingsPage() {
               <SummaryRow label="Perfil pais" value={countryProfile.profileName} />
             </div>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              {school.plan === "school" ? <ActionLink href="/dashboard/team" label="Gestionar equipo" description={isAdmin ? "Roles e invitaciones" : "Ver equipo"} /> : null}
               <ActionLink href="/dashboard/billing" label="Plan y compras" description="Cuota e historial" />
               <ActionLink href="/app" label="Abrir app movil" description="Escanear y revisar" />
               <ActionLink href="/support" label="Soporte" description="Ayuda y contacto" />

@@ -73,7 +73,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
     { href: "/dashboard/courses", label: "Cursos" },
     { href: "/dashboard/quizzes", label: "Ensayos" },
     { href: "/dashboard/papers", label: t.papers },
-    ...(school.plan === "school" ? [{ href: "/dashboard/team", label: t.team }] : []),
     { href: "/dashboard/billing", label: t.billing },
     { href: "/dashboard/settings", label: t.settings },
   ];
