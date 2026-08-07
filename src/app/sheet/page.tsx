@@ -30,7 +30,7 @@ async function exportPdf(dataUrls: string[], filename: string) {
   const x = (PW - w) / 2, y = (PH - h) / 2;
   dataUrls.forEach((url, i) => {
     if (i > 0) doc.addPage("letter", "portrait");
-    doc.addImage(url, "PNG", x, y, w, h);
+    doc.addImage(url, url.startsWith("data:image/jpeg") ? "JPEG" : "PNG", x, y, w, h);
   });
   doc.save(filename);
 }
@@ -68,6 +68,7 @@ export default function SheetPage() {
   // Beta
   const [batchN, setBatchN] = useState(40);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [native, setNative] = useState(false);
   const [sharing, setSharing] = useState(false);
   // Origen de RUTs del beta: "random" (aleatorios) o "list" (roster de un curso).
@@ -275,32 +276,43 @@ export default function SheetPage() {
     img.src = URL.createObjectURL(file);
   };
 
-  /** Renderiza una hoja a dataURL PNG (2x para nitidez de impresión). Usa la
+  /** PNG = calidad maxima para la hoja individual (Descargar PNG/Compartir).
+   *  JPEG = para PDFs con muchas hojas (pdfOne/generateBatch): el lector OMR
+   *  nunca lee este archivo -- lee una foto/escaneo fresco de la hoja YA
+   *  IMPRESA en papel -- asi que comprimir aca no afecta la precision de
+   *  lectura, solo el peso/velocidad de generar el PDF (bug real: una hoja de
+   *  2 paginas en PNG llegaba a pesar 45MB, volviendo pesada/lenta la
+   *  generacion de un lote de un curso completo). */
+  function toDataUrl(c: HTMLCanvasElement, format: "png" | "jpeg" = "png"): string {
+    return format === "jpeg" ? c.toDataURL("image/jpeg", 0.92) : c.toDataURL("image/png");
+  }
+
+  /** Renderiza una hoja a dataURL (2x para nitidez de impresión). Usa la
    *  config/branding de la PAGINA 1 (ver comentario mas arriba). */
-  const renderToDataUrl = (m: SheetMarks) => {
+  const renderToDataUrl = (m: SheetMarks, format: "png" | "jpeg" = "png") => {
     const c = document.createElement("canvas");
     c.width = SHEET_W * 2; c.height = SHEET_H * 2;
     const ctx = c.getContext("2d")!;
     ctx.scale(2, 2);
     renderSheet(ctx, m, cfg, branding);
-    return c.toDataURL("image/png");
+    return toDataUrl(c, format);
   };
 
-  /** Renderiza UNA pagina especifica (multipagina) a dataURL PNG. */
-  const renderPageToDataUrl = (p: QuizPage) => {
+  /** Renderiza UNA pagina especifica (multipagina) a dataURL. */
+  const renderPageToDataUrl = (p: QuizPage, format: "png" | "jpeg" = "png") => {
     const c = document.createElement("canvas");
     c.width = SHEET_W * 2; c.height = SHEET_H * 2;
     const ctx = c.getContext("2d")!;
     ctx.scale(2, 2);
     renderSheet(ctx, marksForPage(p), cfgForPage(p), brandingForPage(p));
-    return c.toDataURL("image/png");
+    return toDataUrl(c, format);
   };
 
-  /** Renderiza UNA pagina de reverso (recuadros de desarrollo) a dataURL PNG.
+  /** Renderiza UNA pagina de reverso (recuadros de desarrollo) a dataURL.
    *  Si el ensayo tiene sheetCode, el reverso sale ESCANEABLE (anclas + codigo
    *  con la convencion reversoSheetCode) -- sin sheetCode (generador libre sin
    *  ?quiz=<id>) queda solo impreso, como antes. */
-  const renderOpenPageToDataUrl = (questions: number[], frontPage: number, chunkIndex: number, pageInfo?: string) => {
+  const renderOpenPageToDataUrl = (questions: number[], frontPage: number, chunkIndex: number, pageInfo?: string, format: "png" | "jpeg" = "png") => {
     const c = document.createElement("canvas");
     c.width = SHEET_W * 2; c.height = SHEET_H * 2;
     const ctx = c.getContext("2d")!;
@@ -309,7 +321,7 @@ export default function SheetPage() {
       ? reversoSheetCode(frontPage, chunkIndex, { version: SHEET_CODE_VERSION, country: countryIdx, sheetId: quizInfo.sheetCode })
       : undefined;
     renderOpenAnswersSheet(ctx, questions, branding, { ...(pageInfo ? { pageInfo } : {}), ...(code ? { code } : {}) });
-    return c.toDataURL("image/png");
+    return toDataUrl(c, format);
   };
 
   // Regla de reparto de reverso EFECTIVA para esta hoja: un ensayo real
@@ -345,9 +357,9 @@ export default function SheetPage() {
   // pagina(s) de reverso DESPUES de cada frente (calza con impresion duplex).
   const pdfOne = () => exportPdf(
     pages.flatMap((p) => [
-      renderPageToDataUrl(p),
+      renderPageToDataUrl(p, "jpeg"),
       ...openChunksForPage(p).map((qs, i, arr) =>
-        renderOpenPageToDataUrl(qs, p.page, i + 1, arr.length > 1 || isMultipage ? `Reverso ${i + 1} de ${arr.length}${isMultipage ? ` — Hoja ${p.page}` : ""}` : undefined)),
+        renderOpenPageToDataUrl(qs, p.page, i + 1, arr.length > 1 || isMultipage ? `Reverso ${i + 1} de ${arr.length}${isMultipage ? ` — Hoja ${p.page}` : ""}` : undefined, "jpeg")),
     ]),
     fillRut ? `hoja_tulector_${rut}.pdf` : "hoja_tulector.pdf",
   );
@@ -380,6 +392,7 @@ export default function SheetPage() {
     }
     const count = ruts ? ruts.length : batchN;
     setBusy(true);
+    setProgress({ done: 0, total: count });
     await new Promise((r) => setTimeout(r, 30)); // deja pintar el "Generando…"
     const urls: string[] = [];
     const truth: GroundTruthEntry[] = [];
@@ -398,10 +411,18 @@ export default function SheetPage() {
         : randomAnswers(numQuestions, numOptions);
       // Preguntas de desarrollo: sin burbujas en la hoja → siempre en blanco.
       for (const g of openQuestions) if (g >= 1 && g <= ans.length) ans[g - 1] = -1;
-      urls.push(renderToDataUrl({ rut: r, answers: ans, filled: true, ...(marks.code ? { code: marks.code } : {}) }));
+      // JPEG (no PNG): el lector OMR nunca lee este PDF, lee una foto fresca
+      // de la hoja YA IMPRESA -- comprimir aca no afecta la lectura, solo
+      // evita que un lote de 30-40 alumnos pese cientos de MB (bug real).
+      urls.push(renderToDataUrl({ rut: r, answers: ans, filled: true, ...(marks.code ? { code: marks.code } : {}) }, "jpeg"));
       // La verdad-terreno solo cubre lo AUTO-marcado (1..markedUpTo); lo demás se
       // marca a mano y se evalua contra la clave real del ensayo, no contra este JSON.
       truth.push({ index: i, rut: r, answers: ans.slice(0, effectiveMarkUpTo).map((a) => (a < 0 ? "-" : LABELS[a])) });
+      // Cede el hilo al navegador entre hoja y hoja: sin esto el bucle bloquea
+      // la pestaña de punta a punta (aviso de "pagina no responde" en lotes
+      // grandes) y React nunca llega a repintar el progreso.
+      setProgress({ done: i, total: count });
+      await new Promise(requestAnimationFrame);
     }
     const meta = {
       generadoEn: new Date().toISOString(),
@@ -417,6 +438,7 @@ export default function SheetPage() {
     downloadBlob(JSON.stringify(meta, null, 2), `verdad_terreno_${suffix}.json`, "application/json");
     await exportPdf(urls, `hojas_prueba_${suffix}.pdf`);
     setBusy(false);
+    setProgress(null);
   };
 
   const inputCls = "w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white";
@@ -604,12 +626,20 @@ export default function SheetPage() {
 
             <button onClick={generateBatch} disabled={busy || isMultipage || (rutMode === "list" && parsedRuts.length === 0)}
               className="w-full py-2.5 bg-indigo-600 rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-50">
-              {busy
-                ? "Generando PDF…"
+              {busy && progress
+                ? `Generando… ${progress.done}/${progress.total} (${Math.round((progress.done / progress.total) * 100)}%)`
                 : partialMode && effectiveMarkUpTo < numQuestions
                   ? `Generar ${rutMode === "list" ? parsedRuts.length : batchN} hojas (1–${effectiveMarkUpTo} auto, ${effectiveMarkUpTo + 1}–${numQuestions} en blanco) + verdad-terreno`
                   : `Generar ${rutMode === "list" ? parsedRuts.length : batchN} hojas (PDF) + verdad-terreno`}
             </button>
+            {busy && progress && (
+              <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-indigo-400 transition-[width] duration-150"
+                  style={{ width: `${Math.round((progress.done / progress.total) * 100)}%` }}
+                />
+              </div>
+            )}
           </section>
         </div>
       </main>
