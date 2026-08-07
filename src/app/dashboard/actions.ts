@@ -697,6 +697,7 @@ async function persistStudentRows(
 export async function importStudents(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
   const ctx = await getDashboardContext();
   try {
+    if (!ctx.isAdmin) throw new Error("Solo administradores pueden importar alumnos.");
     const csv = String(formData.get("csv") ?? "");
     return await persistStudentRows(parseStudentCsv(csv), ctx);
   } catch (error) {
@@ -712,6 +713,7 @@ export async function importStudents(_prevState: DashboardActionState, formData:
 export async function importStudentsMapped(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
   const ctx = await getDashboardContext();
   try {
+    if (!ctx.isAdmin) throw new Error("Solo administradores pueden importar alumnos.");
     const table = JSON.parse(String(formData.get("rows") ?? "[]")) as string[][];
     if (!Array.isArray(table) || table.length === 0) throw new Error("No se recibieron filas para importar.");
     const mapping = {
@@ -880,9 +882,10 @@ export async function switchActiveSchool(formData: FormData) {
 }
 
 export async function createCourse(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
-  const { supabase, school } = await getDashboardContext();
+  const { supabase, school, isAdmin } = await getDashboardContext();
 
   try {
+    if (!isAdmin) throw new Error("Solo administradores pueden crear cursos.");
     const name = String(formData.get("name") ?? "").trim();
     const grade = String(formData.get("grade") ?? "").trim();
 
@@ -912,8 +915,9 @@ export async function createCourse(_prevState: DashboardActionState, formData: F
  * conserva el nombre de curso que tenia al crearse, igual que al duplicar o
  * editar un ensayo, para no reescribir historial. */
 export async function updateCourse(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
-  const { supabase, school } = await getDashboardContext();
+  const { supabase, school, isAdmin } = await getDashboardContext();
   try {
+    if (!isAdmin) throw new Error("Solo administradores pueden editar cursos.");
     const id = String(formData.get("id") ?? "");
     const name = String(formData.get("name") ?? "").trim();
     const grade = String(formData.get("grade") ?? "").trim();
@@ -950,8 +954,9 @@ export async function updateCourse(_prevState: DashboardActionState, formData: F
  * archiveQuiz): oculta el curso de los selectores activos pero conserva la
  * fila y todos los vinculos -- se puede restaurar con restoreCourse. */
 export async function archiveCourse(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
-  const { supabase, school } = await getDashboardContext();
+  const { supabase, school, isAdmin } = await getDashboardContext();
   try {
+    if (!isAdmin) throw new Error("Solo administradores pueden archivar cursos.");
     const id = String(formData.get("id") ?? "");
     if (!id) throw new Error("Falta el curso a archivar.");
 
@@ -975,8 +980,9 @@ export async function archiveCourse(_prevState: DashboardActionState, formData: 
 }
 
 export async function restoreCourse(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
-  const { supabase, school } = await getDashboardContext();
+  const { supabase, school, isAdmin } = await getDashboardContext();
   try {
+    if (!isAdmin) throw new Error("Solo administradores pueden restaurar cursos.");
     const id = String(formData.get("id") ?? "");
     if (!id) throw new Error("Falta el curso a restaurar.");
 
@@ -1000,8 +1006,9 @@ export async function restoreCourse(_prevState: DashboardActionState, formData: 
 }
 
 export async function deleteStudent(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
-  const { supabase, school } = await getDashboardContext();
+  const { supabase, school, isAdmin } = await getDashboardContext();
   try {
+    if (!isAdmin) throw new Error("Solo administradores pueden eliminar alumnos.");
     const id = String(formData.get("id") ?? "");
     if (!id) throw new Error("Falta el alumno a eliminar.");
 
@@ -1072,9 +1079,10 @@ export async function updateStudentCourse(_prevState: DashboardActionState, form
   }
 }
 export async function createStudent(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
-  const { supabase, user, school } = await getDashboardContext();
+  const { supabase, user, school, isAdmin } = await getDashboardContext();
 
   try {
+    if (!isAdmin) throw new Error("Solo administradores pueden agregar alumnos.");
     const name = String(formData.get("name") ?? "").trim();
     const rut = String(formData.get("rut") ?? "").trim();
     const course = String(formData.get("course") ?? "").trim();
@@ -1115,9 +1123,10 @@ export async function createStudent(_prevState: DashboardActionState, formData: 
  * que ya tuviera ese RUT en vez de actualizar este).
  */
 export async function updateStudent(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
-  const { supabase, school } = await getDashboardContext();
+  const { supabase, school, isAdmin } = await getDashboardContext();
 
   try {
+    if (!isAdmin) throw new Error("Solo administradores pueden editar alumnos.");
     const id = String(formData.get("id") ?? "").trim();
     const name = String(formData.get("name") ?? "").trim();
     const rut = String(formData.get("rut") ?? "").trim();
