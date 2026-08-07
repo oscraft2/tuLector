@@ -92,6 +92,12 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
   const simcePapers = filteredPapers.filter((p) => p.quizzes?.evaluation_type === "simce" && p.equivalent_score != null);
   const avgPaesCourse = paesPapers.length ? Math.round(paesPapers.reduce((s, p) => s + (p.equivalent_score ?? 0), 0) / paesPapers.length) : null;
   const avgSimceCourse = simcePapers.length ? Math.round(simcePapers.reduce((s, p) => s + (p.equivalent_score ?? 0), 0) / simcePapers.length) : null;
+  // Mismo criterio que los KPI de arriba: solo mostrar columnas de equivalencia
+  // si el curso realmente tiene ensayos PAES/SIMCE -- evita una tabla aparte
+  // llena de "—" para colegios/cursos que no las usan (bug real reportado:
+  // dos tablas del mismo curso, una casi siempre vacia, se veian como una
+  // sola lista desordenada).
+  const showEquivalents = paesPapers.length > 0 || simcePapers.length > 0;
   const passingCount = studentList.filter((s) => {
     const r = s.rut_normalized ?? canonicalRut(s.rut) ?? canonicalRut(s.student_id);
     if (!r) return false;
@@ -205,53 +211,48 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
         )}
 
         <div>
-          <h2 className="mb-2 text-lg font-semibold text-[#111827]">Equivalencia PAES / SIMCE</h2>
-          <p className="mb-3 text-xs text-[#8b93a1]">Ultimo puntaje equivalente de cada alumno, independiente del filtro de arriba y del ensayo de origen.</p>
+          <h2 className="mb-2 text-lg font-semibold text-[#111827]">Alumnos del curso</h2>
           <DataTable
-            columns={["Alumno", "Equiv. PAES", "Equiv. SIMCE"]}
+            columns={showEquivalents
+              ? ["Alumno", "Promedio", "Equiv. PAES", "Equiv. SIMCE", "Lecturas", "Ultimo ensayo", "Tendencia", "Accion"]
+              : ["Alumno", "Promedio", "Lecturas", "Ultimo ensayo", "Tendencia", "Accion"]}
             rows={studentWithStats}
             empty="Sin alumnos asignados a este curso."
             renderRow={(s) => (
-              <tr key={`equiv-${s.id}`} className="border-b border-[#eef0f3] last:border-0">
+              <tr key={s.id} className="border-b border-[#eef0f3] last:border-0">
                 <td className="px-5 py-4 font-semibold">
                   <Link href={`/dashboard/students/${s.id}`} className="text-[#07305f] hover:underline">{s.name}</Link>
                 </td>
-                <td className="px-5 py-4">{s.equivPaes != null ? `${s.equivPaes} pts` : "—"}</td>
-                <td className="px-5 py-4">{s.equivSimce != null ? `${s.equivSimce} pts` : "—"}</td>
+                <td className="px-5 py-4 font-semibold">{s.avgPct}%</td>
+                {showEquivalents && (
+                  <>
+                    <td className="px-5 py-4">{s.equivPaes != null ? `${s.equivPaes} pts` : "—"}</td>
+                    <td className="px-5 py-4">{s.equivSimce != null ? `${s.equivSimce} pts` : "—"}</td>
+                  </>
+                )}
+                <td className="px-5 py-4 text-[#5b6472]">{s.count}</td>
+                <td className="px-5 py-4 text-[#5b6472] text-xs">{s.lastQuiz ?? "-"}</td>
+                <td className="px-5 py-4"><span className="text-sm">{s.trend}</span></td>
+                <td className="px-5 py-4">
+                  <Link href={`/dashboard/students/${s.id}`} className="text-xs font-semibold text-[#07305f] underline">Perfil</Link>
+                </td>
               </tr>
+            )}
+            renderMobileRow={(s) => (
+              <article className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
+                <Link href={`/dashboard/students/${s.id}`} className="text-base font-semibold text-[#07305f] hover:underline">{s.name}</Link>
+                <div className="mt-2 grid gap-1 text-sm text-[#5b6472]">
+                  <p>Promedio: <span className="font-semibold text-[#111827]">{s.avgPct}%</span></p>
+                  {showEquivalents && (
+                    <p>Equiv. PAES: <span className="font-semibold text-[#111827]">{s.equivPaes != null ? `${s.equivPaes} pts` : "—"}</span> · Equiv. SIMCE: <span className="font-semibold text-[#111827]">{s.equivSimce != null ? `${s.equivSimce} pts` : "—"}</span></p>
+                  )}
+                  <p>{s.count} lectura{s.count === 1 ? "" : "s"} · {s.trend}</p>
+                  {s.lastQuiz && <p className="text-xs truncate">Ultimo: {s.lastQuiz}</p>}
+                </div>
+              </article>
             )}
           />
         </div>
-
-        <DataTable
-          columns={["Alumno", "Promedio", "Lecturas", "Ultimo ensayo", "Tendencia", "Accion"]}
-          rows={studentWithStats}
-          empty="Sin alumnos asignados a este curso."
-          renderRow={(s) => (
-            <tr key={s.id} className="border-b border-[#eef0f3] last:border-0">
-              <td className="px-5 py-4 font-semibold">
-                <Link href={`/dashboard/students/${s.id}`} className="text-[#07305f] hover:underline">{s.name}</Link>
-              </td>
-              <td className="px-5 py-4 font-semibold">{s.avgPct}%</td>
-              <td className="px-5 py-4 text-[#5b6472]">{s.count}</td>
-              <td className="px-5 py-4 text-[#5b6472] text-xs">{s.lastQuiz ?? "-"}</td>
-              <td className="px-5 py-4"><span className="text-sm">{s.trend}</span></td>
-              <td className="px-5 py-4">
-                <Link href={`/dashboard/students/${s.id}`} className="text-xs font-semibold text-[#07305f] underline">Perfil</Link>
-              </td>
-            </tr>
-          )}
-          renderMobileRow={(s) => (
-            <article className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
-              <Link href={`/dashboard/students/${s.id}`} className="text-base font-semibold text-[#07305f] hover:underline">{s.name}</Link>
-              <div className="mt-2 grid gap-1 text-sm text-[#5b6472]">
-                <p>Promedio: <span className="font-semibold text-[#111827]">{s.avgPct}%</span></p>
-                <p>{s.count} lectura{s.count === 1 ? "" : "s"} · {s.trend}</p>
-                {s.lastQuiz && <p className="text-xs truncate">Ultimo: {s.lastQuiz}</p>}
-              </div>
-            </article>
-          )}
-        />
       </div>
     </>
   );

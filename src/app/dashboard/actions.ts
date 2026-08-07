@@ -114,79 +114,96 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     const numColumns = suggestColumns(Math.min(numQuestions, QUIZ_MAX_QUESTIONS));
     const SHEET_CODE_MAX = 0xfffff; // 1.048.575
     const baseCode = await nextSheetCode(supabase, school.id);
-    const grade = String(formData.get("grade") ?? "") || null;
-    const courseId = grade ? await findOrCreateCourse(supabase, school.id, grade) : null;
-    const payload = {
-      school_id: school.id,
-      user_id: user.id,
-      created_by: user.id,
-      title,
-      num_questions: numQuestions,
-      options_per_question: numOptions,
-      num_columns: numColumns,
-      option_labels: optionLabelsFor(numOptions).split("").join(","),
-      answer_key: answerKey,
-      open_questions: serializeOpenQuestions(openQuestions),
-      option_overrides: serializeOptionOverrides(optionOverrides),
-      multi_select_questions: serializeMultiSelectQuestions(multiSelectQuestions),
-      open_question_rubrics: serializeOpenQuestionRubrics(openQuestionRubrics),
-      // Congela para SIEMPRE la regla de reparto de reverso vigente al crear
-      // este ensayo (ver src/lib/sheet_generator.ts LEGACY_OPEN_BOXES_PER_PAGE):
-      // asi imprimir y leer una misma hoja fisica nunca dependen de que la
-      // constante global no haya cambiado entre medio (bug real, 2026-08-05).
-      open_boxes_per_page: OPEN_BOXES_PER_PAGE,
-      subject: String(formData.get("subject") ?? "") || null,
-      grade,
-      course_id: courseId,
-      evaluation_type: evalType,
-      evaluation_variant: evalVariant,
-      ...(exigencia !== null ? { exigencia } : {}),
-    };
-    for (let attempt = 0; ; attempt++) {
-      let insertPayload: Record<string, unknown> = { ...payload, sheet_code: Math.min(baseCode + attempt, SHEET_CODE_MAX) };
-      let { error } = await supabase.from("quizzes").insert(insertPayload);
-      if (error && isMissingColumnError(error, "course_id")) {
-        insertPayload = withoutCourseId(insertPayload);
-        error = (await supabase.from("quizzes").insert(insertPayload)).error;
+    // Un mismo ensayo puede aplicarse a varios cursos a la vez: se crea 1 fila
+    // de `quizzes` POR curso elegido (mismo patron que duplicateQuiz -- clona
+    // titulo/preguntas/clave/config con su propio sheet_code y course_id). El
+    // resto del sistema (escaneo, resultados, exportaciones, DIA) ya opera por
+    // quiz_id individual y no asume nada sobre cuantos cursos comparten un
+    // mismo ensayo, asi que no hace falta tocar nada mas.
+    const grades = [...new Set(formData.getAll("grade").map((g) => String(g).trim()).filter(Boolean))];
+    if (grades.length === 0) throw new Error("Selecciona al menos un curso.");
+
+    let sheetOffset = 0; // compartido entre TODOS los cursos del lote: sheet_code=baseCode+sheetOffset nunca colisiona dentro del mismo envio
+    for (const gradeName of grades) {
+      const courseId = await findOrCreateCourse(supabase, school.id, gradeName);
+      // Con 1 solo curso el titulo queda identico a como lo tipeo el profesor
+      // (sin cambio de comportamiento); con varios, el sufijo distingue cada
+      // fila en /dashboard/quizzes, /app/scan y el sync DIA.
+      const rowTitle = grades.length > 1 ? `${title} — ${gradeName}` : title;
+      const payload = {
+        school_id: school.id,
+        user_id: user.id,
+        created_by: user.id,
+        title: rowTitle,
+        num_questions: numQuestions,
+        options_per_question: numOptions,
+        num_columns: numColumns,
+        option_labels: optionLabelsFor(numOptions).split("").join(","),
+        answer_key: answerKey,
+        open_questions: serializeOpenQuestions(openQuestions),
+        option_overrides: serializeOptionOverrides(optionOverrides),
+        multi_select_questions: serializeMultiSelectQuestions(multiSelectQuestions),
+        open_question_rubrics: serializeOpenQuestionRubrics(openQuestionRubrics),
+        // Congela para SIEMPRE la regla de reparto de reverso vigente al crear
+        // este ensayo (ver src/lib/sheet_generator.ts LEGACY_OPEN_BOXES_PER_PAGE):
+        // asi imprimir y leer una misma hoja fisica nunca dependen de que la
+        // constante global no haya cambiado entre medio (bug real, 2026-08-05).
+        open_boxes_per_page: OPEN_BOXES_PER_PAGE,
+        subject: String(formData.get("subject") ?? "") || null,
+        grade: gradeName,
+        course_id: courseId,
+        evaluation_type: evalType,
+        evaluation_variant: evalVariant,
+        ...(exigencia !== null ? { exigencia } : {}),
+      };
+      for (let retries = 0; ; retries++) {
+        let insertPayload: Record<string, unknown> = { ...payload, sheet_code: Math.min(baseCode + sheetOffset, SHEET_CODE_MAX) };
+        let { error } = await supabase.from("quizzes").insert(insertPayload);
+        if (error && isMissingColumnError(error, "course_id")) {
+          insertPayload = withoutCourseId(insertPayload);
+          error = (await supabase.from("quizzes").insert(insertPayload)).error;
+        }
+        if (error && isMissingColumnError(error, "option_overrides")) {
+          if (Object.keys(optionOverrides).length > 0) throw new Error("Nº de opciones por pregunta requiere actualizar la base de datos (migracion option_overrides).");
+          insertPayload = withoutOptionOverrides(insertPayload);
+          error = (await supabase.from("quizzes").insert(insertPayload)).error;
+        }
+        if (error && isMissingColumnError(error, "multi_select_questions")) {
+          if (multiSelectQuestions.length > 0) throw new Error("Preguntas de seleccion multiple requieren actualizar la base de datos (migracion option_overrides).");
+          insertPayload = withoutMultiSelectQuestions(insertPayload);
+          error = (await supabase.from("quizzes").insert(insertPayload)).error;
+        }
+        if (error && isMissingColumnError(error, "open_question_rubrics")) {
+          // Degradacion SIEMPRE silenciosa (a diferencia de open_questions/
+          // option_overrides): perder la rubrica no rompe la hoja ni el
+          // puntaje, solo el profesor tiene que volver a tipearla despues.
+          insertPayload = withoutOpenQuestionRubrics(insertPayload);
+          error = (await supabase.from("quizzes").insert(insertPayload)).error;
+        }
+        if (error && isMissingColumnError(error, "open_boxes_per_page")) {
+          // Degradacion SIEMPRE silenciosa: si la migracion no corrio aun, el
+          // ensayo simplemente cae al fallback LEGACY_OPEN_BOXES_PER_PAGE al
+          // imprimir/leer (mismo comportamiento que hoy, sin regresion).
+          insertPayload = withoutOpenBoxesPerPage(insertPayload);
+          error = (await supabase.from("quizzes").insert(insertPayload)).error;
+        }
+        if (error && isMissingColumnError(error, "open_questions")) {
+          // BD sin migrar: solo se degrada si el ensayo no usa abiertas (perderlas
+          // en silencio dejaria la hoja y el puntaje inconsistentes).
+          if (openQuestions.length > 0) throw new Error("Preguntas de desarrollo requieren actualizar la base de datos (migracion open_questions).");
+          error = (await supabase.from("quizzes").insert(withoutOpenQuestions(insertPayload))).error;
+        }
+        if (!error) { sheetOffset++; break; }
+        if (error.code === "23505" && retries < 3) { sheetOffset++; continue; } // unique_violation -> reintenta
+        throw new Error(error.message);
       }
-      if (error && isMissingColumnError(error, "option_overrides")) {
-        if (Object.keys(optionOverrides).length > 0) throw new Error("Nº de opciones por pregunta requiere actualizar la base de datos (migracion option_overrides).");
-        insertPayload = withoutOptionOverrides(insertPayload);
-        error = (await supabase.from("quizzes").insert(insertPayload)).error;
-      }
-      if (error && isMissingColumnError(error, "multi_select_questions")) {
-        if (multiSelectQuestions.length > 0) throw new Error("Preguntas de seleccion multiple requieren actualizar la base de datos (migracion option_overrides).");
-        insertPayload = withoutMultiSelectQuestions(insertPayload);
-        error = (await supabase.from("quizzes").insert(insertPayload)).error;
-      }
-      if (error && isMissingColumnError(error, "open_question_rubrics")) {
-        // Degradacion SIEMPRE silenciosa (a diferencia de open_questions/
-        // option_overrides): perder la rubrica no rompe la hoja ni el
-        // puntaje, solo el profesor tiene que volver a tipearla despues.
-        insertPayload = withoutOpenQuestionRubrics(insertPayload);
-        error = (await supabase.from("quizzes").insert(insertPayload)).error;
-      }
-      if (error && isMissingColumnError(error, "open_boxes_per_page")) {
-        // Degradacion SIEMPRE silenciosa: si la migracion no corrio aun, el
-        // ensayo simplemente cae al fallback LEGACY_OPEN_BOXES_PER_PAGE al
-        // imprimir/leer (mismo comportamiento que hoy, sin regresion).
-        insertPayload = withoutOpenBoxesPerPage(insertPayload);
-        error = (await supabase.from("quizzes").insert(insertPayload)).error;
-      }
-      if (error && isMissingColumnError(error, "open_questions")) {
-        // BD sin migrar: solo se degrada si el ensayo no usa abiertas (perderlas
-        // en silencio dejaria la hoja y el puntaje inconsistentes).
-        if (openQuestions.length > 0) throw new Error("Preguntas de desarrollo requieren actualizar la base de datos (migracion open_questions).");
-        error = (await supabase.from("quizzes").insert(withoutOpenQuestions(insertPayload))).error;
-      }
-      if (!error) break;
-      if (error.code === "23505" && attempt < 3) continue; // unique_violation -> reintenta
-      throw new Error(error.message);
     }
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/quizzes");
     revalidatePath("/app/scan");
-    return actionSuccess("Ensayo creado", `"${title}" quedo listo para generar su hoja.`, "✓");
+    return grades.length > 1
+      ? actionSuccess("Ensayos creados", `${grades.length} ensayos quedaron listos para generar sus hojas (uno por curso).`, "✓")
+      : actionSuccess("Ensayo creado", `"${title}" quedo listo para generar su hoja.`, "✓");
   } catch (error) {
     return actionError(error, "No se pudo crear el ensayo");
   }

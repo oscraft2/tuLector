@@ -72,12 +72,32 @@ export function QuizCreateForm({
   const isChile = countryProfile.code === "CL";
   const exigenciaOptions = [0.5, 0.55, 0.6, 0.65, 0.7];
   const defaultExigencia = quiz?.exigencia ?? countryProfile.grading.exigencia;
+  // Solo en creacion: un mismo ensayo puede aplicarse a varios cursos a la vez
+  // (se crea 1 fila de quizzes por curso elegido, mismo patron que "Duplicar
+  // ensayo" -- ver createQuiz en actions.ts). En edicion sigue siendo 1 curso
+  // por fila, ese ensayo ya tiene su propio sheet_code/hojas escaneadas.
+  const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
+  const [courseError, setCourseError] = useState(false);
+
+  function toggleGrade(name: string) {
+    setSelectedGrades((prev) => (prev.includes(name) ? prev.filter((g) => g !== name) : [...prev, name]));
+    setCourseError(false);
+  }
 
   useEffect(() => {
-    if (state.status === "success" && !isEdit) formRef.current?.reset();
+    if (state.status === "success" && !isEdit) {
+      formRef.current?.reset();
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedGrades([]);
+    }
   }, [state.key, state.status, isEdit]);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    if (!isEdit && selectedGrades.length === 0) {
+      event.preventDefault();
+      setCourseError(true);
+      return;
+    }
     if (isEdit && papersCount > 0 && !confirmed) {
       event.preventDefault();
       setConfirmOpen(true);
@@ -120,21 +140,51 @@ export function QuizCreateForm({
               </select>
             </label>
 
-            <label className="block text-sm font-semibold">
-              Curso del establecimiento
-              <select name="grade" required defaultValue={quiz?.grade ?? ""} className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-2 py-2 font-normal text-sm">
-                <option value="">Selecciona curso</option>
-                {courses.map((c) => (
-                  <option key={c.id} value={c.name}>{c.name}</option>
-                ))}
-              </select>
-              {noCourses && (
-                <span className="mt-1 block text-[10px] text-amber-700">
-                  * Primero crea un curso en{" "}
-                  <Link href="/dashboard/students" className="underline font-bold">Alumnos</Link>
-                </span>
-              )}
-            </label>
+            {isEdit ? (
+              <label className="block text-sm font-semibold">
+                Curso del establecimiento
+                <select name="grade" required defaultValue={quiz?.grade ?? ""} className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-2 py-2 font-normal text-sm">
+                  <option value="">Selecciona curso</option>
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
+                {noCourses && (
+                  <span className="mt-1 block text-[10px] text-amber-700">
+                    * Primero crea un curso en{" "}
+                    <Link href="/dashboard/students" className="underline font-bold">Alumnos</Link>
+                  </span>
+                )}
+              </label>
+            ) : (
+              <div className="text-sm font-semibold">
+                Curso(s) del establecimiento
+                <p className="mt-1 text-[11px] font-normal text-[#5b6472]">
+                  Selecciona uno o más — se crea un ensayo idéntico por cada curso elegido.
+                </p>
+                <div className={`mt-2 max-h-40 overflow-y-auto rounded-md border px-2 py-1 ${courseError ? "border-red-400" : "border-[#cfd6df]"}`}>
+                  {courses.map((c) => (
+                    <label key={c.id} className="flex items-center gap-2 py-1 text-sm font-normal">
+                      <input
+                        type="checkbox"
+                        name="grade"
+                        value={c.name}
+                        checked={selectedGrades.includes(c.name)}
+                        onChange={() => toggleGrade(c.name)}
+                      />
+                      {c.name}
+                    </label>
+                  ))}
+                </div>
+                {courseError && <span className="mt-1 block text-[10px] text-red-600">Selecciona al menos un curso.</span>}
+                {noCourses && (
+                  <span className="mt-1 block text-[10px] text-amber-700">
+                    * Primero crea un curso en{" "}
+                    <Link href="/dashboard/students" className="underline font-bold">Alumnos</Link>
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           <AnswerKeyEditor
