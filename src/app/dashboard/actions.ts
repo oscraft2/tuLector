@@ -122,6 +122,11 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     // mismo ensayo, asi que no hace falta tocar nada mas.
     const grades = [...new Set(formData.getAll("grade").map((g) => String(g).trim()).filter(Boolean))];
     if (grades.length === 0) throw new Error("Selecciona al menos un curso.");
+    // Vincula las N filas del lote para que el lector pueda reconocer una hoja
+    // "hermana" (mismo contenido, otro curso) automaticamente al escanear en
+    // vez de mandarla siempre a revision manual -- ver batch_id en
+    // api/scan/result/route.ts. Con 1 solo curso queda null (sin cambios).
+    const batchId = grades.length > 1 ? crypto.randomUUID() : null;
 
     let sheetOffset = 0; // compartido entre TODOS los cursos del lote: sheet_code=baseCode+sheetOffset nunca colisiona dentro del mismo envio
     for (const gradeName of grades) {
@@ -152,6 +157,7 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
         subject: String(formData.get("subject") ?? "") || null,
         grade: gradeName,
         course_id: courseId,
+        batch_id: batchId,
         evaluation_type: evalType,
         evaluation_variant: evalVariant,
         ...(exigencia !== null ? { exigencia } : {}),
@@ -159,6 +165,13 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
       for (let retries = 0; ; retries++) {
         let insertPayload: Record<string, unknown> = { ...payload, sheet_code: Math.min(baseCode + sheetOffset, SHEET_CODE_MAX) };
         let { error } = await supabase.from("quizzes").insert(insertPayload);
+        if (error && isMissingColumnError(error, "batch_id")) {
+          // Degradacion SIEMPRE silenciosa: sin la columna, cada fila del lote
+          // simplemente no se auto-reconoce como hermana al escanear (cae al
+          // manual_review de siempre), pero se crea igual.
+          insertPayload = withoutBatchId(insertPayload);
+          error = (await supabase.from("quizzes").insert(insertPayload)).error;
+        }
         if (error && isMissingColumnError(error, "course_id")) {
           insertPayload = withoutCourseId(insertPayload);
           error = (await supabase.from("quizzes").insert(insertPayload)).error;
@@ -472,6 +485,12 @@ function withoutOpenQuestionRubrics<T extends { open_question_rubrics?: unknown 
 function withoutOpenBoxesPerPage<T extends { open_boxes_per_page?: unknown }>(payload: T) {
   const { open_boxes_per_page: _openBoxesPerPage, ...rest } = payload;
   void _openBoxesPerPage;
+  return rest;
+}
+
+function withoutBatchId<T extends { batch_id?: unknown }>(payload: T) {
+  const { batch_id: _batchId, ...rest } = payload;
+  void _batchId;
   return rest;
 }
 

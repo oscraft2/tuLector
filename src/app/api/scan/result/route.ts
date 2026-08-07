@@ -46,6 +46,7 @@ type QuizRow = {
   evaluation_type: string | null;
   exigencia: number | null;
   sheet_code: number | null;
+  batch_id?: string | null;
 };
 
 function normalizeAnswers(value: unknown): ScanAnswer[] {
@@ -187,9 +188,35 @@ async function finalizeGrading(
   extras: { sheetIdRead: number | null; photo: string | null | undefined; nameImg: string | null | undefined; countryCode: string },
 ) {
   const { supabase, user, school } = ctx;
+  let expectedSheetCode = typeof quiz.sheet_code === "number" ? quiz.sheet_code : null;
+  let sheetMismatch = extras.sheetIdRead !== null && expectedSheetCode !== null && extras.sheetIdRead !== expectedSheetCode;
+
+  // Hoja "hermana" del mismo lote multi-curso (ver batch_id, createQuiz en
+  // dashboard/actions.ts): mismo contenido/clave, otro curso, su propio
+  // sheet_code -- si la hoja escaneada no calza con el ensayo activo pero SI
+  // pertenece a un hermano de su mismo batch_id, se re-resuelve `quiz` hacia
+  // ese hermano y se procesa normal (nota valida), en vez de mandarla siempre
+  // a manual_review. Una hoja de un ensayo genuinamente distinto (batch_id
+  // distinto o sin batch_id) sigue cayendo en manual_review como siempre --
+  // la proteccion "hoja correcta" (indice unico school_id+sheet_code) no se
+  // debilita, solo se hace la busqueda un paso mas amplia.
+  if (sheetMismatch && quiz.batch_id) {
+    const { data: sibling } = await supabase
+      .from("quizzes")
+      .select("id,batch_id,sheet_code,answer_key,num_questions,open_questions,multi_select_questions,evaluation_type,exigencia")
+      .eq("school_id", school.id)
+      .eq("batch_id", quiz.batch_id)
+      .eq("sheet_code", extras.sheetIdRead)
+      .is("archived_at", null)
+      .maybeSingle();
+    if (sibling) {
+      quiz = sibling;
+      expectedSheetCode = typeof quiz.sheet_code === "number" ? quiz.sheet_code : null;
+      sheetMismatch = extras.sheetIdRead !== null && expectedSheetCode !== null && extras.sheetIdRead !== expectedSheetCode;
+    }
+  }
+
   const { score, total, grade, passing, equivalentScore: eqScore } = computeQuizScore(quiz, answers, school, extras.countryCode);
-  const expectedSheetCode = typeof quiz.sheet_code === "number" ? quiz.sheet_code : null;
-  const sheetMismatch = extras.sheetIdRead !== null && expectedSheetCode !== null && extras.sheetIdRead !== expectedSheetCode;
 
   const { studentCode, studentRutNorm, legacyStudentCode, candidateCodes } = identity;
   let studentName: string | null = null;
@@ -349,11 +376,24 @@ export async function POST(request: Request) {
 
     let quizResult = await supabase
       .from("quizzes")
-      .select("id,school_id,title,answer_key,num_questions,open_questions,multi_select_questions,evaluation_type,evaluation_variant,sheet_code,exigencia")
+      .select("id,school_id,title,answer_key,num_questions,open_questions,multi_select_questions,evaluation_type,evaluation_variant,sheet_code,exigencia,batch_id")
       .eq("id", quizId)
       .eq("school_id", school.id)
       .is("archived_at", null)
       .single();
+
+    if (quizResult.error && isMissingColumnError(quizResult.error, "batch_id")) {
+      // BD sin migrar (batch_id): degradacion silenciosa -- sin esta columna
+      // no hay como reconocer hojas "hermanas" de un lote multi-curso, cae al
+      // manual_review de siempre ante un sheetMismatch (comportamiento previo).
+      quizResult = await supabase
+        .from("quizzes")
+        .select("id,school_id,title,answer_key,num_questions,open_questions,multi_select_questions,evaluation_type,evaluation_variant,sheet_code,exigencia")
+        .eq("id", quizId)
+        .eq("school_id", school.id)
+        .is("archived_at", null)
+        .single();
+    }
 
     if (quizResult.error && isMissingColumnError(quizResult.error, "multi_select_questions")) {
       quizResult = await supabase

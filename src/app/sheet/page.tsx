@@ -81,7 +81,11 @@ export default function SheetPage() {
   const [markUpTo, setMarkUpTo] = useState(10);
 
   // Ensayo heredado via /sheet?quiz=<id>: la hoja toma su formato + clave + codigo.
-  const [quizInfo, setQuizInfo] = useState<{ id: string; title: string; sheetCode: number | null; answerKey: string; openBoxesPerPage: number | null } | null>(null);
+  const [quizInfo, setQuizInfo] = useState<{ id: string; title: string; sheetCode: number | null; answerKey: string; openBoxesPerPage: number | null; courseId: string | null } | null>(null);
+  // Roster real auto-cargado del curso del ensayo (si tiene curso asociado):
+  // cuantos alumnos trajo el fetch, para mostrar "N alumnos detectados" en vez
+  // del textarea vacio (ver useEffect de carga del ensayo, mas abajo).
+  const [rosterCount, setRosterCount] = useState<number | null>(null);
   // Link de "volver" del header: al detalle del ensayo si se llego con
   // ?quiz=<id> (desde el dashboard), a Inicio si es el generador libre. Se fija
   // apenas se detecta el parametro -- sin esperar el fetch del ensayo -- para
@@ -229,16 +233,37 @@ export default function SheetPage() {
           setCountryCode(String(q.country_code));
           if (fillRut) setRut(randomValidNationalId(String(q.country_code)));
         }
+        const courseId = q.course_id ? String(q.course_id) : null;
         setQuizInfo({
           id: String(q.id), title: String(q.title ?? ""), sheetCode: q.sheet_code ?? null, answerKey: String(q.answer_key ?? ""),
           // NULL = ensayo creado antes de la migracion open_boxes_per_page ->
           // se lee/imprime con LEGACY_OPEN_BOXES_PER_PAGE, nunca con el valor
           // vigente actual (ver effectiveOpenBoxesPerPage mas abajo).
           openBoxesPerPage: typeof q.open_boxes_per_page === "number" ? q.open_boxes_per_page : null,
+          courseId,
         });
         setOpenQuestions(parseOpenQuestions(q.open_questions ?? "", nq));
         setOptionOverrides(parseOptionOverrides(q.option_overrides ?? "", nq));
         setMultiSelectQuestions(parseMultiSelectQuestions(q.multi_select_questions ?? "", nq));
+
+        // Roster real del curso: precarga el modo "lista" con el RUT de cada
+        // alumno matriculado, para que las hojas de desarrollo/prueba salgan
+        // con el RUT ya marcado sin que el profesor tenga que pegarlo a mano
+        // (misma fuente que persistStudentRows/course_report.ts).
+        if (courseId) {
+          try {
+            const rosterRes = await fetch(`/api/courses/${courseId}/students`, { credentials: "include", cache: "no-store" });
+            if (rosterRes.ok) {
+              const { students: roster } = await rosterRes.json() as { students: { rut: string | null; student_id: string | null; name: string | null }[] };
+              const lines = roster.map((s) => `${s.rut || s.student_id || ""},${s.name || ""}`).filter((l) => !l.startsWith(","));
+              if (lines.length > 0) {
+                setRutList(lines.join("\n"));
+                setRutMode("list");
+                setRosterCount(lines.length);
+              }
+            }
+          } catch { /* sin roster -> queda el modo manual de siempre */ }
+        }
       } catch { /* sin ensayo -> generador manual */ }
     })();
   }, []);
@@ -550,8 +575,12 @@ export default function SheetPage() {
               </label>
             ) : (
               <label className="block">
-                <span className="text-zinc-400">Pega los RUTs del curso (uno por línea; acepta el CSV <code>rut,nombre,curso</code>)</span>
-                <textarea value={rutList} onChange={(e) => setRutList(e.target.value)} rows={5}
+                {rosterCount != null ? (
+                  <span className="text-emerald-300 block mb-1">✓ {rosterCount} alumno{rosterCount === 1 ? "" : "s"} del curso detectados automáticamente — puedes editar la lista si hace falta.</span>
+                ) : (
+                  <span className="text-zinc-400">Pega los RUTs del curso (uno por línea; acepta el CSV <code>rut,nombre,curso</code>)</span>
+                )}
+                <textarea value={rutList} onChange={(e) => { setRutList(e.target.value); setRosterCount(null); }} rows={5}
                   className={`${inputCls} font-mono text-xs mt-1`} placeholder={"23582062-5\n24505369-K\n…"} />
                 <span className="text-indigo-300 text-xs">{parsedRuts.length} RUTs válidos detectados → {parsedRuts.length} hojas</span>
               </label>

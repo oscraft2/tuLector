@@ -11,7 +11,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   let result = await supabase
     .from("quizzes")
-    .select("id,title,subject,grade,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions,open_boxes_per_page")
+    .select("id,title,subject,grade,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions,open_boxes_per_page,course_id")
     .eq("id", id)
     .eq("school_id", school.id)
     .is("archived_at", null)
