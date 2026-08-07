@@ -14,7 +14,7 @@ export default async function QuizEditPage({ params }: PageProps) {
 
   const [{ data: quiz }, { data: courses }, { count: papersCount }] = await Promise.all([
     supabase.from("quizzes").select("*").eq("id", id).eq("school_id", school.id).single(),
-    supabase.from("courses").select("id,name,grade").order("name"),
+    supabase.from("courses").select("id,name,grade").is("archived_at", null).order("name"),
     supabase.from("papers").select("id", { count: "exact", head: true }).eq("quiz_id", id),
   ]);
   if (!quiz) notFound();

@@ -14,7 +14,7 @@ type CourseEditRowProps = {
   selected: boolean;
   isAdmin: boolean;
   updateAction: (state: DashboardActionState, formData: FormData) => Promise<DashboardActionState>;
-  deleteAction: (state: DashboardActionState, formData: FormData) => Promise<DashboardActionState>;
+  archiveAction: (state: DashboardActionState, formData: FormData) => Promise<DashboardActionState>;
   grades: readonly string[];
 };
 
@@ -24,7 +24,7 @@ const initialState: DashboardActionState = { status: "idle" };
  * tipeo (ej. "IIMC" en vez de "II C") quedaba pegado para siempre. Este
  * componente agrega edicion inline: boton "Editar" muestra un mini-form con
  * Guardar/Cancelar en el lugar del link+nivel de siempre. */
-export function CourseEditRow({ course, selected, isAdmin, updateAction, deleteAction, grades }: CourseEditRowProps) {
+export function CourseEditRow({ course, selected, isAdmin, updateAction, archiveAction, grades }: CourseEditRowProps) {
   const [editing, setEditing] = useState(false);
   const [state, formAction] = useActionState(updateAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
@@ -93,9 +93,15 @@ export function CourseEditRow({ course, selected, isAdmin, updateAction, deleteA
             Editar
           </button>
           <DeleteButton
-            action={deleteAction}
+            action={archiveAction}
             id={course.id}
-            confirm={`¿Eliminar el curso "${course.name}"? Los alumnos no se borran, pero deberás reasignarlos.`}
+            label="Archivar"
+            pendingLabel="Archivando…"
+            confirmLabel="Archivar"
+            confirmTitle="¿Archivar curso?"
+            danger={false}
+            className="text-xs font-semibold text-[#6b7280] hover:underline disabled:opacity-50"
+            confirm={`"${course.name}" dejará de aparecer para asociar alumnos o ensayos nuevos. Los alumnos y ensayos ya vinculados no se tocan, y puedes restaurarlo cuando quieras desde "Cursos archivados".`}
           />
         </div>
       )}

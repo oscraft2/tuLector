@@ -40,7 +40,7 @@ export async function GET() {
   // real encontrado en vivo probando el sync con la extension de Chrome.
   const [quizzesResult, { data: courses }] = await Promise.all([
     supabase.from("quizzes").select("id,title,subject,grade,course_id,num_questions").eq("school_id", school.id).is("archived_at", null).order("created_at", { ascending: false }),
-    supabase.from("courses").select("id,name").eq("school_id", school.id),
+    supabase.from("courses").select("id,name").eq("school_id", school.id).is("archived_at", null),
   ]);
 
   // Nunca silenciar errores de PostgREST: un error no manejado acá se veía

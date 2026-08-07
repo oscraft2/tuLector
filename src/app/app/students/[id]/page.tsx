@@ -53,7 +53,7 @@ export default async function NativeStudentProfilePage({ params }: PageProps) {
     .single();
   if (!student) notFound();
 
-  const { data: courses } = await supabase.from("courses").select("id,name,grade").eq("school_id", school.id).order("name");
+  const { data: courses } = await supabase.from("courses").select("id,name,grade").eq("school_id", school.id).is("archived_at", null).order("name");
 
   const paperSelect = "id, quiz_id, student_rut_norm, score, total, grade, scanned_at, answers, quizzes(id, title, subject, num_questions, answer_key)";
   const studentRutNorm = student.rut_normalized ?? canonicalRut(student.rut) ?? canonicalRut(student.student_id);

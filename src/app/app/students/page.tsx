@@ -16,7 +16,7 @@ export default async function NativeStudentsPage() {
 
   const [studentsResult, { data: courses }] = await Promise.all([
     supabase.from("students").select("id,student_id,rut,name,course").eq("school_id", school.id).order("name"),
-    supabase.from("courses").select("id,name,grade").eq("school_id", school.id).order("name"),
+    supabase.from("courses").select("id,name,grade").eq("school_id", school.id).is("archived_at", null).order("name"),
   ]);
 
   let studentsData: unknown = studentsResult.data;

@@ -576,12 +576,21 @@ async function findOrCreateCourse(
 
   const { data: existing, error: findError } = await supabase
     .from("courses")
-    .select("id")
+    .select("id,archived_at")
     .eq("school_id", schoolId)
     .eq("name", clean)
     .maybeSingle();
-  if (findError) throw new Error(findError.message);
-  if (existing?.id) return existing.id;
+  // BD sin migrar (archived_at): degradacion silenciosa -- se comporta como
+  // antes, sin concepto de archivado todavia (curso encontrado por nombre
+  // simplemente no existe hasta que se aplique la migracion).
+  if (findError && !isMissingColumnError(findError, "archived_at")) throw new Error(findError.message);
+  if (existing?.id) {
+    // El curso volvio a aparecer en un import (o al crear un alumno/ensayo) ->
+    // vuelve a estar en uso, se restaura solo (sin esto quedaria linkeado
+    // pero invisible en los selectores activos, un curso "fantasma").
+    if (existing.archived_at) await supabase.from("courses").update({ archived_at: null }).eq("id", existing.id);
+    return existing.id;
+  }
 
   const { data: inserted, error } = await supabase
     .from("courses")
@@ -899,11 +908,16 @@ export async function updateCourse(_prevState: DashboardActionState, formData: F
   }
 }
 
-export async function deleteCourse(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+/** Antes "Eliminar curso" borraba la fila para siempre: sin recuperacion,
+ * y los alumnos/ensayos ya vinculados por course_id quedaban con el link
+ * roto (ON DELETE SET NULL). Ahora archiva (soft delete, mismo patron que
+ * archiveQuiz): oculta el curso de los selectores activos pero conserva la
+ * fila y todos los vinculos -- se puede restaurar con restoreCourse. */
+export async function archiveCourse(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
   const { supabase, school } = await getDashboardContext();
   try {
     const id = String(formData.get("id") ?? "");
-    if (!id) throw new Error("Falta el curso a eliminar.");
+    if (!id) throw new Error("Falta el curso a archivar.");
 
     const { data: course, error: findError } = await supabase
       .from("courses")
@@ -913,14 +927,39 @@ export async function deleteCourse(_prevState: DashboardActionState, formData: F
       .maybeSingle();
     if (findError) throw new Error(findError.message);
 
-    const { error } = await supabase.from("courses").delete().eq("id", id).eq("school_id", school.id);
+    const { error } = await supabase.from("courses").update({ archived_at: new Date().toISOString() }).eq("id", id).eq("school_id", school.id);
     if (error) throw new Error(error.message);
 
     revalidatePath("/dashboard/students");
     revalidatePath("/dashboard/quizzes");
-    return actionSuccess("Curso eliminado", `${course?.name ?? "El curso"} fue eliminado del catalogo.`, "🗑");
+    return actionSuccess("Curso archivado", `${course?.name ?? "El curso"} se movio a archivados. Puedes restaurarlo cuando quieras.`, "🗃");
   } catch (error) {
-    return actionError(error, "No se pudo eliminar el curso");
+    return actionError(error, "No se pudo archivar el curso");
+  }
+}
+
+export async function restoreCourse(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  const { supabase, school } = await getDashboardContext();
+  try {
+    const id = String(formData.get("id") ?? "");
+    if (!id) throw new Error("Falta el curso a restaurar.");
+
+    const { data: course, error: findError } = await supabase
+      .from("courses")
+      .select("name")
+      .eq("id", id)
+      .eq("school_id", school.id)
+      .maybeSingle();
+    if (findError) throw new Error(findError.message);
+
+    const { error } = await supabase.from("courses").update({ archived_at: null }).eq("id", id).eq("school_id", school.id);
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/quizzes");
+    return actionSuccess("Curso restaurado", `${course?.name ?? "El curso"} volvio a estar disponible.`, "✓");
+  } catch (error) {
+    return actionError(error, "No se pudo restaurar el curso");
   }
 }
 

@@ -50,7 +50,7 @@ export async function GET(request: Request) {
         .ilike("title", like)
         .order("created_at", { ascending: false })
         .limit(6),
-      supabase.from("courses").select("id, name").eq("school_id", school.id),
+      supabase.from("courses").select("id, name").eq("school_id", school.id).is("archived_at", null),
     ]);
 
     const studentsRes = studentsResWithCourseId.error && isMissingColumnError(studentsResWithCourseId.error, "course_id")

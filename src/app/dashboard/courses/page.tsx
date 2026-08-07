@@ -10,7 +10,7 @@ type CourseRow = { id: string; name: string; grade: string | null; student_count
 
 export default async function CoursesPage() {
   const { supabase } = await getDashboardContext();
-  const { data: courses } = await supabase.from("courses").select("id,name,grade").order("name");
+  const { data: courses } = await supabase.from("courses").select("id,name,grade").is("archived_at", null).order("name");
 
   const courseList = (courses ?? []) as CourseRow[];
 

@@ -54,7 +54,7 @@ export default async function QuizzesPage() {
 
   const [quizzesResult, { data: courses }] = await Promise.all([
     supabase.from("quizzes").select("id,title,subject,grade,course_id,num_questions,options_per_question,answer_key,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false }),
-    supabase.from("courses").select("id,name,grade").order("name"),
+    supabase.from("courses").select("id,name,grade").is("archived_at", null).order("name"),
   ]);
 
   let quizzesData: unknown = quizzesResult.data;

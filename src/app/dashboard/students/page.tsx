@@ -9,7 +9,7 @@ import { CourseRoster } from "@/components/dashboard/CourseRoster";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { ActionButton } from "@/components/dashboard/ActionButton";
 import { EmptyState } from "@/components/dashboard/EmptyState";
-import { importStudents, importStudentsMapped, createCourse, updateCourse, deleteCourse, deleteStudent, createStudent, updateStudentCourse } from "@/app/dashboard/actions";
+import { importStudents, importStudentsMapped, createCourse, updateCourse, archiveCourse, restoreCourse, deleteStudent, createStudent, updateStudentCourse } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 import { resolveCountryProfile } from "@/lib/country_profiles";
@@ -49,6 +49,7 @@ type StudentRow = {
 };
 
 type CourseRow = { id: string; name: string; grade: string | null };
+type ArchivedCourseRow = { id: string; name: string; grade: string | null };
 
 export default async function StudentsPage({ searchParams }: PageProps) {
   const { supabase, locale, isAdmin, school } = await getDashboardContext();
@@ -57,9 +58,9 @@ export default async function StudentsPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const selectedCourseId = Array.isArray(params?.course) ? params?.course[0] : params?.course;
 
-  const [studentsResult, { data: courses }] = await Promise.all([
+  const [studentsResult, coursesResult] = await Promise.all([
     supabase.from("students").select("id,student_id,rut,name,course,course_id,created_at").order("name"),
-    supabase.from("courses").select("id,name,grade").order("name"),
+    supabase.from("courses").select("id,name,grade,archived_at").order("name"),
   ]);
 
   let studentsData: unknown = studentsResult.data;
@@ -68,7 +69,16 @@ export default async function StudentsPage({ searchParams }: PageProps) {
     studentsData = fallbackResult.data;
   }
 
-  const courseList = (courses ?? []) as CourseRow[];
+  // BD sin migrar (archived_at): degradacion silenciosa -- todos los cursos
+  // se tratan como activos, sin seccion de archivados (mismo comportamiento
+  // que antes de esta migracion).
+  let allCourses = (coursesResult.data ?? []) as (CourseRow & { archived_at: string | null })[];
+  if (coursesResult.error && isMissingColumnError(coursesResult.error, "archived_at")) {
+    const fallback = await supabase.from("courses").select("id,name,grade").order("name");
+    allCourses = ((fallback.data ?? []) as CourseRow[]).map((c) => ({ ...c, archived_at: null }));
+  }
+  const courseList = allCourses.filter((c) => !c.archived_at);
+  const archivedCourses = allCourses.filter((c) => c.archived_at) as ArchivedCourseRow[];
   const allStudents = (studentsData ?? []) as unknown as StudentRow[];
   const selectedCourse = courseList.find((course) => course.id === selectedCourseId) ?? null;
   const courseStudents = selectedCourse ? allStudents.filter((student) => isStudentInCourse(student, selectedCourse)) : [];
@@ -97,7 +107,7 @@ export default async function StudentsPage({ searchParams }: PageProps) {
                     selected={selectedCourse?.id === course.id}
                     isAdmin={isAdmin}
                     updateAction={updateCourse}
-                    deleteAction={deleteCourse}
+                    archiveAction={archiveCourse}
                     grades={CHILEAN_GRADES}
                   />
                 ))}
@@ -105,6 +115,31 @@ export default async function StudentsPage({ searchParams }: PageProps) {
             )}
 
             {isAdmin && <CourseForm action={createCourse} grades={CHILEAN_GRADES} />}
+
+            {isAdmin && archivedCourses.length > 0 && (
+              <details className="rounded-md border border-[#eef0f3] bg-[#f8fafc] p-3">
+                <summary className="cursor-pointer text-xs font-semibold text-[#5b6472]">
+                  Cursos archivados ({archivedCourses.length})
+                </summary>
+                <div className="mt-2 divide-y divide-[#eef0f3]">
+                  {archivedCourses.map((course) => (
+                    <div key={course.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                      <div className="min-w-0">
+                        <span className="block truncate font-semibold text-[#5b6472]">{course.name}</span>
+                        <span className="text-xs text-[#9aa2af]">{course.grade}</span>
+                      </div>
+                      <DeleteButton
+                        action={restoreCourse}
+                        id={course.id}
+                        label="Restaurar"
+                        pendingLabel="Restaurando…"
+                        className="shrink-0 text-xs font-semibold text-[#07305f] hover:underline disabled:opacity-50"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
 
           <div className="rounded-md border border-[#e6e8eb] bg-white p-5 space-y-4">

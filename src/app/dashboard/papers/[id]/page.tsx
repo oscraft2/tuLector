@@ -20,7 +20,7 @@ export default async function PaperIdentifyPage({ params }: PageProps) {
       .eq("school_id", school.id)
       .single(),
     supabase.from("students").select("student_id,rut,name,course").eq("school_id", school.id).order("name"),
-    supabase.from("courses").select("id,name,grade").order("name"),
+    supabase.from("courses").select("id,name,grade").is("archived_at", null).order("name"),
   ]);
   if (!paper) notFound();
 

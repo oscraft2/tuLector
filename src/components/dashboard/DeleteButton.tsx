@@ -13,16 +13,26 @@ type DeleteButtonProps = {
   confirm?: string;
   confirmTitle?: string;
   label?: string;
+  pendingLabel?: string;
+  confirmLabel?: string;
   className?: string;
+  danger?: boolean;
 };
 
+/** Pese al nombre (quedo de cuando solo se usaba para borrar), sirve para
+ * cualquier accion destructiva-o-no que necesite confirmacion + form oculto
+ * -- ej. "Archivar" (danger=false, reversible) reusa exactamente lo mismo
+ * que "Eliminar" (danger=true) via los props de texto. */
 export function DeleteButton({
   action,
   id,
   confirm,
   confirmTitle = "¿Eliminar?",
   label = "Eliminar",
+  pendingLabel = "Eliminando…",
+  confirmLabel = "Eliminar",
   className,
+  danger = true,
 }: DeleteButtonProps) {
   const [state, formAction, isPending] = useActionState(action, initialState);
   const [open, setOpen] = useState(false);
@@ -44,16 +54,16 @@ export function DeleteButton({
           aria-busy={isPending}
           className={className ?? "text-xs font-semibold text-red-600 hover:underline disabled:opacity-50"}
         >
-          {isPending ? "Eliminando…" : label}
+          {isPending ? pendingLabel : label}
         </button>
       </form>
       <ConfirmDialog
         open={open}
         title={confirmTitle}
         message={confirm}
-        confirmLabel="Eliminar"
+        confirmLabel={confirmLabel}
         pending={isPending}
-        danger
+        danger={danger}
         onConfirm={submit}
         onCancel={() => setOpen(false)}
       />

@@ -31,7 +31,7 @@ export default async function NativeScanPage() {
       .eq("school_id", school.id)
       .is("archived_at", null)
       .order("created_at", { ascending: false }),
-    supabase.from("courses").select("id,name,grade").order("name"),
+    supabase.from("courses").select("id,name,grade").is("archived_at", null).order("name"),
   ]);
 
   const quizList = (quizzes ?? []) as QuizRow[];
