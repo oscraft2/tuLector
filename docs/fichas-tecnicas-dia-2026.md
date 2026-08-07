@@ -8,7 +8,7 @@
 - **Periodo**: Monitoreo Intermedio (Julio 2026)
 - **Asignaturas**: Lectura y Matemática
 - **Niveles**: 5° básico, 7° básico, 8° básico, I medio, II medio
-- **Total de fichas**: 9
+- **Total de fichas**: 10
 - **Contacto**: contacto@agenciaeducacion.cl / 600 225 43 23
 - **Web**: agenciaeducacion.cl
 
@@ -429,10 +429,54 @@ Todas las preguntas de desarrollo se corrigen con 3 códigos:
 **Ejemplos Código 0**:
 - "La ruleta B, dado que las letras P y T tiene una frecuencia mayor (503 y 508) que las letras S y Q (496 y 493), por ende, la representación de las superficies de las letras P y T en la ruleta, debe ser mayor que la superficie de las letras S y Q."
 - "La ruleta C, dado que la letra P es la que presenta mayor frecuencia y, por ende, debe estar representada con mayor superficie en la ruleta."
+---
+
+## 8. Matemática 8° Básico
+
+- **Total preguntas**: 37
+- **Preguntas de alternativas**: 35
+- **Preguntas de completación**: 1 (P37)
+- **Preguntas de desarrollo**: 1 (P16)
+- **Ejes**: Números, Álgebra y funciones, Geometría, Probabilidad y estadística (por confirmar con ficha oficial completa)
+
+### Alternativas
+
+| N° | Respuesta | N° | Respuesta | N° | Respuesta |
+|----|-----------|----|-----------|----|-----------|
+| 1 | A | 13 | A | 25 | D |
+| 2 | B | 14 | C | 26 | D |
+| 3 | C | 15 | C | 27 | B |
+| 4 | D | **16** | **Desarrollo** | 28 | A |
+| 5 | C | 17 | C | 29 | B |
+| 6 | C | 18 | B | 30 | B |
+| 7 | B | 19 | C | 31 | D |
+| 8 | D | 20 | A | 32 | A |
+| 9 | D | 21 | A | 33 | B |
+| 10 | C | 22 | C | 34 | B |
+| 11 | D | 23 | B | 35 | A |
+| 12 | D | 24 | C | 36 | B |
+| | | | | 37 | 133 |
+
+### Pregunta 16 - Rúbrica
+
+- **Eje**: Números y operaciones
+- **Habilidad**: Resolver problemas
+- **Contexto**: El estudiante debe calcular la altura del montañista después de 4 horas, sabiendo que desciende 110 metros cada 20 minutos.
+
+| Código | Tipo | Descripción |
+|--------|------|-------------|
+| **2** | Correcta | Comprende que en una hora el montañista desciende 3 veces 110 metros, ya que en 20 minutos desciende 110 metros, y que ese tramo que descendió en una hora lo hace 4 veces, ya que se pregunta por la altura en la que se encontrará el montañista después de 4 horas. Luego, selecciona una estrategia que permite resolver el problema, resuelve correctamente la operatoria y calcula la altura en la que se encontrará el montañista. |
+| **1** | Parcial | Opción A: Comprende que en una hora el montañista desciende 3 veces 110 metros, ya que en 20 minutos desciende 110 metros, y que ese tramo que descendió en una hora lo hace 4 veces, ya que se pregunta por la altura en la que se encontrará el montañista después de 4 horas. Luego, selecciona una estrategia para resolver el problema, resuelve correctamente la operatoria seleccionada, sin embargo, no calcula la altura en la que se encontrará el montañista. Opción B: Comprende que en una hora el montañista desciende 3 veces 110 metros, ya que en 20 minutos desciende 110 metros, pero no considera que ese tramo que descendió en una hora lo hace 4 veces, ya que por alguna razón omite que se pregunta por la altura en la que se encontrará el montañista después de 4 horas. Luego, selecciona una estrategia para resolver el problema, resuelve correctamente la operatoria seleccionada, sin embargo, no calcula el descenso después de 4 horas y tampoco la altura en la que se encontrará el montañista. |
+| **0** | Incorrecta | Entrega otras respuestas distintas a las esperadas en los códigos anteriores, o bien, no responde. |
+
+### Pregunta 37 - Completación
+
+- **Respuesta correcta**: 133
+- **Tipo**: Respuesta numérica corta
 
 ---
 
-## 8. Matemática I Medio
+## 9. Matemática I Medio
 
 - **Total preguntas**: 38
 - **Preguntas de alternativas**: 35
@@ -487,7 +531,7 @@ Todas las preguntas de desarrollo se corrigen con 3 códigos:
 
 ---
 
-## 9. Matemática II Medio
+## 10. Matemática II Medio
 
 - **Total preguntas**: 39
 - **Preguntas de alternativas**: 36

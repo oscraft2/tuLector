@@ -10,9 +10,7 @@ crudo) y así producir el CSV que alimenta a **dia-bot**.
 Existen además fichas técnicas y pautas de corrección en el mismo Escritorio — **están protegidas
 con contraseña, no se pudieron abrir** en esta sesión.
 
-**Cobertura: 11 de 12 instrumentos posibles** (5°/6°/7°/8° básico + I/II medio, × Lectura y
-Matemática). **Falta Matemática 8° básico** — no hay PDF en el escritorio para ese; no se debe
-inventar su estructura ni agregar un preset para él hasta tenerlo.
+**Cobertura: 12 de 12 instrumentos posibles** (5°/6°/7°/8° básico + I/II medio, × Lectura y Matemática). Completado. Matemática 8° básico documentado a partir de la ficha técnica oficial (Monitoreo Intermedio 2026).
 
 ## Tabla completa
 
@@ -25,7 +23,7 @@ inventar su estructura ni agregar un preset para él hasta tenerlo.
 | 7° básico | Lectura | 30 | 25: desarrollo | — | — |
 | 7° básico | Matemática | 35 | 6, 12, 29, 33: corta; 15: desarrollo | 16:3 | — |
 | 8° básico | Lectura | 31 | 20: desarrollo | — | — |
-| 8° básico | Matemática | **sin PDF — no documentado** | | | |
+| 8° básico | Matemática | 37 | 16: desarrollo, 37: numérica corta | — | — |
 | I medio | Lectura | 35 | 6: desarrollo | — | — |
 | I medio | Matemática | 38 | 9: desarrollo, 12: par ordenado, 32: corta | — | — |
 | II medio | Lectura | 38 | 27: desarrollo | — | — |
@@ -89,7 +87,7 @@ deja acá solo como referencia/auditoría:
 7° Básico - Lectura:      30 preguntas, openQuestions=25
 7° Básico - Matemática:   35 preguntas, openQuestions=6,12,15,29,33, optionOverrides=16:3
 8° Básico - Lectura:      31 preguntas, openQuestions=20
-8° Básico - Matemática:   SIN PRESET (falta el PDF)
+8° Básico - Matemática:   37 preguntas, openQuestions=16,37
 I Medio - Lectura:        35 preguntas, openQuestions=6
 I Medio - Matemática:     38 preguntas, openQuestions=9,12,32
 II Medio - Lectura:       38 preguntas, openQuestions=27

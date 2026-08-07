@@ -161,7 +161,23 @@ Código 1 (parcial): Evidencia una interpretación sobre el final de la obra, pe
 Código 0 (incorrecta): Evidencia una comprensión errónea del texto y de lo solicitado, no realiza una interpretación adecuada de la situación. También son incorrectas las respuestas en blanco.`, max_points: 2 },
     },
   },
-  // 8° básico Matemática: sin PDF en el escritorio -- NO agregar hasta tenerlo.
+  {
+    id: "dia_8b_matematica",
+    label: "8° Básico - Matemática",
+    numQuestions: 37,
+    numOptions: 4,
+    openQuestions: "16,37",
+    optionOverrides: "",
+    multiSelectQuestions: "",
+    openQuestionSubtypes: { 16: "simple", 37: "entero_decimal" },
+    answerKey: "ABCDCCBDDCDDACC-CBCAACBCDDBABBDABBAB-",
+    openQuestionRubrics: {
+      16: { rubric: `Código 2 (correcta): Comprende que en una hora el montañista desciende 3 veces 110 metros, ya que en 20 minutos desciende 110 metros, y que ese tramo que descendió en una hora lo hace 4 veces, ya que se pregunta por la altura en la que se encontrará el montañista después de 4 horas. Luego, selecciona una estrategia que permite resolver el problema, resuelve correctamente la operatoria y calcula la altura en la que se encontrará el montañista.
+Código 1 (parcial): Opción A: Comprende que en una hora el montañista desciende 3 veces 110 metros, ya que en 20 minutos desciende 110 metros, y que ese tramo que descendió en una hora lo hace 4 veces, ya que se pregunta por la altura en la que se encontrará el montañista después de 4 horas. Luego, selecciona una estrategia para resolver el problema, resuelve correctamente la operatoria seleccionada, sin embargo, no calcula la altura en la que se encontrará el montañista. Opción B: Comprende que en una hora el montañista desciende 3 veces 110 metros, ya que en 20 minutos desciende 110 metros, pero no considera que ese tramo que descendió en una hora lo hace 4 veces, ya que por alguna razón omite que se pregunta por la altura en la que se encontrará el montañista después de 4 horas, por lo que no responde a la pregunta del problema. Luego, selecciona una estrategia para resolver el problema, resuelve correctamente la operatoria seleccionada, sin embargo, no calcula el descenso después de 4 horas y tampoco la altura en la que se encontrará el montañista.
+Código 0 (incorrecta): Entrega otras respuestas distintas a las esperadas en los códigos anteriores, o bien, no responde.`, max_points: 2 },
+      37: { rubric: `Respuesta correcta: 133. Código 1: coincide con ese valor. Código 0: cualquier otro valor o en blanco.`, max_points: 1 },
+    },
+  },
   {
     id: "dia_Imedio_lectura",
     label: "I Medio - Lectura",
