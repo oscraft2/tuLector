@@ -69,6 +69,10 @@ export default function SheetPage() {
   const [batchN, setBatchN] = useState(40);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  // Que campos rellenar al generar las hojas del curso (generateCourseSheets):
+  // RUT (burbujas), Nombre (recuadro), o ambos -- a eleccion del profesor.
+  const [printRut, setPrintRut] = useState(true);
+  const [printName, setPrintName] = useState(true);
   const [native, setNative] = useState(false);
   const [sharing, setSharing] = useState(false);
   // Origen de RUTs del beta: "random" (aleatorios) o "list" (roster de un curso).
@@ -168,8 +172,11 @@ export default function SheetPage() {
   // src/tulector/sheet_render.ts), no en un rincon aparte. Respuestas SIEMPRE
   // en blanco (no se tocan aca), a diferencia del generador Beta de pruebas
   // (generateBatch).
-  const marksForPage = (p: QuizPage, rutOverride?: string, studentName?: string): SheetMarks => ({
-    ...(rutOverride ? { rut: rutOverride, filled: true } : fillRut ? { rut, filled: true } : {}),
+  // rutOverride=null fuerza "sin RUT" explicitamente (checkbox "Poner RUT"
+  // desmarcado) -- distinto de undefined (no se paso nada -> cae al fillRut
+  // ambiental de la vista previa manual, comportamiento de siempre).
+  const marksForPage = (p: QuizPage, rutOverride?: string | null, studentName?: string): SheetMarks => ({
+    ...(rutOverride ? { rut: rutOverride, filled: true } : rutOverride === undefined && fillRut ? { rut, filled: true } : {}),
     ...(studentName ? { studentName } : {}),
     ...(quizInfo && quizInfo.sheetCode != null
       ? { code: { version: SHEET_CODE_VERSION, country: countryIdx, sheetId: quizInfo.sheetCode, page: p.page, pagesTotal: pages.length } as SheetCodeData }
@@ -311,7 +318,7 @@ export default function SheetPage() {
   };
 
   /** Renderiza UNA pagina especifica (multipagina) a dataURL. */
-  const renderPageToDataUrl = (p: QuizPage, format: "png" | "jpeg" = "png", rutOverride?: string, studentName?: string) => {
+  const renderPageToDataUrl = (p: QuizPage, format: "png" | "jpeg" = "png", rutOverride?: string | null, studentName?: string) => {
     const c = document.createElement("canvas");
     c.width = SHEET_W * 2; c.height = SHEET_H * 2;
     const ctx = c.getContext("2d")!;
@@ -324,7 +331,7 @@ export default function SheetPage() {
    *  Si el ensayo tiene sheetCode, el reverso sale ESCANEABLE (anclas + codigo
    *  con la convencion reversoSheetCode) -- sin sheetCode (generador libre sin
    *  ?quiz=<id>) queda solo impreso, como antes. */
-  const renderOpenPageToDataUrl = (questions: number[], frontPage: number, chunkIndex: number, pageInfo?: string, format: "png" | "jpeg" = "png", studentName?: string, studentRut?: string) => {
+  const renderOpenPageToDataUrl = (questions: number[], frontPage: number, chunkIndex: number, pageInfo?: string, format: "png" | "jpeg" = "png", studentName?: string, studentRut?: string | null) => {
     const c = document.createElement("canvas");
     c.width = SHEET_W * 2; c.height = SHEET_H * 2;
     const ctx = c.getContext("2d")!;
@@ -395,11 +402,12 @@ export default function SheetPage() {
     await new Promise((r) => setTimeout(r, 30)); // deja pintar el "Generando…"
     const urls: string[] = [];
     for (let i = 0; i < parsedRoster.length; i++) {
-      const { rut: studentRut, name: studentName } = parsedRoster[i];
+      const rutToPrint = printRut ? parsedRoster[i].rut : null;
+      const nameToPrint = printName ? (parsedRoster[i].name || undefined) : undefined;
       urls.push(...pages.flatMap((p) => [
-        renderPageToDataUrl(p, "jpeg", studentRut, studentName || undefined),
+        renderPageToDataUrl(p, "jpeg", rutToPrint, nameToPrint),
         ...openChunksForPage(p).map((qs, ci, arr) =>
-          renderOpenPageToDataUrl(qs, p.page, ci + 1, arr.length > 1 || isMultipage ? `Reverso ${ci + 1} de ${arr.length}${isMultipage ? ` — Hoja ${p.page}` : ""}` : undefined, "jpeg", studentName || undefined, studentRut)),
+          renderOpenPageToDataUrl(qs, p.page, ci + 1, arr.length > 1 || isMultipage ? `Reverso ${ci + 1} de ${arr.length}${isMultipage ? ` — Hoja ${p.page}` : ""}` : undefined, "jpeg", nameToPrint, rutToPrint)),
       ]));
       setProgress({ done: i + 1, total: parsedRoster.length });
       await new Promise(requestAnimationFrame);
@@ -524,7 +532,17 @@ export default function SheetPage() {
           </div>
           {parsedRuts.length > 0 && (
             <div className="space-y-1">
-              <button onClick={generateCourseSheets} disabled={busy || isMultipage || reversoOverflow}
+              <div className="flex gap-4 text-xs text-zinc-300">
+                <label className="flex items-center gap-1.5">
+                  <input type="checkbox" checked={printRut} onChange={(e) => setPrintRut(e.target.checked)} />
+                  Poner RUT
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input type="checkbox" checked={printName} onChange={(e) => setPrintName(e.target.checked)} />
+                  Poner Nombre
+                </label>
+              </div>
+              <button onClick={generateCourseSheets} disabled={busy || isMultipage || reversoOverflow || (!printRut && !printName)}
                 title={isMultipage ? "Todavía no soporta ensayos multipágina" : reversoOverflow ? "Bloqueado: el reverso necesita mas de 1 pagina — reduce las preguntas de desarrollo" : undefined}
                 className="w-full py-2 bg-emerald-600 rounded-lg text-sm font-semibold hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed">
                 {busy && progress
