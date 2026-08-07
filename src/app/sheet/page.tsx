@@ -161,24 +161,23 @@ export default function SheetPage() {
     ...(!isMultipage && Object.keys(optionOverrides).length > 0 ? { optionOverrides } : {}),
     ...(!isMultipage && multiSelectQuestions.length > 0 ? { multiSelectQuestions } : {}),
   });
-  // rutOverride: para generar N hojas reales (1 por alumno del roster, ver
-  // generateCourseSheets) sin depender del unico RUT manual del estado --
-  // tiene prioridad sobre fillRut/rut. Respuestas SIEMPRE en blanco (no se
-  // tocan aca), a diferencia del generador Beta de pruebas (generateBatch).
-  const marksForPage = (p: QuizPage, rutOverride?: string): SheetMarks => ({
+  // rutOverride/studentName: para generar N hojas reales (1 por alumno del
+  // roster, ver generateCourseSheets) sin depender del unico RUT/nombre
+  // manual del estado -- tienen prioridad sobre fillRut/rut. studentName se
+  // imprime DENTRO del recuadro "NOMBRE" real de la hoja (ver drawSheet en
+  // src/tulector/sheet_render.ts), no en un rincon aparte. Respuestas SIEMPRE
+  // en blanco (no se tocan aca), a diferencia del generador Beta de pruebas
+  // (generateBatch).
+  const marksForPage = (p: QuizPage, rutOverride?: string, studentName?: string): SheetMarks => ({
     ...(rutOverride ? { rut: rutOverride, filled: true } : fillRut ? { rut, filled: true } : {}),
+    ...(studentName ? { studentName } : {}),
     ...(quizInfo && quizInfo.sheetCode != null
       ? { code: { version: SHEET_CODE_VERSION, country: countryIdx, sheetId: quizInfo.sheetCode, page: p.page, pagesTotal: pages.length } as SheetCodeData }
       : {}),
   });
-  // studentName: reusa el slot pageInfo (zona de branding segura, ya
-  // dibujada por drawBranding fuera de las anclas/lectura) para imprimir el
-  // nombre del alumno en las hojas del curso -- sin tocar el motor OMR.
-  const brandingForPage = (p: QuizPage, studentName?: string): Branding => ({
+  const brandingForPage = (p: QuizPage): Branding => ({
     title, school, logo,
-    ...((studentName || isMultipage)
-      ? { pageInfo: [studentName, isMultipage ? `Página ${p.page} de ${pages.length} — Preguntas ${p.from}–${p.to}` : null].filter(Boolean).join(" — ") }
-      : {}),
+    ...(isMultipage ? { pageInfo: `Página ${p.page} de ${pages.length} — Preguntas ${p.from}–${p.to}` } : {}),
   });
 
   // Config/marcas/branding de la PRIMERA pagina: usados por la vista previa,
@@ -317,7 +316,7 @@ export default function SheetPage() {
     c.width = SHEET_W * 2; c.height = SHEET_H * 2;
     const ctx = c.getContext("2d")!;
     ctx.scale(2, 2);
-    renderSheet(ctx, marksForPage(p, rutOverride), cfgForPage(p), brandingForPage(p, studentName));
+    renderSheet(ctx, marksForPage(p, rutOverride, studentName), cfgForPage(p), brandingForPage(p));
     return toDataUrl(c, format);
   };
 

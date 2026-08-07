@@ -22,6 +22,7 @@ export interface SheetMarks {
   rut?: string;
   filled?: boolean;
   code?: SheetCodeData; // codigo de hoja (ata la hoja a su ensayo). Ver sheet_code.
+  studentName?: string; // se imprime dentro del recuadro "NOMBRE" real (drawSheet, motor).
 }
 
 // Zona segura de branding: banda superior y=0..48 (las anclas están en y≥50).

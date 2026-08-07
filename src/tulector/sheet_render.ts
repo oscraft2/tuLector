@@ -38,6 +38,9 @@ export interface SheetMarks {
   filled?: boolean;
   /** Código de hoja a imprimir (versión, id de prueba, página). */
   code?: SheetCodeData;
+  /** Si viene, se imprime DENTRO del recuadro "NOMBRE" (en vez de dejarlo en
+   *  blanco para llenar a mano) -- usado al generar hojas reales por alumno. */
+  studentName?: string;
 }
 
 const BLACK = "#000000";
@@ -161,6 +164,12 @@ export function drawSheet(ctx: Ctx2D, marks: SheetMarks = {}, cfg: L.SheetConfig
   ctx.textBaseline = "alphabetic";
   ctx.font = "bold 20px sans-serif";
   ctx.fillText("NOMBRE", L.NAME_X + 6, L.NAME_Y - 8);
+  if (marks.studentName) {
+    ctx.font = "bold 18px sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.fillText(marks.studentName.slice(0, 42), L.NAME_X + 10, L.NAME_Y + L.NAME_H / 2);
+    ctx.textBaseline = "alphabetic";
+  }
 
   // ─── Código de hoja (franja superior) ───
   if (marks.code) drawSheetCode(ctx, marks.code);
