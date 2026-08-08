@@ -193,7 +193,9 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
                   renderRow={(m) => (
                     <tr key={m.id} className="border-b border-[#eef0f3] last:border-0">
                       <td className="px-5 py-4">
-                        <span className="block font-semibold text-[#111827]">{m.email}</span>
+                        <Link href={`/dashboard/team/${m.id}`} className="block font-semibold text-[#07305f] hover:underline">
+                          {m.email}
+                        </Link>
                       </td>
                       <td className="px-5 py-4"><StatusPill>{roleLabel(m.role)}</StatusPill></td>
                       <td className="px-5 py-4 text-[#5b6472]">{m.quizCount}</td>
