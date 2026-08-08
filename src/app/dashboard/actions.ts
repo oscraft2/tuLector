@@ -732,57 +732,130 @@ export async function importStudentsMapped(_prevState: DashboardActionState, for
   }
 }
 
-export async function inviteMember(formData: FormData) {
-  const { supabase, user, school, isAdmin, locale } = await getDashboardContext();
-  if (!isAdmin) throw new Error("Solo admin puede invitar miembros.");
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const role = String(formData.get("role") ?? "teacher");
-  if (!email || !["admin", "teacher", "viewer"].includes(role)) return;
-
-  const { data, error } = await supabase
-    .from("invitations")
-    .insert({ school_id: school.id, email, role, invited_by: user.id })
-    .select("id")
-    .single();
-
-  if (error) {
-    throw new Error(`Error al crear la invitación: ${error.message}`);
-  }
-
-  if (data) {
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-    const inviteLink = `${siteUrl}/auth?mode=register&invite_id=${data.id}`;
-
-    const result = await sendTemplatedEmail({
-      to: email,
-      templateKey: "invitation",
-      locale,
-      variables: {
-        invited_by_email: user.email ?? "Un administrador",
-        school_name: school.name,
-        role: role === "admin" ? "Administrador" : role === "teacher" ? "Profesor" : "Observador",
-        invite_link: inviteLink,
-      },
-    });
-
-    if (!result.success) {
-      // La invitacion igual quedo creada y es utilizable via el link manual
-      // ("Copiar enlace" en Configuracion) -- no lanzamos error, solo avisamos.
-      revalidatePath("/dashboard/settings");
-      redirect(`/dashboard/settings?invite_warning=${encodeURIComponent(email)}`);
-    }
-  }
-
-  revalidatePath("/dashboard/settings");
+function inviteRoleLabel(role: string) {
+  return role === "admin" ? "Administrador" : role === "teacher" ? "Profesor" : "Observador";
 }
 
-export async function revokeMember(formData: FormData) {
-  const { supabase, isAdmin } = await getDashboardContext();
-  if (!isAdmin) throw new Error("Solo admin puede revocar miembros.");
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
-  await supabase.from("school_members").delete().eq("id", id);
-  revalidatePath("/dashboard/settings");
+async function dispatchInviteEmail(email: string, inviteId: string, role: string, opts: { locale: string; school: { id: string; name: string }; invitedByEmail: string | null }) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const inviteLink = `${siteUrl}/auth?mode=register&invite_id=${inviteId}`;
+  return sendTemplatedEmail({
+    to: email,
+    templateKey: "invitation",
+    locale: opts.locale,
+    variables: {
+      invited_by_email: opts.invitedByEmail ?? "Un administrador",
+      school_name: opts.school.name,
+      role: inviteRoleLabel(role),
+      invite_link: inviteLink,
+    },
+  });
+}
+
+export async function inviteMember(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  try {
+    const { supabase, user, school, isAdmin, locale } = await getDashboardContext();
+    if (!isAdmin) throw new Error("Solo admin puede invitar miembros.");
+    const email = String(formData.get("email") ?? "").trim().toLowerCase();
+    const role = String(formData.get("role") ?? "teacher");
+    if (!email) throw new Error("Falta el correo a invitar.");
+    if (!["admin", "teacher", "viewer"].includes(role)) throw new Error("Rol invalido.");
+
+    const { data: existing } = await supabase
+      .from("invitations")
+      .select("id")
+      .eq("school_id", school.id)
+      .eq("email", email)
+      .eq("status", "pending")
+      .maybeSingle();
+    if (existing) {
+      throw new Error(`Ya existe una invitacion pendiente para ${email}. Usa "Reenviar" en su menu de opciones.`);
+    }
+
+    const { data, error } = await supabase
+      .from("invitations")
+      .insert({ school_id: school.id, email, role, invited_by: user.id })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+
+    const result = await dispatchInviteEmail(email, data.id, role, { locale, school, invitedByEmail: user.email ?? null });
+    revalidatePath("/dashboard/settings");
+
+    if (!result.success) {
+      // La invitacion igual quedo creada y es utilizable via "Copiar enlace".
+      return actionSuccess("Invitacion creada", `El correo a ${email} no se pudo enviar. Usa "Copiar enlace" en su menu de opciones para compartirla manualmente.`, "⚠");
+    }
+    return actionSuccess("Invitacion enviada", `Se envio un correo a ${email}.`, "✉");
+  } catch (error) {
+    return actionError(error, "No se pudo invitar");
+  }
+}
+
+export async function resendInvitation(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  try {
+    const { supabase, user, school, isAdmin, locale } = await getDashboardContext();
+    if (!isAdmin) throw new Error("Solo admin puede reenviar invitaciones.");
+    const id = String(formData.get("id") ?? "");
+    if (!id) throw new Error("Falta la invitacion.");
+
+    const { data: invite } = await supabase
+      .from("invitations")
+      .select("id, email, role, status")
+      .eq("id", id)
+      .eq("school_id", school.id)
+      .maybeSingle();
+    if (!invite || invite.status !== "pending") throw new Error("Esta invitacion ya no esta pendiente.");
+
+    await supabase
+      .from("invitations")
+      .update({ expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() })
+      .eq("id", id);
+
+    const result = await dispatchInviteEmail(invite.email, invite.id, invite.role, { locale, school, invitedByEmail: user.email ?? null });
+    revalidatePath("/dashboard/settings");
+
+    if (!result.success) {
+      return actionSuccess("Invitacion actualizada", `El correo a ${invite.email} no se pudo reenviar. Usa "Copiar enlace" para compartirla manualmente.`, "⚠");
+    }
+    return actionSuccess("Invitacion reenviada", `Se reenvio el correo a ${invite.email}.`, "✉");
+  } catch (error) {
+    return actionError(error, "No se pudo reenviar");
+  }
+}
+
+export async function deleteInvitation(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  try {
+    const { supabase, isAdmin, school } = await getDashboardContext();
+    if (!isAdmin) throw new Error("Solo admin puede eliminar invitaciones.");
+    const id = String(formData.get("id") ?? "");
+    if (!id) throw new Error("Falta la invitacion.");
+    const { error } = await supabase
+      .from("invitations")
+      .update({ status: "revoked", revoked_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("school_id", school.id);
+    if (error) throw new Error(error.message);
+    revalidatePath("/dashboard/settings");
+    return actionSuccess("Invitacion eliminada", "Ya puedes invitar de nuevo a ese correo.", "🗑");
+  } catch (error) {
+    return actionError(error, "No se pudo eliminar");
+  }
+}
+
+export async function revokeMember(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
+  try {
+    const { supabase, isAdmin } = await getDashboardContext();
+    if (!isAdmin) throw new Error("Solo admin puede revocar miembros.");
+    const id = String(formData.get("id") ?? "");
+    if (!id) throw new Error("Falta el miembro.");
+    const { error } = await supabase.from("school_members").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+    revalidatePath("/dashboard/settings");
+    return actionSuccess("Miembro eliminado", "Se quito el acceso a este colegio.", "🗑");
+  } catch (error) {
+    return actionError(error, "No se pudo quitar");
+  }
 }
 
 export async function updateSchoolSettings(formData: FormData) {

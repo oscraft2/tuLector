@@ -4,6 +4,7 @@ import { getDashboardContext } from "@/lib/supabase_server";
 import { StatusPill } from "@/components/AppShell";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { DataTable } from "@/components/dashboard/DataTable";
+import { ActionButton } from "@/components/dashboard/ActionButton";
 import { revokeMember } from "@/app/dashboard/actions";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +34,16 @@ export default async function TeamMemberPage({ params }: PageProps) {
     .eq("school_id", school.id)
     .maybeSingle();
 
-  if (!member) redirect("/dashboard/settings");
+  if (!member) {
+    return (
+      <>
+        <PageHeader title="Miembro no encontrado" description="Este docente ya no pertenece a este colegio (puede que ya lo hayas quitado)." />
+        <Link href="/dashboard/settings" className="inline-block rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold text-[#07305f] hover:bg-[#eef4ff]">
+          Volver a Configuracion
+        </Link>
+      </>
+    );
+  }
 
   const { createSupabaseAdminClient } = await import("@/lib/supabaseAdmin");
   const admin = createSupabaseAdminClient();
@@ -125,12 +135,19 @@ export default async function TeamMemberPage({ params }: PageProps) {
           <p className="mt-2 text-sm leading-6 text-red-800">
             Quitar a este docente del colegio. Sus ensayos y resultados quedan intactos (visibles para el admin), pero pierde acceso inmediato a TuLector con este colegio.
           </p>
-          <form action={revokeMember} className="mt-4">
-            <input type="hidden" name="id" value={member.id} />
-            <button className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
-              Quitar del colegio
-            </button>
-          </form>
+          <div className="mt-4">
+            <ActionButton
+              action={revokeMember}
+              fields={{ id: member.id }}
+              label="Quitar del colegio"
+              pendingLabel="Quitando…"
+              className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+              confirm={`¿Quitar a ${email} de este colegio? Pierde acceso inmediato; sus ensayos y resultados quedan intactos.`}
+              confirmTitle="¿Quitar del colegio?"
+              confirmLabel="Quitar"
+              danger
+            />
+          </div>
         </section>
       </div>
     </>
