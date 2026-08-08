@@ -210,20 +210,30 @@ export function PublicLeadCapture({ currentLocale }: PublicLeadCaptureProps) {
                   <p className="text-sm font-bold text-[#111827]">{copy.appsTitle}</p>
                   <p className="mt-2 text-sm leading-6 text-[#5f6b66]">{copy.appsBody}</p>
                   <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <Image
-                      src="/store-badges/app-store.svg"
-                      alt="Download on the App Store"
-                      width={120}
-                      height={40}
-                      className="h-10 w-auto"
-                    />
-                    <Image
-                      src="/store-badges/google-play.png"
-                      alt="Get it on Google Play"
-                      width={135}
-                      height={40}
-                      className="h-10 w-auto"
-                    />
+                    <a
+                      href="https://play.google.com/store/apps/details?id=cl.tulector.app&utm_source=tulector_web&utm_medium=modal_badge&utm_campaign=web_to_app"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block transition-transform hover:scale-[1.03] active:scale-[0.98]"
+                      aria-label="Descargar TuLector en Google Play"
+                    >
+                      <Image
+                        src="/store-badges/google-play.png"
+                        alt="Disponible en Google Play"
+                        width={135}
+                        height={40}
+                        className="h-10 w-auto"
+                      />
+                    </a>
+                    <div className="opacity-60 grayscale" title="Proximamente en App Store">
+                      <Image
+                        src="/store-badges/app-store.svg"
+                        alt="Download on the App Store (Proximamente)"
+                        width={120}
+                        height={40}
+                        className="h-10 w-auto"
+                      />
+                    </div>
                   </div>
                 </div>
 

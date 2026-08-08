@@ -146,20 +146,29 @@ export interface Messages {
 export const messages: Record<Locale, Messages> = {
   "es-CL": {
     areaServed: ["CL"],
-    knowsAbout: ["PAES", "SIMCE"],
-    nationalExam: "PAES",
-    govBody: "DEMRE / MINEDUC",
+    knowsAbout: [
+      "PAES",
+      "SIMCE",
+      "Pruebas DIA Agencia de Calidad de la Educacion",
+      "Decreto 67 de Evaluacion",
+      "Ley SEP Subvencion Escolar Preferencial",
+      "Lector Optico OMR con Camara",
+    ],
+    nationalExam: "PAES / DIA / SIMCE",
+    govBody: "DEMRE / MINEDUC / Agencia de Calidad de la Educacion",
     currency: "CLP",
     currencyName: "Pesos chilenos",
     idName: "RUT",
     idPlaceholder: "RUT institucion (opcional)",
     countryName: "Chile",
     faqs: [
-      { q: "Que es TuLector?", a: "TuLector es una plataforma de lectura optica con camara movil que corrige ensayos, simulacros y pruebas estandarizadas en Chile y Latinoamerica." },
-      { q: "Como funciona el lector de hojas?", a: "Escanea hojas de respuesta con la camara del celular o navegador web. El sistema detecta automaticamente las marcas, las corrige segun la clave de respuestas y entrega resultados inmediatos." },
-      { q: "Es compatible con la PAES?", a: "Si. TuLector soporta el formato de ensayos PAES y SIMCE. Puedes configurar la cantidad de preguntas, puntajes y escala de notas que necesites." },
-      { q: "Cuantas hojas puedo escanear gratis?", a: "El plan gratis siempre esta disponible e incluye 100 lecturas mensuales. Los unicos planes pagados son Pro y School." },
-      { q: "Funciona sin internet?", a: "La app movil permite escanear sin conexion y sincroniza los resultados cuando recuperas la señal." },
+      { q: "Que es TuLector?", a: "TuLector es una plataforma de lectura optica (OMR) con camara de celular que corrige ensayos PAES, SIMCE, pruebas DIA y evaluaciones escolares en Chile y Latinoamerica." },
+      { q: "Como funciona el lector de hojas de respuesta?", a: "Generas e imprimes las hojas de respuesta en papel comun, tus alumnos marcan a lapiz y pasas la camara del smartphone o computador. El sistema detecta automaticamente las marcas, calcula puntajes y notas de 1.0 a 7.0 y entrega resultados al instante." },
+      { q: "Es compatible con las pruebas DIA de la Agencia de Calidad?", a: "Si. TuLector incluye plantillas predefinidas para Diagnostico Integral de Aprendizajes (DIA) y se integra con la extension DIA Bot para transferir las respuestas de los estudiantes a la plataforma oficial sin digitacion manual." },
+      { q: "Soporta el formato de ensayos PAES del DEMRE?", a: "Si. Soporta 4 y 5 alternativas (A-E), cuadricula estructurada para RUT chileno con validacion de digito verificador y generacion de reportes por competencia y eje tematico." },
+      { q: "Se puede financiar con fondos de la Ley SEP o PME?", a: "Si. Las licencias institucionales para colegios y corporaciones se emiten con facturacion oficial en pesos chilenos (CLP) compatible con rendiciones SEP y PME." },
+      { q: "Cuantas hojas puedo escanear gratis?", a: "El plan gratis incluye 100 lecturas mensuales para que cualquier docente pueda probar el sistema sin compromiso. Los planes anuales Pro y School ofrecen cuotas ampliadas y soporte institucional." },
+      { q: "Funciona sin conexion a internet?", a: "Si. La aplicacion cuenta con modo offline para escanear en salas de clases con conectividad limitada y sincroniza los resultados automaticamente al recuperar la red." },
     ],
     plans: [
       { name: "Gratis", description: "100 lecturas mensuales, acceso web y movil, exportacion basica.", price: 0, currency: "CLP" },
@@ -235,7 +244,7 @@ export const messages: Record<Locale, Messages> = {
       contact: "ventas-cl@tulector.app",
       response: "Para pilotos, soporte institucional o implementaciones con equipos docentes.",
       location: "Hecho para Chile. Preparado para Latinoamerica y Brasil.",
-      appStores: { title: "App movil proximamente", body: "Estamos preparando la experiencia movil para acompanarte en lectura y correccion en terreno." },
+      appStores: { title: "Disponible en Google Play", body: "Descarga la app oficial de TuLector para escanear hojas de respuesta en terreno con la camara de tu celular." },
       cta: { eyebrow: "Implementacion rapida", title: "Empieza con una hoja imprimible y el lector de respuestas.", body: "Crea una cuenta, genera tus hojas de respuesta y prueba el escaneo desde el navegador o la app movil.", primary: "Crear cuenta", secondary: "Probar lector" },
       newsletter: {
         eyebrow: "Recibe mas informacion", title: "Dejanos tus datos y te contactamos lo antes posible.",
@@ -371,7 +380,7 @@ export const messages: Record<Locale, Messages> = {
       contact: "ventas-mx@tulector.app",
       response: "Para pilotos, soporte institucional o implementaciones con equipos docentes.",
       location: "Hecho para Mexico. Preparado para Latinoamerica y Brasil.",
-      appStores: { title: "App movil proximamente", body: "Estamos preparando la experiencia movil para acompanarte en lectura y correccion en terreno." },
+      appStores: { title: "Disponible en Google Play", body: "Descarga la app oficial de TuLector para calificar examenes en segundos con la camara de tu celular." },
       cta: { eyebrow: "Implementacion rapida", title: "Empieza con una hoja imprimible y el lector de respuestas.", body: "Crea una cuenta, genera tus hojas de respuesta y prueba el escaneo desde el navegador o la app movil.", primary: "Crear cuenta", secondary: "Probar lector" },
       newsletter: {
         eyebrow: "Recibe mas informacion", title: "Dejanos tus datos y te contactamos lo antes posible.",
@@ -507,7 +516,7 @@ export const messages: Record<Locale, Messages> = {
       contact: "ventas-pe@tulector.app",
       response: "Para pilotos, soporte institucional o implementaciones con equipos docentes.",
       location: "Hecho para Peru. Preparado para Latinoamerica y Brasil.",
-      appStores: { title: "App movil proximamente", body: "Estamos preparando la experiencia movil para acompanarte en lectura y correccion en terreno." },
+      appStores: { title: "Disponible en Google Play", body: "Descarga la app oficial de TuLector para escanear fichas opticas con la camara de tu celular." },
       cta: { eyebrow: "Implementacion rapida", title: "Empieza con una hoja imprimible y el lector de respuestas.", body: "Crea una cuenta, genera tus hojas de respuesta y prueba el escaneo desde el navegador o la app movil.", primary: "Crear cuenta", secondary: "Probar lector" },
       newsletter: {
         eyebrow: "Recibe mas informacion", title: "Dejanos tus datos y te contactamos lo antes posible.",
@@ -643,7 +652,7 @@ export const messages: Record<Locale, Messages> = {
       contact: "ventas-ar@tulector.app",
       response: "Para pilotos, soporte institucional o implementaciones con equipos docentes.",
       location: "Hecho para Argentina. Preparado para Latinoamerica y Brasil.",
-      appStores: { title: "App movil proximamente", body: "Estamos preparando la experiencia movil para acompanarte en lectura y correccion en terreno." },
+      appStores: { title: "Disponible en Google Play", body: "Descarga la app oficial de TuLector para corregir examenes y parciales con la camara de tu celular." },
       cta: { eyebrow: "Implementacion rapida", title: "Empieza con una hoja imprimible y el lector de respuestas.", body: "Crea una cuenta, genera tus hojas de respuesta y prueba el escaneo desde el navegador o la app movil.", primary: "Crear cuenta", secondary: "Probar lector" },
       newsletter: {
         eyebrow: "Recibe mas informacion", title: "Dejanos tus datos y te contactamos lo antes posible.",
@@ -779,7 +788,7 @@ export const messages: Record<Locale, Messages> = {
       contact: "vendas-br@tulector.app",
       response: "Para pilotos, suporte institucional ou implementacoes com equipes docentes.",
       location: "Feito para o Brasil. Preparado para America Latina.",
-      appStores: { title: "App movel em breve", body: "Estamos preparando a experiencia movel para apoiar leitura e correcao em campo." },
+      appStores: { title: "Disponivel no Google Play", body: "Baixe o app oficial do TuLector para escanear folhas de resposta com a camera do seu celular." },
       cta: { eyebrow: "Implementacao rapida", title: "Comece com uma folha imprimivel e o leitor de respostas.", body: "Crie uma conta, gere suas folhas de resposta e teste o escaneamento pelo navegador ou app movel.", primary: "Criar conta", secondary: "Testar leitor" },
       newsletter: {
         eyebrow: "Receba mais informacoes", title: "Deixe seus dados e entraremos em contato o quanto antes.",

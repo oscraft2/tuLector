@@ -56,6 +56,9 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+  other: {
+    "google-play-app": "app-id=cl.tulector.app",
+  },
 };
 
 export const viewport: Viewport = {
@@ -71,6 +74,7 @@ const orgLd = {
   url: "https://tulector.app",
   logo: "https://tulector.app/icon-512.png",
   sameAs: [
+    "https://play.google.com/store/apps/details?id=cl.tulector.app",
     "https://www.linkedin.com/company/tulector",
     "https://github.com/oscraft2/tuLector",
   ],
@@ -84,13 +88,15 @@ const orgLd = {
 
 const webAppLd = {
   "@context": "https://schema.org",
-  "@type": "WebApplication",
+  "@type": "SoftwareApplication",
   name: "TuLector",
   applicationCategory: "EducationalApplication",
-  operatingSystem: "Web, Android",
+  operatingSystem: "Android, Web",
   url: "https://tulector.app",
-  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-  publisher: { "@type": "Organization", name: "TuLector" },
+  downloadUrl: "https://play.google.com/store/apps/details?id=cl.tulector.app",
+  installUrl: "https://play.google.com/store/apps/details?id=cl.tulector.app",
+  offers: { "@type": "Offer", price: "0", priceCurrency: "CLP" },
+  publisher: { "@type": "Organization", name: "TuLector", url: "https://tulector.app" },
 };
 
 const webSiteLd = {

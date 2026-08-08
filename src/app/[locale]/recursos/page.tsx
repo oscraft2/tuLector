@@ -13,17 +13,19 @@ const seedArticles: Record<string, { slug: string; title: string; excerpt: strin
   "es-CL": [
     { slug: "como-escanear-hojas-con-camara", title: "Como escanear hojas de respuesta con camara", excerpt: "Guia paso a paso para digitalizar hojas de respuesta usando la camara de tu celular. Sin scanner OMR ni hardware especial.", locale: "es-CL" },
     { slug: "simular-paes-paso-a-paso", title: "Como simular la PAES paso a paso", excerpt: "Aprende a crear, aplicar y corregir simulacros PAES para tus alumnos con resultados inmediatos y reportes por eje tematico.", locale: "es-CL" },
-    { slug: "correccion-automatica-ensayos", title: "Correccion automatica de ensayos: guia para docentes", excerpt: "Reduce el tiempo de correccion de ensayos de horas a minutos con tecnologia de lectura optica por camara movil.", locale: "es-CL" },
+    { slug: "correccion-automatica-ensayos", title: "Correccion automatica de ensayos: guia para docentes en Chile", excerpt: "Reduce el tiempo de correccion de horas a minutos con lectura optica por camara movil y escala 1.0 a 7.0 al 60% de exigencia.", locale: "es-CL" },
+    { slug: "como-automatizar-carga-notas-plataforma-dia", title: "Automatizar carga de respuestas en plataforma DIA (Agencia de Calidad)", excerpt: "Digitaliza las evaluaciones DIA en papel y carga las alternativas automaticamente en la plataforma oficial con DIA Bot.", locale: "es-CL" },
+    { slug: "hoja-de-respuestas-paes-pdf-descargar", title: "Hojas de respuesta PAES en PDF: descarga y formato estandarizado", excerpt: "Descarga plantillas de hojas de respuesta tipo DEMRE listas para imprimir con cuadricula de RUT y opciones A-E.", locale: "es-CL" },
   ],
   "es-MX": [
     { slug: "como-escanear-hojas-con-camara", title: "Como escanear hojas de respuesta con camara", excerpt: "Guia paso a paso para digitalizar hojas de respuesta usando la camara de tu celular. Sin scanner OMR ni hardware especial.", locale: "es-MX" },
     { slug: "exani-vs-comipems-mexico", title: "EXANI vs COMIPEMS: diferencias y como preparar a tus alumnos", excerpt: "Comparativa de los examenes de ingreso mas importantes de Mexico. Estrategias de preparacion y como usar simulacros efectivos.", locale: "es-MX" },
-    { slug: "correccion-automatica-examenes", title: "Correccion automatica de examenes: guia CENEVAL", excerpt: "Optimiza la correccion de examenes tipo CENEVAL con tecnologia de lectura optica. Resultados inmediatos por alumno y grupo.", locale: "es-MX" },
+    { slug: "correccion-automatica-examenes", title: "Correccion automatica de examenes: guia CENEVAL y bachillerato", excerpt: "Optimiza la correccion de examenes tipo CENEVAL con tecnologia de lectura optica. Resultados inmediatos por alumno y grupo.", locale: "es-MX" },
   ],
   "es-PE": [
     { slug: "como-escanear-hojas-con-camara", title: "Como escanear hojas de respuesta con camara", excerpt: "Guia paso a paso para digitalizar hojas de respuesta usando la camara de tu celular. Sin scanner OMR ni hardware especial.", locale: "es-PE" },
     { slug: "ece-peru-evaluacion-censal", title: "ECE Peru: como preparar la Evaluacion Censal de Estudiantes", excerpt: "Todo sobre la ECE del MINEDU: estructura, areas evaluadas y como implementar simulacros efectivos en tu colegio.", locale: "es-PE" },
-    { slug: "examen-admision-uni-preparacion", title: "Examen de Admision UNI: estrategia de preparacion con simulacros", excerpt: "Como usar simulacros frecuentes para preparar el examen de admision de la UNI. Metodologia y herramientas digitales.", locale: "es-PE" },
+    { slug: "examen-admision-uni-preparacion", title: "Examen de Admision UNI y San Marcos: estrategia de preparacion con simulacros", excerpt: "Como usar simulacros frecuentes para preparar el examen de admision de la UNI y UNMSM con correccion OMR instantanea.", locale: "es-PE" },
   ],
   "es-AR": [
     { slug: "como-escanear-hojas-con-camara", title: "Como escanear hojas de respuesta con camara", excerpt: "Guia paso a paso para digitalizar hojas de respuesta usando la camara de tu celular. Sin scanner OMR ni hardware especial.", locale: "es-AR" },
@@ -33,7 +35,7 @@ const seedArticles: Record<string, { slug: string; title: string; excerpt: strin
   "pt-BR": [
     { slug: "como-escanear-hojas-com-camera", title: "Como escanear folhas de resposta com a camera", excerpt: "Guia passo a passo para digitalizar folhas de resposta usando a camera do celular. Sem scanner OMR ou hardware especial.", locale: "pt-BR" },
     { slug: "enem-2026-como-preparar-simulados", title: "ENEM 2026: como preparar simulados eficientes", excerpt: "Estrategias para criar e corrigir simulados ENEM com resultados imediatos. Preparacao completa para o exame nacional.", locale: "pt-BR" },
-    { slug: "fuvest-unicamp-vestibular", title: "FUVEST e UNICAMP: simulados para os principais vestibulares", excerpt: "Como preparar alunos para FUVEST, UNICAMP e outros vestibulares com simulados frequentes e correcao automatica.", locale: "pt-BR" },
+    { slug: "fuvest-unicamp-vestibular", title: "FUVEST e UNICAMP: simulados para os principais vestibulares paulistas", excerpt: "Como preparar alunos para FUVEST, UNICAMP e outros vestibulares com simulados frequentes e correcao automatica.", locale: "pt-BR" },
   ],
 };
 

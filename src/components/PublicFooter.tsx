@@ -58,20 +58,30 @@ export function PublicFooter({ currentLocale }: PublicFooterProps) {
                   <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#6b7280]">{copy.appStores.title}</p>
                   <p className="mt-1 hidden text-xs leading-5 text-[#6b7280] md:block">{copy.appStores.body}</p>
                   <div className="mt-3 flex flex-wrap items-center gap-2 sm:flex-col sm:items-start xl:flex-row xl:items-center">
-                    <Image
-                      src="/store-badges/app-store.svg"
-                      alt="Download on the App Store"
-                      width={120}
-                      height={40}
-                      className="h-[38px] w-auto"
-                    />
-                    <Image
-                      src="/store-badges/google-play.png"
-                      alt="Get it on Google Play"
-                      width={646}
-                      height={250}
-                      className="h-[38px] w-auto"
-                    />
+                    <a
+                      href="https://play.google.com/store/apps/details?id=cl.tulector.app&utm_source=tulector_web&utm_medium=footer_badge&utm_campaign=web_to_app"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block transition-transform hover:scale-[1.03] active:scale-[0.98]"
+                      aria-label="Descargar TuLector en Google Play"
+                    >
+                      <Image
+                        src="/store-badges/google-play.png"
+                        alt="Disponible en Google Play"
+                        width={646}
+                        height={250}
+                        className="h-[38px] w-auto"
+                      />
+                    </a>
+                    <div className="opacity-60 grayscale hover:opacity-100 hover:grayscale-0 transition-opacity" title="Proximamente en App Store">
+                      <Image
+                        src="/store-badges/app-store.svg"
+                        alt="Download on the App Store (Proximamente)"
+                        width={120}
+                        height={40}
+                        className="h-[38px] w-auto"
+                      />
+                    </div>
                   </div>
                 </div>
                 <div className="rounded-lg border border-[#dfe5e2] bg-white p-3 md:p-4">

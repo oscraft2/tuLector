@@ -1,32 +1,54 @@
 # TuLector
 
-> Plataforma de lectura optica (OMR) con camara movil que corrige ensayos, simulacros y pruebas estandarizadas en Latinoamerica.
+> Plataforma de lectura optica (OMR) con camara movil que corrige ensayos, simulacros y pruebas estandarizadas en Latinoamerica, con soporte especializado para el ecosistema educativo chileno (PAES, SIMCE, DIA Agencia de Calidad) y LATAM.
 
-TuLector esta pensada para colegios, preuniversitarios y docentes de Peru, Brasil, Argentina, Mexico y Chile. Lee hojas de respuesta con la camara del celular, las corrige automaticamente y entrega resultados academicos por alumno y grupo.
+TuLector transforma la camara de cualquier celular o computador en un escaner OMR de alta velocidad. Esta disenada para colegios, preuniversitarios, docentes, SLEP (Servicios Locales de Educacion Publica) y corporaciones educativas de Chile, Peru, Mexico, Argentina y Brasil.
 
 ## Que resuelve
-- Correccion automatica de ensayos EXANI (MX), ECE (PE), CBC (AR), ENEM (BR), PAES (CL).
-- Hojas de respuesta imprimibles reutilizables.
-- Dashboard docente con filtros por curso, fecha y pregunta.
-- Exportacion a Excel/PDF y portal publico de resultados para familias.
 
-## Como usarlo
-1. Crea una cuenta en https://tulector.app/es-MX
-2. Crea una evaluacion y personaliza la clave de respuestas.
-3. Imprime hojas de respuesta para tus alumnos.
-4. Escanea las hojas con la camara del celular o la web.
-5. Revisa resultados en el dashboard.
+### Chile (es-CL)
+- **Diagnostico Integral de Aprendizajes (DIA):** Escaneo de hojas de evaluacion DIA (Diagnostica, Monitoreo Intermedio, Cierre) y sincronizacion automatizada a la plataforma oficial de la Agencia de Calidad de la Educacion mediante la extension DIA Bot.
+- **Ensayos PAES (DEMRE):** Evaluaciones de Competencia Lectora, Competencia Matematica M1 y M2, Ciencias e Historia con formato oficial de 4 o 5 alternativas y cuadricula de RUT con validacion de digito verificador y Modulo 11.
+- **Evaluaciones SIMCE y Decreto 67:** Generacion de hojas imprimibles y calificacion automatica en escala de notas oficial de 1.0 a 7.0 (con ajuste parametrico del 60% de exigencia).
+- **Financiamiento Escolar:** Compatible con contrataciones y presupuestos de la Subvencion Escolar Preferencial (Ley SEP) y Plan de Mejoramiento Educativo (PME).
 
-## Confianza y seguridad
-- RLS habilitada en todas las tablas Supabase.
-- Sesion en cookies httpOnly/secure/sameSite.
-- Datos de estudiantes no se comparten con terceros.
-- Politica de privacidad: https://tulector.app/es-MX/privacy
+### Latinoamerica
+- **Mexico (es-MX):** Simulacros EXANI-I, EXANI-II (CENEVAL) y COMIPEMS con escalas 0-10 y reportes por reactivo.
+- **Peru (es-PE):** Evaluacion Censal de Estudiantes (ECE), ECFL y simulacros de admision para UNI, San Marcos (UNMSM) y PUCP con casillas de DNI.
+- **Brasil (pt-BR):** Simulados ENEM com analise TRI, FUVEST e UNICAMP.
+- **Argentina (es-AR):** Ciclo Basico Comun (CBC UBA) y examenes de ingreso con calificacion de 1 a 10.
 
-## Contacto
-- Comercial MX: ventas-mx@tulector.app
-- Comercial PE: ventas-pe@tulector.app
-- Comercial AR: ventas-ar@tulector.app
-- Comercial BR: vendas-br@tulector.app
-- Comercial CL: ventas-cl@tulector.app
-- Soporte institucional: https://tulector.app/es-MX/support
+## Caracteristicas Principales
+- **Lectura OMR por Camara:** Algoritmo de vision artificial con correcion de perspectiva y multi-frame voting.
+- **Modo Offline:** Escaneo sin conexion a internet con sincronizacion automatica en la nube al recuperar cobertura.
+- **Hojas Imprimibles Estandar:** Generador de PDF en papel bond comun (tamano Carta o A4), sin papel optico costoso.
+- **Analisis por Item:** Mapa de calor de distractores pedagogicos y porcentaje de logro por habilidad/eje curricular.
+- **Exportacion:** Planillas Excel compatibles con sistemas de gestion escolar (Lirmi, Webclass, Colegium, Google Sheets).
+- **Portal de Familias:** Consulta privada e individual de resultados por estudiante mediante enlaces seguros.
+
+## URLs Canónicas de Recursos y Soluciones
+- Inicio Chile: https://tulector.app/es-CL
+- App Oficial en Google Play Store: https://play.google.com/store/apps/details?id=cl.tulector.app
+- Soluciones para Colegios: https://tulector.app/es-CL/para-colegios
+- Soluciones para Docentes: https://tulector.app/es-CL/para-docentes
+- Soluciones para Preuniversitarios: https://tulector.app/es-CL/para-preuniversitarios
+- Precios y Planes: https://tulector.app/es-CL/precios
+- Carga de Respuestas Pruebas DIA: https://tulector.app/es-CL/recursos/como-automatizar-carga-notas-plataforma-dia
+- Como Simular la PAES: https://tulector.app/es-CL/recursos/simular-paes-paso-a-paso
+- Correccion Automatica de Ensayos: https://tulector.app/es-CL/recursos/correccion-automatica-ensayos
+- Descarga Hojas PAES PDF: https://tulector.app/es-CL/recursos/hoja-de-respuestas-paes-pdf-descargar
+
+## Confianza, Seguridad y Privacidad
+- Base de datos con Row Level Security (RLS) en Supabase.
+- Cifrado en transito (HTTPS/TLS 1.3) y en reposo.
+- Sesiones administradas en cookies seguras httpOnly/SameSite.
+- Cumplimiento normativo estricto de proteccion de datos estudiantiles.
+- Politica de privacidad: https://tulector.app/es-CL/privacy
+
+## Contacto Comercial y Soporte
+- Chile: ventas-cl@tulector.app
+- Mexico: ventas-mx@tulector.app
+- Peru: ventas-pe@tulector.app
+- Argentina: ventas-ar@tulector.app
+- Brasil: vendas-br@tulector.app
+- Soporte institucional: https://tulector.app/es-CL/support
