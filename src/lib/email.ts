@@ -14,6 +14,43 @@ export interface TemplatedEmailOptions {
   variables: Record<string, string | number>;
 }
 
+/**
+ * Envoltorio HTML compartido para correos "corporativos": cabecera con el
+ * mismo isotipo "TL" + wordmark que usa TuLectorLogo.tsx en el resto de la
+ * app (no hay un archivo de imagen del logo -- se reconstruye en HTML/CSS
+ * para no depender de que el cliente de correo cargue imagenes externas),
+ * tarjeta blanca centrada sobre fondo gris, y pie con el texto que se pase.
+ * Usar para nuevas plantillas en vez de copiar el div plano de antes.
+ */
+function emailShell(bodyHtml: string, footerText: string): string {
+  return `
+    <div style="background-color:#f5f6f8; padding:40px 16px; font-family: Arial, 'Segoe UI', sans-serif;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px; margin:0 auto; background-color:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #e5e7eb;">
+        <tr>
+          <td style="background-color:#07305f; padding:20px 32px;">
+            <table role="presentation" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="background-color:#ffffff; color:#07305f; font-weight:800; font-size:14px; width:36px; height:36px; text-align:center; vertical-align:middle; border-radius:8px; font-family: Arial, sans-serif;">TL</td>
+                <td style="padding-left:12px; color:#ffffff; font-size:19px; font-weight:700; font-family: Arial, sans-serif;">TuLector</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:36px 32px;">
+            ${bodyHtml}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:18px 32px; border-top:1px solid #eef0f3; text-align:center;">
+            <p style="margin:0; font-size:12px; color:#9ca3af;">${footerText}</p>
+          </td>
+        </tr>
+      </table>
+    </div>
+  `;
+}
+
 // Static fallbacks if not found in database email_templates
 const STATIC_TEMPLATES: Record<
   string,
@@ -22,53 +59,53 @@ const STATIC_TEMPLATES: Record<
   invitation: {
     "es-CL": {
       subject: "Invitación a colaborar en TuLector",
-      html: `
-        <div style="font-family: sans-serif; padding: 20px; color: #111827; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px;">
-          <h2 style="color: #07305f; font-size: 20px;">¡Hola!</h2>
-          <p>Has sido invitado por <strong>{{invited_by_email}}</strong> a colaborar en el colegio <strong>{{school_name}}</strong> en la plataforma TuLector.</p>
-          <p>Tu rol asignado será: <strong>{{role}}</strong>.</p>
-          <div style="margin: 30px 0; text-align: center;">
-            <a href="{{invite_link}}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Aceptar Invitación</a>
+      html: emailShell(
+        `
+          <p style="margin:0 0 6px; font-size:12px; font-weight:700; color:#2f6f5e; text-transform:uppercase; letter-spacing:0.08em;">Invitación de equipo</p>
+          <h1 style="margin:0 0 18px; font-size:22px; font-weight:700; color:#111827;">¡Hola!</h1>
+          <p style="margin:0 0 18px; font-size:15px; line-height:1.6; color:#374151;"><strong>{{invited_by_email}}</strong> te invitó a colaborar en <strong>{{school_name}}</strong> dentro de TuLector, la plataforma de corrección de pruebas y ensayos.</p>
+          <p style="margin:0 0 28px; font-size:15px; line-height:1.6; color:#374151;">Tu rol asignado: <span style="display:inline-block; background-color:#eef4ff; color:#07305f; font-weight:700; font-size:13px; padding:4px 14px; border-radius:999px;">{{role}}</span></p>
+          <div style="text-align:center; margin:0 0 24px;">
+            <a href="{{invite_link}}" style="background-color:#07305f; color:#ffffff; padding:14px 34px; text-decoration:none; border-radius:8px; font-weight:700; font-size:15px; display:inline-block;">Aceptar invitación</a>
           </div>
-          <p style="font-size: 13px; color: #6b7280; line-height: 1.5;">Si el botón no funciona, copia y pega este enlace en tu navegador:<br><a href="{{invite_link}}" style="color: #2563eb;">{{invite_link}}</a></p>
-          <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
-          <p style="font-size: 12px; color: #9ca3af; text-align: center;">TuLector OMR Engine & Platform · Chile / Latinoamérica</p>
-        </div>
-      `,
+          <p style="margin:0; font-size:13px; line-height:1.6; color:#6b7280;">Si el botón no funciona, copia y pega este enlace en tu navegador:<br><a href="{{invite_link}}" style="color:#07305f; word-break:break-all;">{{invite_link}}</a></p>
+        `,
+        "TuLector · Corrección de pruebas y ensayos · Chile / Latinoamérica"
+      ),
       text: "Has sido invitado a colaborar en {{school_name}} en TuLector. Rol: {{role}}. Acepta la invitación en el siguiente enlace: {{invite_link}}",
     },
     en: {
       subject: "Invitation to collaborate on TuLector",
-      html: `
-        <div style="font-family: sans-serif; padding: 20px; color: #111827; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px;">
-          <h2 style="color: #07305f; font-size: 20px;">Hello!</h2>
-          <p>You have been invited by <strong>{{invited_by_email}}</strong> to collaborate at <strong>{{school_name}}</strong> on the TuLector platform.</p>
-          <p>Your assigned role: <strong>{{role}}</strong>.</p>
-          <div style="margin: 30px 0; text-align: center;">
-            <a href="{{invite_link}}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Accept Invitation</a>
+      html: emailShell(
+        `
+          <p style="margin:0 0 6px; font-size:12px; font-weight:700; color:#2f6f5e; text-transform:uppercase; letter-spacing:0.08em;">Team invitation</p>
+          <h1 style="margin:0 0 18px; font-size:22px; font-weight:700; color:#111827;">Hello!</h1>
+          <p style="margin:0 0 18px; font-size:15px; line-height:1.6; color:#374151;"><strong>{{invited_by_email}}</strong> invited you to collaborate at <strong>{{school_name}}</strong> on TuLector, the exam and answer-sheet grading platform.</p>
+          <p style="margin:0 0 28px; font-size:15px; line-height:1.6; color:#374151;">Your assigned role: <span style="display:inline-block; background-color:#eef4ff; color:#07305f; font-weight:700; font-size:13px; padding:4px 14px; border-radius:999px;">{{role}}</span></p>
+          <div style="text-align:center; margin:0 0 24px;">
+            <a href="{{invite_link}}" style="background-color:#07305f; color:#ffffff; padding:14px 34px; text-decoration:none; border-radius:8px; font-weight:700; font-size:15px; display:inline-block;">Accept invitation</a>
           </div>
-          <p style="font-size: 13px; color: #6b7280; line-height: 1.5;">If the button doesn't work, copy and paste this link in your browser:<br><a href="{{invite_link}}" style="color: #2563eb;">{{invite_link}}</a></p>
-          <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
-          <p style="font-size: 12px; color: #9ca3af; text-align: center;">TuLector OMR Engine & Platform</p>
-        </div>
-      `,
+          <p style="margin:0; font-size:13px; line-height:1.6; color:#6b7280;">If the button doesn't work, copy and paste this link in your browser:<br><a href="{{invite_link}}" style="color:#07305f; word-break:break-all;">{{invite_link}}</a></p>
+        `,
+        "TuLector · Exam and answer-sheet grading platform"
+      ),
       text: "You have been invited to collaborate at {{school_name}} on TuLector. Role: {{role}}. Accept the invitation here: {{invite_link}}",
     },
     "pt-BR": {
       subject: "Convite para colaborar no TuLector",
-      html: `
-        <div style="font-family: sans-serif; padding: 20px; color: #111827; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px;">
-          <h2 style="color: #07305f; font-size: 20px;">Olá!</h2>
-          <p>Você foi convidado por <strong>{{invited_by_email}}</strong> para colaborar na escola <strong>{{school_name}}</strong> na plataforma TuLector.</p>
-          <p>Seu papel atribuído: <strong>{{role}}</strong>.</p>
-          <div style="margin: 30px 0; text-align: center;">
-            <a href="{{invite_link}}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Aceitar Convite</a>
+      html: emailShell(
+        `
+          <p style="margin:0 0 6px; font-size:12px; font-weight:700; color:#2f6f5e; text-transform:uppercase; letter-spacing:0.08em;">Convite de equipe</p>
+          <h1 style="margin:0 0 18px; font-size:22px; font-weight:700; color:#111827;">Olá!</h1>
+          <p style="margin:0 0 18px; font-size:15px; line-height:1.6; color:#374151;"><strong>{{invited_by_email}}</strong> te convidou para colaborar na escola <strong>{{school_name}}</strong> na plataforma TuLector.</p>
+          <p style="margin:0 0 28px; font-size:15px; line-height:1.6; color:#374151;">Seu papel atribuído: <span style="display:inline-block; background-color:#eef4ff; color:#07305f; font-weight:700; font-size:13px; padding:4px 14px; border-radius:999px;">{{role}}</span></p>
+          <div style="text-align:center; margin:0 0 24px;">
+            <a href="{{invite_link}}" style="background-color:#07305f; color:#ffffff; padding:14px 34px; text-decoration:none; border-radius:8px; font-weight:700; font-size:15px; display:inline-block;">Aceitar convite</a>
           </div>
-          <p style="font-size: 13px; color: #6b7280; line-height: 1.5;">Se o botão não funcionar, copie e cole este link no seu navegador:<br><a href="{{invite_link}}" style="color: #2563eb;">{{invite_link}}</a></p>
-          <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;">
-          <p style="font-size: 12px; color: #9ca3af; text-align: center;">TuLector OMR Engine & Platform</p>
-        </div>
-      `,
+          <p style="margin:0; font-size:13px; line-height:1.6; color:#6b7280;">Se o botão não funcionar, copie e cole este link no seu navegador:<br><a href="{{invite_link}}" style="color:#07305f; word-break:break-all;">{{invite_link}}</a></p>
+        `,
+        "TuLector · Plataforma de correção de provas e simulados"
+      ),
       text: "Você foi convidado para colaborar na escola {{school_name}} no TuLector. Papel: {{role}}. Aceite o convite aqui: {{invite_link}}",
     },
   },

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertSchoolAdmin, getDashboardContext } from "@/lib/supabase_server";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { getSiteUrl } from "@/lib/site_url";
 import { createFlowPayment, getFlowConfig } from "@/lib/flow";
 import { createDlocalPayment, getDlocalConfig } from "@/lib/dlocal";
 import { canonicalRut } from "@/lib/rut";
@@ -202,7 +203,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No se pudo registrar la orden de pago" }, { status: 500 });
     }
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+    const siteUrl = getSiteUrl();
 
     let redirectUrl: string;
     let sessionToken: string;

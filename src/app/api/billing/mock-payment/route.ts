@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { redirect } from "next/navigation";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { markOrderPaidAndApplyEntitlement } from "@/lib/billing_orders";
+import { getSiteUrl } from "@/lib/site_url";
 
 export async function GET(request: Request) {
   if (process.env.NODE_ENV === "production") {
@@ -13,7 +14,7 @@ export async function GET(request: Request) {
   const token = url.searchParams.get("token") || "";
   const orderId = url.searchParams.get("orderId") || "";
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const siteUrl = getSiteUrl();
 
   try {
     if (gateway === "flow") {

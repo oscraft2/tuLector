@@ -13,6 +13,7 @@ import { isNativeApp, nativePlatform, openExternalUrl, googleNativeSignIn, apple
 import { isBiometricLoginEnabled } from "@/lib/native/biometric_pref";
 import { BiometricGate } from "@/components/native/BiometricGate";
 import { BiometricToggle } from "@/components/native/BiometricToggle";
+import { getSiteUrl } from "@/lib/site_url";
 
 const passwordEstimator = new ZxcvbnFactory({
   dictionary,
@@ -698,7 +699,7 @@ function AppleIcon() {
 }
 
 function authCallbackUrl(next?: string) {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+  const siteUrl = getSiteUrl(window.location.origin);
   const url = new URL("/auth/callback", siteUrl);
   if (next) url.searchParams.set("next", next);
   return url.toString();

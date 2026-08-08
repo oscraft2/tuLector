@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { sendTemplatedEmail } from "@/lib/email";
 import { resolveLocaleForCountry } from "@/lib/country_profiles";
 import { markOrderPaidAndApplyEntitlement, sendOrderReceiptIfNeeded, notifyPaymentFailed } from "@/lib/billing_orders";
+import { getSiteUrl } from "@/lib/site_url";
 
 export async function POST(request: Request) {
   try {
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
       // PENDING/AUTHORIZED quedan silenciosos (metodos de settlement diferido
       // como boleto/OXXO/Rapipago pasan por PENDING antes de confirmar).
       if (["REJECTED", "CANCELLED", "EXPIRED"].includes(payment.status) && payment.orderId) {
-        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+        const siteUrl = getSiteUrl();
         await notifyPaymentFailed(admin, payment.orderId, "dLocal", "Rechazado", siteUrl);
       }
       return NextResponse.json({ status: "processed", detail: `pago no aprobado: ${payment.status}` });
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
           .map((u) => u.email!);
 
         const formattedAmount = `${(Number(order.amount_cents ?? 0) / 100).toFixed(2)} ${orderCurrency}`;
-        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+        const siteUrl = getSiteUrl();
         const locale = resolveLocaleForCountry(school.country_code);
 
         for (const email of emails) {

@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { parse } from "csv-parse/sync";
 import { getDashboardContext } from "@/lib/supabase_server";
+import { getSiteUrl } from "@/lib/site_url";
 import { normalizeRut } from "@/lib/rut";
 import { resolveNationalId } from "@/lib/national_id";
 import {
@@ -737,8 +738,7 @@ function inviteRoleLabel(role: string) {
 }
 
 async function dispatchInviteEmail(email: string, inviteId: string, role: string, opts: { locale: string; school: { id: string; name: string }; invitedByEmail: string | null }) {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-  const inviteLink = `${siteUrl}/auth?mode=register&invite_id=${inviteId}`;
+  const inviteLink = `${getSiteUrl()}/auth?mode=register&invite_id=${inviteId}`;
   return sendTemplatedEmail({
     to: email,
     templateKey: "invitation",

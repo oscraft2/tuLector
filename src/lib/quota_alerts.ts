@@ -1,6 +1,7 @@
 import { createSupabaseAdminClient } from "./supabaseAdmin";
 import { sendTemplatedEmail } from "./email";
 import { resolveLocaleForCountry } from "./country_profiles";
+import { getSiteUrl } from "./site_url";
 
 /**
  * Checks if a school has exceeded 90% or 100% of its scan quota.
@@ -103,8 +104,7 @@ export async function checkAndTriggerQuotaAlerts(schoolId: string): Promise<void
 
     if (adminEmails.length === 0) return;
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-    const billingLink = `${siteUrl}/dashboard/billing`;
+    const billingLink = `${getSiteUrl()}/dashboard/billing`;
 
     // 5. Send templated email alerts
     const locale = resolveLocaleForCountry(school.country_code);

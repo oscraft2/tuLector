@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { sendTemplatedEmail } from "@/lib/email";
 import { resolveLocaleForCountry } from "@/lib/country_profiles";
 import { markOrderPaidAndApplyEntitlement, sendOrderReceiptIfNeeded, notifyPaymentFailed } from "@/lib/billing_orders";
+import { getSiteUrl } from "@/lib/site_url";
 
 export async function POST(request: Request) {
   try {
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
       // 3=rechazado explicito -> avisar. 1=pendiente y 4=anulado quedan
       // silenciosos (no son "pago no completado" en el mismo sentido).
       if (payment.status === 3) {
-        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+        const siteUrl = getSiteUrl();
         await notifyPaymentFailed(admin, payment.commerceOrder, "Flow (Chile)", "Rechazado", siteUrl);
       }
       return NextResponse.json({ status: "processed", detail: "pago no aprobado" });
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
           .map((u) => u.email!);
 
         const formattedAmount = `$${(Number(order.amount_cents ?? 0) / 100).toLocaleString("es-CL")} ${orderCurrency}`;
-        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+        const siteUrl = getSiteUrl();
         const locale = resolveLocaleForCountry(school.country_code);
 
         for (const email of emails) {

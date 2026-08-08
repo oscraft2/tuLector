@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { publicLocales, type PublicLocale } from "@/lib/public_i18n";
 import { normalizeRut, validateRut } from "@/lib/rut";
 import { sendTemplatedEmail } from "@/lib/email";
+import { getSiteUrl } from "@/lib/site_url";
 import type { DashboardLocale } from "@/locales";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -108,7 +109,7 @@ export async function POST(request: NextRequest) {
     // Confirmacion simple (no doble opt-in): el lead ya quedo guardado, un
     // fallo de correo no debe bloquear la respuesta al usuario.
     try {
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+      const siteUrl = getSiteUrl();
       await sendTemplatedEmail({
         to: email,
         templateKey: "newsletter_confirm",
