@@ -12,6 +12,7 @@ import { BiometricToggle } from "@/components/native/BiometricToggle";
 import { PortalLinkCard } from "@/components/dashboard/PortalLinkCard";
 import { InviteForm } from "@/components/dashboard/InviteForm";
 import { DataTable } from "@/components/dashboard/DataTable";
+import { CopyInviteLinkButton } from "@/components/dashboard/CopyInviteLinkButton";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,13 @@ type TeamMemberRow = {
 
 type InvitationRow = { id: string; email: string; role: string; status: string; created_at: string };
 
-export default async function SettingsPage() {
+type SettingsPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function SettingsPage({ searchParams }: SettingsPageProps) {
+  const sp = await searchParams;
+  const inviteWarningEmail = typeof sp.invite_warning === "string" ? sp.invite_warning : null;
   const { supabase, school, countryProfile, member, user, locale, isAdmin } = await getDashboardContext();
   const email = user.email ?? "usuario@tulector.app";
   const initials = email.slice(0, 2).toUpperCase();
@@ -173,6 +180,11 @@ export default async function SettingsPage() {
           {showTeamSection ? (
             <SectionCard title="Equipo y administracion" description="Invita profesores, revisa su actividad y revoca accesos. Cada docente solo ve sus propios ensayos y resultados; tu como admin ves todo.">
               <div className="space-y-4">
+                {inviteWarningEmail ? (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                    El correo a <strong>{inviteWarningEmail}</strong> no se pudo enviar. Copia el enlace de la invitacion en la tabla de abajo y compartelo manualmente.
+                  </div>
+                ) : null}
                 <InviteForm action={inviteMember} />
                 <DataTable
                   columns={["Usuario", "Rol", "Ensayos", "Hojas", "Creado", "Accion"]}
@@ -202,7 +214,7 @@ export default async function SettingsPage() {
                 />
                 {invitations.length > 0 ? (
                   <DataTable
-                    columns={["Email", "Rol", "Estado", "Fecha"]}
+                    columns={["Email", "Rol", "Estado", "Fecha", "Enlace"]}
                     rows={invitations}
                     empty="No hay invitaciones pendientes."
                     renderRow={(invite) => (
@@ -211,6 +223,13 @@ export default async function SettingsPage() {
                         <td className="px-5 py-4">{roleLabel(invite.role)}</td>
                         <td className="px-5 py-4"><StatusPill>{invite.status}</StatusPill></td>
                         <td className="px-5 py-4 text-[#5b6472]">{new Date(invite.created_at).toLocaleDateString("es-CL")}</td>
+                        <td className="px-5 py-4">
+                          {invite.status === "pending" ? (
+                            <CopyInviteLinkButton link={`${baseUrl}/auth?mode=register&invite_id=${invite.id}`} />
+                          ) : (
+                            <span className="text-xs text-[#9aa3af]">-</span>
+                          )}
+                        </td>
                       </tr>
                     )}
                   />

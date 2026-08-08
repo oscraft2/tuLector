@@ -54,6 +54,8 @@ function AuthForm() {
   const nativeApp = isNativeApp() || searchParams.get("app") === "1";
   const postAuthPath = nativeApp ? null : safeNextPath(nextParam, null);
 
+  const inviteId = searchParams.get("invite_id");
+  const [inviteInfo, setInviteInfo] = useState<{ valid: boolean; email?: string; role?: string; schoolName?: string } | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -79,6 +81,30 @@ function AuthForm() {
   const passwordStrongEnough = password.length >= PASSWORD_MIN_LENGTH && passwordScore >= 2;
   const passwordsMatch = !confirmPassword || password === confirmPassword;
   const busy = loading || oauthLoading !== null;
+
+  // Invitacion de equipo: si viene invite_id en la URL, se consulta el
+  // endpoint publico y, si es valida, se fuerza registro con el correo
+  // invitado precargado y bloqueado (evita que se registren con otro correo
+  // y la invitacion no se vincule -- el trigger de Postgres liga por email
+  // exacto, sin avisar si no coincide).
+  useEffect(() => {
+    if (!inviteId) return;
+    let active = true;
+    fetch(`/api/invitations/${inviteId}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!active) return;
+        setInviteInfo(data);
+        if (data?.valid && data.email) {
+          setMode("register");
+          setEmail(data.email);
+        }
+      })
+      .catch(() => {
+        if (active) setInviteInfo({ valid: false });
+      });
+    return () => { active = false; };
+  }, [inviteId]);
 
   useEffect(() => {
     let active = true;
@@ -357,10 +383,13 @@ function AuthForm() {
 
           <div className="mb-4 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.14em] text-[#9aa3af]"><span className="h-px flex-1 bg-[#e5e9ee]" />o con correo<span className="h-px flex-1 bg-[#e5e9ee]" /></div>
 
+          {inviteInfo ? <InviteBanner inviteInfo={inviteInfo} /> : null}
+
           <form onSubmit={handleAuth} className="space-y-3">
             <input
               type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-xl border border-[#cfd6df] bg-white px-4 py-3.5 text-sm outline-none transition-all placeholder:text-[#9aa3af] focus:border-[#07305f] focus:ring-2 focus:ring-[#07305f]/10"
+              readOnly={Boolean(inviteInfo?.valid)}
+              className={`w-full rounded-xl border border-[#cfd6df] px-4 py-3.5 text-sm outline-none transition-all placeholder:text-[#9aa3af] focus:border-[#07305f] focus:ring-2 focus:ring-[#07305f]/10 ${inviteInfo?.valid ? "bg-[#f4f6f8] text-[#5b6472]" : "bg-white"}`}
               placeholder="tu@colegio.cl" autoComplete="email" required
             />
             <input
@@ -472,6 +501,8 @@ function AuthForm() {
             </p>
           </div>
 
+          {inviteInfo ? <InviteBanner inviteInfo={inviteInfo} /> : null}
+
           <div className="mt-6 grid gap-3">
             <button
               type="button"
@@ -502,7 +533,8 @@ function AuthForm() {
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                className="mt-2 w-full rounded-lg border border-[#cfd8d4] bg-white px-3 py-3 text-sm outline-none transition placeholder:text-[#9aa3af] focus:border-[#123b5d] focus:ring-2 focus:ring-[#123b5d]/10"
+                readOnly={Boolean(inviteInfo?.valid)}
+                className={`mt-2 w-full rounded-lg border border-[#cfd8d4] px-3 py-3 text-sm outline-none transition placeholder:text-[#9aa3af] focus:border-[#123b5d] focus:ring-2 focus:ring-[#123b5d]/10 ${inviteInfo?.valid ? "bg-[#f4f6f8] text-[#5b6472]" : "bg-white"}`}
                 placeholder="tu@colegio.cl"
                 autoComplete="email"
                 required
@@ -582,6 +614,22 @@ function AuthForm() {
         </section>
       </div>
     </main>
+  );
+}
+
+function InviteBanner({ inviteInfo }: { inviteInfo: { valid: boolean; email?: string; role?: string; schoolName?: string } }) {
+  if (!inviteInfo.valid) {
+    return (
+      <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+        Este enlace de invitacion ya no es valido. Pide uno nuevo al administrador de tu colegio.
+      </div>
+    );
+  }
+  const roleLabel = inviteInfo.role === "admin" ? "Administrador" : inviteInfo.role === "viewer" ? "Observador" : "Profesor";
+  return (
+    <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-[#07305f]">
+      Fuiste invitado a colaborar en <strong>{inviteInfo.schoolName}</strong> como <strong>{roleLabel}</strong>. Crea tu contrasena para unirte.
+    </div>
   );
 }
 

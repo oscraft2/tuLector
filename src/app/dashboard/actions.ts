@@ -753,7 +753,7 @@ export async function inviteMember(formData: FormData) {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
     const inviteLink = `${siteUrl}/auth?mode=register&invite_id=${data.id}`;
 
-    await sendTemplatedEmail({
+    const result = await sendTemplatedEmail({
       to: email,
       templateKey: "invitation",
       locale,
@@ -764,6 +764,13 @@ export async function inviteMember(formData: FormData) {
         invite_link: inviteLink,
       },
     });
+
+    if (!result.success) {
+      // La invitacion igual quedo creada y es utilizable via el link manual
+      // ("Copiar enlace" en Configuracion) -- no lanzamos error, solo avisamos.
+      revalidatePath("/dashboard/settings");
+      redirect(`/dashboard/settings?invite_warning=${encodeURIComponent(email)}`);
+    }
   }
 
   revalidatePath("/dashboard/settings");
