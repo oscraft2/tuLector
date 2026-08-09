@@ -15,6 +15,7 @@ import { DataTable } from "@/components/dashboard/DataTable";
 import { ActionButton } from "@/components/dashboard/ActionButton";
 import { invitationStatusLabel } from "@/lib/auth_error_messages";
 import { InvitationRowMenu } from "@/components/dashboard/InvitationRowMenu";
+import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 
 export const dynamic = "force-dynamic";
 
@@ -176,6 +177,12 @@ export default async function SettingsPage() {
           {showTeamSection ? (
             <SectionCard title="Equipo y administracion" description="Invita profesores, revisa su actividad y revoca accesos. Cada docente solo ve sus propios ensayos y resultados; tu como admin ves todo.">
               <div className="space-y-4">
+                <KPIGrid>
+                  <KPI label="Docentes" value={teamMembers.length} />
+                  <KPI label="Ensayos del equipo" value={teamMembers.reduce((sum, m) => sum + m.quizCount, 0)} />
+                  <KPI label="Hojas escaneadas" value={teamMembers.reduce((sum, m) => sum + m.paperCount, 0)} />
+                  <KPI label="Invitaciones pendientes" value={invitations.filter((i) => i.status === "pending").length} />
+                </KPIGrid>
                 <InviteForm action={inviteMember} />
                 <DataTable
                   columns={["Usuario", "Rol", "Ensayos", "Hojas", "Creado", "Accion"]}
