@@ -4,8 +4,7 @@ import "./globals.css";
 import { NativeBootstrap } from "@/components/native/NativeBootstrap";
 import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 import { JsonLd } from "@/components/JsonLd";
-import { WhatsAppFloatingButton } from "@/components/WhatsAppFloatingButton";
-import { getWhatsappButtonConfig } from "@/lib/site_config";
+import { SupportFloatingButton } from "@/components/SupportFloatingButton";
 import { locales, defaultLocale } from "@/i18n/config";
 
 const siteUrl = "https://tulector.app";
@@ -114,11 +113,6 @@ const webSiteLd = {
   },
 };
 
-async function WhatsAppButtonSlot() {
-  const whatsappConfig = await getWhatsappButtonConfig();
-  return <WhatsAppFloatingButton config={whatsappConfig} />;
-}
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang={defaultLocale} className="h-full antialiased">
@@ -129,9 +123,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <GoogleAnalytics />
         </Suspense>
         {children}
-        <Suspense fallback={null}>
-          <WhatsAppButtonSlot />
-        </Suspense>
+        <SupportFloatingButton />
       </body>
     </html>
   );
