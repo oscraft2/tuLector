@@ -14,6 +14,7 @@ import { isBiometricLoginEnabled } from "@/lib/native/biometric_pref";
 import { BiometricGate } from "@/components/native/BiometricGate";
 import { BiometricToggle } from "@/components/native/BiometricToggle";
 import { getSiteUrl } from "@/lib/site_url";
+import { translateAuthError } from "@/lib/auth_error_messages";
 
 const passwordEstimator = new ZxcvbnFactory({
   dictionary,
@@ -59,7 +60,6 @@ function AuthForm() {
   const [inviteInfo, setInviteInfo] = useState<{ valid: boolean; email?: string; role?: string; schoolName?: string } | null>(null);
   const [existingSessionEmail, setExistingSessionEmail] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
-  const [resetSending, setResetSending] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -227,28 +227,6 @@ function AuthForm() {
     setSigningOut(false);
   };
 
-  const handleForgotPassword = async () => {
-    const target = email.trim().toLowerCase();
-    if (!target) {
-      setMessage("Escribe tu correo arriba primero para poder enviarte el enlace.");
-      return;
-    }
-    setResetSending(true);
-    setMessage("");
-    try {
-      const { error } = await client.auth.resetPasswordForEmail(target, {
-        redirectTo: isNativeApp() ? `${OAUTH_DEEP_LINK}?from=app&next=/auth/reset-password` : authCallbackUrl("/auth/reset-password"),
-      });
-      if (error) throw error;
-      setMessage(`Si existe una cuenta con ${target}, te enviamos un enlace para restablecer tu contrasena.`);
-    } catch (err) {
-      const authErr = err as AuthError;
-      setMessage(authErr.message || "No se pudo enviar el enlace de recuperacion.");
-    } finally {
-      setResetSending(false);
-    }
-  };
-
   const handleAuth = async (event: React.FormEvent) => {
     event.preventDefault();
     setLoading(true);
@@ -281,10 +259,37 @@ function AuthForm() {
             body: JSON.stringify({ inviteId, password }),
           });
           const json = await res.json();
+
           if (!res.ok) {
+            if (json.accountExists) {
+              // Ya existia una cuenta con este correo (de antes, de otro
+              // colegio, etc.) -- si la contrasena que escribio da la
+              // casualidad de coincidir, la vinculamos directo; si no, le
+              // pedimos que use su contrasena real desde el login.
+              const { error: tryLoginError } = await client.auth.signInWithPassword({ email: inviteInfo.email!, password });
+              if (!tryLoginError) {
+                const linkRes = await fetch("/api/invitations/link", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ inviteId }),
+                });
+                if (!linkRes.ok) {
+                  const linkJson = await linkRes.json();
+                  setMessage(linkJson.error || "No se pudo vincular tu cuenta al colegio.");
+                  return;
+                }
+                router.replace(postAuthPath ?? homeAfterAuth());
+                return;
+              }
+              setMode("login");
+              setPassword("");
+              setMessage(`Ya existe una cuenta con ${inviteInfo.email}. Inicia sesion con tu contrasena habitual para unirte al colegio.`);
+              return;
+            }
             setMessage(json.error || "No se pudo crear la cuenta.");
             return;
           }
+
           const { error: signInError } = await client.auth.signInWithPassword({ email: inviteInfo.email!, password });
           if (signInError) throw signInError;
           router.replace(postAuthPath ?? homeAfterAuth());
@@ -309,11 +314,29 @@ function AuthForm() {
       } else {
         const { error } = await client.auth.signInWithPassword({ email: normalizedEmail, password });
         if (error) throw error;
+
+        if (inviteInfo?.valid && inviteId) {
+          // Login normal, pero con una invitacion pendiente para este mismo
+          // correo (cuenta que ya existia de antes) -- se vincula al colegio
+          // aca, porque el trigger de la base de datos solo corre en
+          // registros nuevos, no en logins de cuentas existentes.
+          const linkRes = await fetch("/api/invitations/link", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ inviteId }),
+          });
+          if (!linkRes.ok) {
+            const linkJson = await linkRes.json();
+            setMessage(linkJson.error || "No se pudo vincular tu cuenta al colegio.");
+            return;
+          }
+        }
+
         router.replace(postAuthPath ?? homeAfterAuth());
       }
     } catch (err) {
       const authErr = err as AuthError;
-      setMessage(authErr.message || "Error de autenticacion");
+      setMessage(translateAuthError(authErr.message));
     } finally {
       setLoading(false);
     }
@@ -383,7 +406,7 @@ function AuthForm() {
       if (error) throw error;
     } catch (err) {
       const authErr = err as AuthError;
-      setMessage(authErr.message || `No se pudo iniciar sesion con ${provider === "google" ? "Google" : "Apple"}`);
+      setMessage(authErr.message ? translateAuthError(authErr.message) : `No se pudo iniciar sesion con ${provider === "google" ? "Google" : "Apple"}`);
       setOauthLoading(null);
     }
   };
@@ -468,14 +491,9 @@ function AuthForm() {
             />
             {mode === "login" && (
               <div className="text-right">
-                <button
-                  type="button"
-                  onClick={handleForgotPassword}
-                  disabled={resetSending}
-                  className="text-xs font-bold text-[#07305f] hover:underline disabled:opacity-60"
-                >
-                  {resetSending ? "Enviando…" : "Olvidaste tu contrasena?"}
-                </button>
+                <Link href="/auth/forgot-password" className="text-xs font-bold text-[#07305f] hover:underline">
+                  Olvidaste tu contrasena?
+                </Link>
               </div>
             )}
             {mode === "register" && (
@@ -661,14 +679,9 @@ function AuthForm() {
 
             {mode === "login" && (
               <div className="text-right">
-                <button
-                  type="button"
-                  onClick={handleForgotPassword}
-                  disabled={resetSending}
-                  className="text-xs font-bold text-[#123b5d] hover:underline disabled:opacity-60"
-                >
-                  {resetSending ? "Enviando…" : "Olvidaste tu contrasena?"}
-                </button>
+                <Link href="/auth/forgot-password" className="text-xs font-bold text-[#123b5d] hover:underline">
+                  Olvidaste tu contrasena?
+                </Link>
               </div>
             )}
 

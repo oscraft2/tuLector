@@ -20,8 +20,8 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const { inviteId, password } = (await request.json()) as { inviteId?: string; password?: string };
-    if (!inviteId || !password || password.length < 12) {
-      return NextResponse.json({ error: "Datos invalidos." }, { status: 400 });
+    if (!inviteId || !password || password.length < 6) {
+      return NextResponse.json({ error: "La contrasena debe tener al menos 6 caracteres." }, { status: 400 });
     }
 
     const admin = createSupabaseAdminClient();
@@ -43,11 +43,16 @@ export async function POST(request: Request) {
     });
 
     if (error) {
-      const alreadyExists = /already|existe/i.test(error.message);
-      return NextResponse.json(
-        { error: alreadyExists ? "Ya existe una cuenta con este correo. Inicia sesion normalmente." : error.message },
-        { status: 400 }
-      );
+      // Correo ya tiene cuenta de antes (de otro colegio, o de una
+      // invitacion anterior) -- no se puede "crear" de nuevo. El cliente
+      // debe intentar iniciar sesion con la contrasena que escribio (por si
+      // coincide) y, si no, pedirle que use su contrasena real; en ambos
+      // casos el vinculo al colegio se hace despues via /api/invitations/link.
+      const alreadyExists = /already|existe|registered/i.test(error.message);
+      if (alreadyExists) {
+        return NextResponse.json({ error: "Ya existe una cuenta con este correo.", accountExists: true }, { status: 409 });
+      }
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
     return NextResponse.json({ ok: true, email: created.user?.email ?? invite.email });

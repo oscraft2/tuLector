@@ -2,10 +2,12 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { AuthError } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
 import { isNativeApp } from "@/lib/native/capacitor";
+import { translateAuthError } from "@/lib/auth_error_messages";
 
 const PASSWORD_MIN_LENGTH = 6;
 
@@ -61,7 +63,7 @@ function ResetPasswordForm() {
       setTimeout(() => router.replace(isNativeApp() ? "/app" : "/dashboard"), 1200);
     } catch (err) {
       const authErr = err as AuthError;
-      setMessage(authErr.message || "No se pudo actualizar la contrasena.");
+      setMessage(authErr.message ? translateAuthError(authErr.message) : "No se pudo actualizar la contrasena.");
     } finally {
       setLoading(false);
     }
@@ -81,9 +83,9 @@ function ResetPasswordForm() {
               <p className="text-sm leading-6 text-[#5b6472]">
                 Este enlace ya no es valido o expiro. Pide uno nuevo desde la pantalla de inicio de sesion.
               </p>
-              <a href="/auth" className="inline-block rounded-lg bg-[#123b5d] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#0f2f49]">
+              <Link href="/auth" className="inline-block rounded-lg bg-[#123b5d] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#0f2f49]">
                 Volver a inicio de sesion
-              </a>
+              </Link>
             </div>
           ) : done ? (
             <p className="mt-4 text-sm font-semibold text-[#166534]">Contrasena actualizada. Entrando...</p>

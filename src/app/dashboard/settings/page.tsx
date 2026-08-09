@@ -13,6 +13,7 @@ import { PortalLinkCard } from "@/components/dashboard/PortalLinkCard";
 import { InviteForm } from "@/components/dashboard/InviteForm";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { ActionButton } from "@/components/dashboard/ActionButton";
+import { invitationStatusLabel } from "@/lib/auth_error_messages";
 import { InvitationRowMenu } from "@/components/dashboard/InvitationRowMenu";
 
 export const dynamic = "force-dynamic";
@@ -220,7 +221,7 @@ export default async function SettingsPage() {
                       <tr key={invite.id} className="border-b border-[#eef0f3] last:border-0">
                         <td className="px-5 py-4 font-semibold">{invite.email}</td>
                         <td className="px-5 py-4">{roleLabel(invite.role)}</td>
-                        <td className="px-5 py-4"><StatusPill>{invite.status}</StatusPill></td>
+                        <td className="px-5 py-4"><StatusPill>{invitationStatusLabel(invite.status)}</StatusPill></td>
                         <td className="px-5 py-4 text-[#5b6472]">{new Date(invite.created_at).toLocaleDateString("es-CL")}</td>
                         <td className="px-5 py-4 text-right">
                           {invite.status === "pending" ? (
