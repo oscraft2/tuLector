@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "test:omr": "tsx test_omr_real.ts",
+    "test:compact": "tsx test_compact_block.ts",
     "gen:fixture": "tsx scripts/gen_fixture.ts",
     "start": "next start",
     "lint": "eslint"

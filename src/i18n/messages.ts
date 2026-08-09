@@ -8,6 +8,7 @@ export interface Messages {
     account: string;
     security: string;
     support: string;
+    helpCenter: string;
     login: string;
     register: string;
     menu: string;
@@ -193,6 +194,7 @@ export const messages: Record<Locale, Messages> = {
       account: "Cuenta",
       security: "Seguridad",
       support: "Soporte",
+      helpCenter: "Centro de Ayuda",
       login: "Entrar",
       register: "Crear cuenta",
       menu: "Abrir menu",
@@ -268,6 +270,7 @@ export const messages: Record<Locale, Messages> = {
           { href: "/precios", label: "Precios" },
         ],
         resources: [
+          { href: "/ayuda", label: "Centro de Ayuda" },
           { href: "/support", label: "Soporte" },
           { href: "/security", label: "Seguridad" },
           { href: "/privacy", label: "Privacidad" },
@@ -329,6 +332,7 @@ export const messages: Record<Locale, Messages> = {
       account: "Cuenta",
       security: "Seguridad",
       support: "Soporte",
+      helpCenter: "Centro de Ayuda",
       login: "Entrar",
       register: "Crear cuenta",
       menu: "Abrir menu",
@@ -404,6 +408,7 @@ export const messages: Record<Locale, Messages> = {
           { href: "/precios", label: "Precios" },
         ],
         resources: [
+          { href: "/ayuda", label: "Centro de Ayuda" },
           { href: "/support", label: "Soporte" },
           { href: "/security", label: "Seguridad" },
           { href: "/privacy", label: "Privacidad" },
@@ -465,6 +470,7 @@ export const messages: Record<Locale, Messages> = {
       account: "Cuenta",
       security: "Seguridad",
       support: "Soporte",
+      helpCenter: "Centro de Ayuda",
       login: "Entrar",
       register: "Crear cuenta",
       menu: "Abrir menu",
@@ -540,6 +546,7 @@ export const messages: Record<Locale, Messages> = {
           { href: "/precios", label: "Precios" },
         ],
         resources: [
+          { href: "/ayuda", label: "Centro de Ayuda" },
           { href: "/support", label: "Soporte" },
           { href: "/security", label: "Seguridad" },
           { href: "/privacy", label: "Privacidad" },
@@ -601,6 +608,7 @@ export const messages: Record<Locale, Messages> = {
       account: "Cuenta",
       security: "Seguridad",
       support: "Soporte",
+      helpCenter: "Centro de Ayuda",
       login: "Entrar",
       register: "Crear cuenta",
       menu: "Abrir menu",
@@ -676,6 +684,7 @@ export const messages: Record<Locale, Messages> = {
           { href: "/precios", label: "Precios" },
         ],
         resources: [
+          { href: "/ayuda", label: "Centro de Ayuda" },
           { href: "/support", label: "Soporte" },
           { href: "/security", label: "Seguridad" },
           { href: "/privacy", label: "Privacidad" },
@@ -737,6 +746,7 @@ export const messages: Record<Locale, Messages> = {
       account: "Conta",
       security: "Seguranca",
       support: "Suporte",
+      helpCenter: "Central de Ajuda",
       login: "Entrar",
       register: "Criar conta",
       menu: "Abrir menu",
@@ -812,6 +822,7 @@ export const messages: Record<Locale, Messages> = {
           { href: "/precios", label: "Precos" },
         ],
         resources: [
+          { href: "/ayuda", label: "Central de Ajuda" },
           { href: "/support", label: "Suporte" },
           { href: "/security", label: "Seguranca" },
           { href: "/privacy", label: "Privacidade" },

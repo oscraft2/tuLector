@@ -3,7 +3,7 @@ import { AdminShell } from "@/components/dashboard/AdminShell";
 import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { isMissingColumnError, isMissingTableError } from "@/lib/supabase_errors";
-import { updateSupportTicket, assignSupportTicket, addSupportTicketNote } from "@/app/admin/actions";
+import { updateSupportTicket, assignSupportTicket, addSupportTicketNote, replySupportTicket } from "@/app/admin/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -74,7 +74,17 @@ export default async function SupportPage() {
               <tr key={t.id} className="border-b border-[#eef0f3] last:border-0 align-top text-sm">
                 <td className="px-5 py-4">
                   <p className="font-semibold">{t.subject}</p>
-                  <p className="mt-1 text-xs text-[#6b7280]">{t.locale}</p>
+                  <p className="mt-1 text-xs text-[#6b7280] mb-3">{t.locale}</p>
+                  
+                  {/* Formulario de Respuesta Pública */}
+                  <div className="mt-2 bg-[#f8fafc] border border-[#cfd6df] p-2 rounded-md">
+                    <p className="text-xs font-semibold mb-2 text-[#07305f]">Respuesta Pública (al usuario)</p>
+                    <form action={replySupportTicket} className="flex flex-col gap-1">
+                      <input type="hidden" name="ticket_id" value={t.id} />
+                      <textarea name="body" placeholder="Escribe tu respuesta que llegará al email..." rows={2} required className="rounded border border-[#cfd6df] px-2 py-1 text-xs outline-none resize-y" />
+                      <button className="self-end rounded border border-[#cfd6df] bg-white px-3 py-1 text-xs font-semibold hover:bg-gray-50">Enviar Respuesta</button>
+                    </form>
+                  </div>
                 </td>
                 <td className="px-5 py-4">
                   <form action={updateSupportTicket} className="grid gap-1">

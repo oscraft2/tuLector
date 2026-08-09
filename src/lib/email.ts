@@ -337,6 +337,74 @@ const STATIC_TEMPLATES: Record<
       text: "Tu pago para {{school_name}} no pudo completarse. Servicio: {{item_description}}, Monto: {{amount}}, Estado: {{status_label}}. No se realizo ningun cargo. Intenta nuevamente en: {{billing_link}}",
     },
   },
+  ticket_created: {
+    "es-CL": {
+      subject: "Hemos recibido tu solicitud - TuLector",
+      html: emailShell(
+        `
+          <p style="margin:0 0 26px; font-size:11px; font-weight:700; color:#8a8a83; text-transform:uppercase; letter-spacing:0.08em;">Ticket Creado</p>
+          <p style="margin:0 0 18px; font-size:16px; line-height:1.7; color:#0a0a0a;">Hola,</p>
+          <p style="margin:0 0 18px; font-size:16px; line-height:1.7; color:#0a0a0a;">Hemos recibido tu consulta: <strong>"{{ticket_subject}}"</strong>. Nuestro equipo la revisará y te contactará a la brevedad.</p>
+          <p style="margin:0 0 32px; font-size:16px; line-height:1.7; color:#0a0a0a;">Puedes revisar el estado de tu solicitud o agregar más información desde el siguiente enlace seguro:</p>
+          <a href="{{ticket_link}}" style="display:inline-block; background-color:#0a0a0a; color:#ffffff; padding:14px 30px; text-decoration:none; font-weight:600; font-size:14px;">Ver mi ticket</a>
+          <p style="margin:36px 0 0; font-size:12px; line-height:1.6; color:#8a8a83;">¿El botón no funciona? Copia este enlace:<br><a href="{{ticket_link}}" style="color:#0a0a0a; word-break:break-all;">{{ticket_link}}</a></p>
+        `,
+        "Soporte TuLector"
+      ),
+      text: "Hemos recibido tu solicitud. Nuestro equipo la revisará. Puedes ver tu ticket aquí: {{ticket_link}}",
+    },
+    "pt-BR": {
+      subject: "Recebemos sua solicitação - TuLector",
+      html: emailShell(
+        `
+          <p style="margin:0 0 26px; font-size:11px; font-weight:700; color:#8a8a83; text-transform:uppercase; letter-spacing:0.08em;">Ticket Criado</p>
+          <p style="margin:0 0 18px; font-size:16px; line-height:1.7; color:#0a0a0a;">Olá,</p>
+          <p style="margin:0 0 18px; font-size:16px; line-height:1.7; color:#0a0a0a;">Recebemos sua consulta: <strong>"{{ticket_subject}}"</strong>. Nossa equipe vai analisá-la e entrar em contato em breve.</p>
+          <p style="margin:0 0 32px; font-size:16px; line-height:1.7; color:#0a0a0a;">Você pode verificar o status da sua solicitação no link seguro abaixo:</p>
+          <a href="{{ticket_link}}" style="display:inline-block; background-color:#0a0a0a; color:#ffffff; padding:14px 30px; text-decoration:none; font-weight:600; font-size:14px;">Ver meu ticket</a>
+          <p style="margin:36px 0 0; font-size:12px; line-height:1.6; color:#8a8a83;">Se o botão não funcionar, copie este link:<br><a href="{{ticket_link}}" style="color:#0a0a0a; word-break:break-all;">{{ticket_link}}</a></p>
+        `,
+        "Suporte TuLector"
+      ),
+      text: "Recebemos sua solicitação. Você pode verificar seu ticket aqui: {{ticket_link}}",
+    },
+  },
+  ticket_reply: {
+    "es-CL": {
+      subject: "Respuesta a tu ticket: {{ticket_subject}}",
+      html: emailShell(
+        `
+          <p style="margin:0 0 26px; font-size:11px; font-weight:700; color:#8a8a83; text-transform:uppercase; letter-spacing:0.08em;">Nueva Respuesta</p>
+          <p style="margin:0 0 18px; font-size:16px; line-height:1.7; color:#0a0a0a;">El equipo de TuLector ha respondido a tu consulta:</p>
+          <div style="background-color:#f8fafc; padding:16px; border-left:4px solid #0a0a0a; margin-bottom:24px;">
+            <p style="margin:0; font-style:italic; color:#4b5563;">"{{reply_preview}}"</p>
+          </div>
+          <p style="margin:0 0 32px; font-size:16px; line-height:1.7; color:#0a0a0a;">Puedes ver el mensaje completo y responder desde el portal seguro:</p>
+          <a href="{{ticket_link}}" style="display:inline-block; background-color:#0a0a0a; color:#ffffff; padding:14px 30px; text-decoration:none; font-weight:600; font-size:14px;">Responder ticket</a>
+          <p style="margin:36px 0 0; font-size:12px; line-height:1.6; color:#8a8a83;">¿El botón no funciona? Copia este enlace:<br><a href="{{ticket_link}}" style="color:#0a0a0a; word-break:break-all;">{{ticket_link}}</a></p>
+        `,
+        "Soporte TuLector"
+      ),
+      text: "El equipo de TuLector ha respondido a tu ticket. Puedes ver la respuesta completa aquí: {{ticket_link}}",
+    },
+    "pt-BR": {
+      subject: "Resposta ao seu ticket: {{ticket_subject}}",
+      html: emailShell(
+        `
+          <p style="margin:0 0 26px; font-size:11px; font-weight:700; color:#8a8a83; text-transform:uppercase; letter-spacing:0.08em;">Nova Resposta</p>
+          <p style="margin:0 0 18px; font-size:16px; line-height:1.7; color:#0a0a0a;">A equipe do TuLector respondeu à sua consulta:</p>
+          <div style="background-color:#f8fafc; padding:16px; border-left:4px solid #0a0a0a; margin-bottom:24px;">
+            <p style="margin:0; font-style:italic; color:#4b5563;">"{{reply_preview}}"</p>
+          </div>
+          <p style="margin:0 0 32px; font-size:16px; line-height:1.7; color:#0a0a0a;">Você pode ver a mensagem completa e responder pelo portal seguro:</p>
+          <a href="{{ticket_link}}" style="display:inline-block; background-color:#0a0a0a; color:#ffffff; padding:14px 30px; text-decoration:none; font-weight:600; font-size:14px;">Responder ticket</a>
+          <p style="margin:36px 0 0; font-size:12px; line-height:1.6; color:#8a8a83;">Se o botão não funcionar, copie este link:<br><a href="{{ticket_link}}" style="color:#0a0a0a; word-break:break-all;">{{ticket_link}}</a></p>
+        `,
+        "Suporte TuLector"
+      ),
+      text: "A equipe do TuLector respondeu ao seu ticket. Você pode ver a resposta aqui: {{ticket_link}}",
+    },
+  },
 };
 
 /**

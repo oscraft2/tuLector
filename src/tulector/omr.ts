@@ -109,7 +109,7 @@ function findCornersByMass(gray: Uint8Array, w: number, h: number): [number, num
 }
 
 /** Umbral de Otsu sobre el histograma de luminancia (binarizacion adaptativa). */
-function otsuThreshold(gray: Uint8Array): number {
+export function otsuThreshold(gray: Uint8Array): number {
   const hist = new Array(256).fill(0);
   for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
   const total = gray.length;
@@ -150,7 +150,7 @@ function validateQuad(c: [number, number][]): boolean {
  * perspectiva moderada. Reemplaza el detector que fallaba en fotos reales.
  */
 /** Encuentra todos los blobs cuadrados sólidos (anclas) por componentes conectados. */
-function findAnchorBlobs(gray: Uint8Array, w: number, h: number): { x: number; y: number; area: number }[] {
+export function findAnchorBlobs(gray: Uint8Array, w: number, h: number): { x: number; y: number; area: number }[] {
   const otsu = otsuThreshold(gray);
   const thr = Math.min(otsu, 150); // dark = gray < thr
   const minDim = Math.min(w, h);
@@ -412,7 +412,7 @@ export function warpPerspective(
 
 // ─── Registro por bloques: 12 anclas + warp bilineal (etapa 4) ────────────────
 /** Homografía que mapea los 4 puntos `dst` (canónicos) → `src` (en la foto). */
-function solveHomography(dst: number[], src: number[]): number[] | null {
+export function solveHomography(dst: number[], src: number[]): number[] | null {
   const A: number[][] = [], b: number[] = [];
   for (let i = 0; i < 4; i++) {
     A.push([dst[i * 2], dst[i * 2 + 1], 1, 0, 0, 0, -src[i * 2] * dst[i * 2], -src[i * 2] * dst[i * 2 + 1]]);
@@ -422,7 +422,7 @@ function solveHomography(dst: number[], src: number[]): number[] | null {
   return solve8x8(A, b);
 }
 
-function applyH(h: number[], x: number, y: number): [number, number] {
+export function applyH(h: number[], x: number, y: number): [number, number] {
   const denom = h[6] * x + h[7] * y + 1;
   return [(h[0] * x + h[1] * y + h[2]) / denom, (h[3] * x + h[4] * y + h[5]) / denom];
 }
@@ -463,7 +463,7 @@ function findAllAnchors(imageData: ImageData, corners: [number, number][]): [num
 }
 
 /** Muestrea (bilineal) el píxel fuente `(sx,sy)` en `od[di..]`. */
-function sampleBilinear(sd: Uint8ClampedArray, srcW: number, srcH: number, sx: number, sy: number, od: Uint8ClampedArray, di: number): void {
+export function sampleBilinear(sd: Uint8ClampedArray, srcW: number, srcH: number, sx: number, sy: number, od: Uint8ClampedArray, di: number): void {
   const x0 = Math.floor(sx), y0 = Math.floor(sy);
   if (x0 >= 0 && x0 < srcW - 1 && y0 >= 0 && y0 < srcH - 1) {
     const fx = sx - x0, fy = sy - y0;
@@ -533,7 +533,7 @@ export function warpSheet(imageData: ImageData, corners: [number, number][], con
   return warpBilinear(imageData, anchors, config);
 }
 
-function solve8x8(A: number[][], b: number[]): number[] | null {
+export function solve8x8(A: number[][], b: number[]): number[] | null {
   const n = 8; const mat = A.map((r, i) => [...r, b[i]]);
   for (let col = 0; col < n; col++) {
     let max = col;
@@ -555,7 +555,7 @@ const DARK_THRESH = 70;
 const GLARE_THRESH = 220;
 
 /** Calibracion del clasificador. UNICA fuente de verdad (motor TS; ver docs/apk-plan.md). */
-const CALIB = {
+export const CALIB = {
   bubbleRadius: 10,   // radio de muestreo del ROI por burbuja
   relThresh: 0.55,    // umbral relativo al mejor score de la pregunta
   absThresh: 0.15,    // score minimo absoluto para considerar una opcion marcada
@@ -571,7 +571,7 @@ const CALIB = {
 } as const;
 
 /**  multi-feature bubble classifier */
-function classifyBubble(gray: Float32Array, w: number, cx: number, cy: number, r: number): { score: number; glare: boolean; features: number[] } {
+export function classifyBubble(gray: Float32Array, w: number, cx: number, cy: number, r: number): { score: number; glare: boolean; features: number[] } {
   let dark = 0, total = 0, bright = 0;
   let sum = 0, sumSq = 0;
   const centerVals: number[] = [];
@@ -833,7 +833,7 @@ function findColumnOffset(gray: Float32Array, w: number, h: number, rowY: number
 const CONF = { weakTop: 0.35, lowMargin: 0.15 };
 
 /** Confianza de una lectura: no cambia la respuesta, solo la marca para revisión. */
-function markConfidence(answer: string, scores: number[]): { flag: MarkFlag; reason?: string } {
+export function markConfidence(answer: string, scores: number[]): { flag: MarkFlag; reason?: string } {
   if (answer === "-") return { flag: "blanco" };
   if (answer === "?") return { flag: "revisar", reason: "reflejo sobre la marca" };
   if (answer.length > 1) return { flag: "revisar", reason: "marca multiple" };

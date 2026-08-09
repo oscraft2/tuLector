@@ -1,0 +1,35 @@
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3128
+- Network:       http://192.168.100.190:3128
+- Environments: .env.local
+✓ Ready in 3.4s
+- Experiments (use with caution):
+  ✓ viewTransition
+
+○ Compiling /[locale] ...
+[site_config] excepcion al leer "whatsapp_button": Error: SUPABASE_SERVICE_ROLE_KEY no esta configurada. /admin requiere ejecucion server-only con service role.
+    at createSupabaseAdminClient (src\lib\supabaseAdmin.ts:11:11)
+    at readSiteConfig (src\lib\site_config.ts:43:44)
+    at getWhatsappButtonConfig (src\lib\site_config.ts:59:21)
+    at WhatsAppButtonSlot (src\app\layout.tsx:112:55)
+   9 | export function createSupabaseAdminClient() {
+  10 |   if (!supabaseUrl || !serviceRoleKey) {
+> 11 |     throw new Error("SUPABASE_SERVICE_ROLE_KEY no esta configurada. /admin requiere ejecuc...
+     |           ^
+  12 |   }
+  13 |   return createClient(supabaseUrl, serviceRoleKey, {
+  14 |     auth: { autoRefreshToken: false, persistSession: false },
+[site_config] excepcion al leer "whatsapp_button": Error: SUPABASE_SERVICE_ROLE_KEY no esta configurada. /admin requiere ejecucion server-only con service role.
+    at createSupabaseAdminClient (src\lib\supabaseAdmin.ts:11:11)
+    at readSiteConfig (src\lib\site_config.ts:43:44)
+    at getWhatsappButtonConfig (src\lib\site_config.ts:59:21)
+    at PublicHeaderServer (src\components\PublicHeaderServer.tsx:8:49)
+   9 | export function createSupabaseAdminClient() {
+  10 |   if (!supabaseUrl || !serviceRoleKey) {
+> 11 |     throw new Error("SUPABASE_SERVICE_ROLE_KEY no esta configurada. /admin requiere ejecuc...
+     |           ^
+  12 |   }
+  13 |   return createClient(supabaseUrl, serviceRoleKey, {
+  14 |     auth: { autoRefreshToken: false, persistSession: false },
+ GET /es-CL 200 in 8.2s (next.js: 7.8s, generate-params: 760ms, application-code: 479ms)
+^C

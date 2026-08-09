@@ -116,6 +116,9 @@ export function PublicHeader({ currentLocale, whatsapp = { enabled: false, phone
           </p>
           <div className="flex shrink-0 items-center gap-3">
             <HeaderWhatsApp config={whatsapp} message={copy.whatsappMessage} label={copy.whatsapp} />
+            <Link href={localeHref("/ayuda", activeNewLocale)} className="hidden font-bold text-[#123b5d] hover:text-[#0f2f49] md:inline-flex">
+              {copy.helpCenter}
+            </Link>
             <Link href={localeHref("/support", activeNewLocale)} className="hidden font-bold text-[#123b5d] hover:text-[#0f2f49] md:inline-flex">
               {copy.support}
             </Link>

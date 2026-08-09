@@ -13,6 +13,7 @@ const ADMIN_NAV = [
   ["/admin/billing", "Ingresos"],
   ["/admin/marketing", "Marketing"],
   ["/admin/support", "Soporte"],
+  ["/admin/help-center", "Centro de Ayuda"],
   ["/admin/flags", "Flags"],
   ["/admin/settings", "Config. del sitio"],
   ["/admin/legal", "Legal"],

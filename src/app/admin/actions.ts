@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { requirePlatformContext, writeAuditLog } from "@/lib/supabaseAdmin";
 import { sendTemplatedEmail } from "@/lib/email";
+import { getSiteUrl } from "@/lib/site_url";
 
 export async function updateSchoolPlan(formData: FormData) {
   const { user, role, admin } = await requirePlatformContext(["platform_admin", "finance"]);
@@ -616,5 +617,58 @@ export async function stopImpersonation() {
   cookieStore.delete("tulector_impersonate_school_id");
   revalidatePath("/dashboard");
   redirect("/admin/schools");
+}
+
+export async function replySupportTicket(formData: FormData) {
+  const { user, role, admin } = await requirePlatformContext(["platform_admin", "support"]);
+  const ticketId = String(formData.get("ticket_id") ?? "");
+  const body = String(formData.get("body") ?? "").trim();
+
+  if (!ticketId || !body) throw new Error("Falta el ticket o el mensaje.");
+
+  // Buscar datos del ticket para enviar el correo
+  const { data: ticket, error: ticketError } = await admin
+    .from("support_tickets")
+    .select("subject, token, email, locale")
+    .eq("id", ticketId)
+    .single();
+
+  if (ticketError || !ticket) throw new Error("Ticket no encontrado.");
+
+  // Insertar en mensajes
+  const { error } = await admin.from("support_ticket_messages").insert({
+    ticket_id: ticketId,
+    author_type: "staff",
+    author_id: user.id,
+    body,
+  });
+
+  if (error) throw new Error(`Error al enviar respuesta: ${error.message}`);
+
+  // Enviar correo de respuesta si hay un correo
+  if (ticket.email) {
+    const siteUrl = getSiteUrl();
+    await sendTemplatedEmail({
+      to: ticket.email,
+      templateKey: "ticket_reply",
+      locale: ticket.locale || "es-CL",
+      variables: {
+        ticket_subject: ticket.subject,
+        ticket_link: `${siteUrl}/t/${ticket.token}`,
+        reply_preview: body.slice(0, 200) + (body.length > 200 ? "..." : ""),
+      }
+    });
+  }
+
+  await writeAuditLog({
+    actorUserId: user.id,
+    actorRole: role,
+    targetType: "support_ticket",
+    targetId: ticketId,
+    action: "support_ticket.reply",
+    reason: "Respuesta de staff al cliente",
+  });
+
+  revalidatePath("/admin/support");
 }
 
