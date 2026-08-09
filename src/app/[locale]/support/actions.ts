@@ -5,7 +5,7 @@ import { getSiteUrl } from "@/lib/site_url";
 import { sendTemplatedEmail } from "@/lib/email";
 
 export async function createTicketAction(formData: FormData) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();

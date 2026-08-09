@@ -3,7 +3,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase_server";
 
 export async function replyTicketAction(formData: FormData) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const token = String(formData.get("token") ?? "");
   const body = String(formData.get("body") ?? "").trim();
 

@@ -14,7 +14,7 @@ export default async function HelpCenterPage({ params, searchParams }: { params:
     notFound();
   }
 
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   // Buscar categorías publicadas para este locale
   const { data: categories } = await supabase

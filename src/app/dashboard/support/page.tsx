@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardSupportPage() {
   const { school } = await getDashboardContext();
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   // Obtener tickets de la escuela
   const { data: tickets } = await supabase

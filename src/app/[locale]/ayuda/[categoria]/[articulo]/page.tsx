@@ -14,7 +14,7 @@ export default async function HelpCenterArticlePage({ params }: { params: { loca
     notFound();
   }
 
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: article } = await supabase
     .from("faq_articles")
