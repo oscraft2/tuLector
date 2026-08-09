@@ -57,6 +57,8 @@ function AuthForm() {
 
   const inviteId = searchParams.get("invite_id");
   const [inviteInfo, setInviteInfo] = useState<{ valid: boolean; email?: string; role?: string; schoolName?: string } | null>(null);
+  const [existingSessionEmail, setExistingSessionEmail] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -140,10 +142,19 @@ function AuthForm() {
     // a pedir la huella (sintoma: activo el toggle pero nunca la pide).
     if (isNativeApp() || searchParams.get("app") === "1") return;
     client.auth.getSession().then(({ data: { session } }) => {
-      if (session) router.replace(postAuthPath ?? homeAfterAuth());
+      if (!session) return;
+      if (inviteId) {
+        // Si viene de un link de invitacion, no redirigir a ciegas: quien
+        // hace click puede ya tener sesion abierta (con otro correo, o el
+        // mismo admin probando el link) -- se avisa en vez de sacarlo del
+        // flujo sin explicacion (ver estado existingSessionEmail).
+        setExistingSessionEmail(session.user.email ?? "tu cuenta actual");
+        return;
+      }
+      router.replace(postAuthPath ?? homeAfterAuth());
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client]);
+  }, [client, inviteId]);
 
   // Boton visible "Iniciar sesion con huella": el BiometricGate ya lo pide
   // automaticamente al abrir la app, pero si el usuario lo cancela (o
@@ -206,6 +217,13 @@ function AuthForm() {
     setMessage("");
     setPassword("");
     setConfirmPassword("");
+  };
+
+  const handleSignOutForInvite = async () => {
+    setSigningOut(true);
+    await client.auth.signOut();
+    setExistingSessionEmail(null);
+    setSigningOut(false);
   };
 
   const handleAuth = async (event: React.FormEvent) => {
@@ -386,6 +404,9 @@ function AuthForm() {
 
           {inviteInfo ? <InviteBanner inviteInfo={inviteInfo} /> : null}
 
+          {existingSessionEmail ? (
+            <AlreadyLoggedInNotice email={existingSessionEmail} inviteEmail={inviteInfo?.email} signingOut={signingOut} onSignOut={handleSignOutForInvite} />
+          ) : (
           <form onSubmit={handleAuth} className="space-y-3">
             <input
               type="email" value={email} onChange={(e) => setEmail(e.target.value)}
@@ -427,6 +448,7 @@ function AuthForm() {
               {loading ? "Procesando..." : mode === "login" ? "Entrar" : "Crear cuenta"}
             </button>
           </form>
+          )}
 
           <p className="mt-5 text-center text-sm text-gray-500">
             {mode === "login" ? "No tienes cuenta? " : "Ya tienes cuenta? "}
@@ -504,6 +526,10 @@ function AuthForm() {
 
           {inviteInfo ? <InviteBanner inviteInfo={inviteInfo} /> : null}
 
+          {existingSessionEmail ? (
+            <AlreadyLoggedInNotice email={existingSessionEmail} inviteEmail={inviteInfo?.email} signingOut={signingOut} onSignOut={handleSignOutForInvite} />
+          ) : (
+          <>
           <div className="mt-6 grid gap-3">
             <button
               type="button"
@@ -612,6 +638,8 @@ function AuthForm() {
               <p>Ya tienes cuenta? <button onClick={() => switchMode("login")} className="font-bold text-[#123b5d] hover:underline">Entrar</button></p>
             )}
           </div>
+          </>
+          )}
         </section>
       </div>
     </main>
@@ -630,6 +658,24 @@ function InviteBanner({ inviteInfo }: { inviteInfo: { valid: boolean; email?: st
   return (
     <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-[#07305f]">
       Fuiste invitado a colaborar en <strong>{inviteInfo.schoolName}</strong> como <strong>{roleLabel}</strong>. Crea tu contrasena para unirte.
+    </div>
+  );
+}
+
+function AlreadyLoggedInNotice({ email, inviteEmail, signingOut, onSignOut }: { email: string; inviteEmail?: string; signingOut: boolean; onSignOut: () => void }) {
+  return (
+    <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+      <p className="mb-3 leading-6">
+        Ya iniciaste sesion como <strong>{email}</strong>. Para aceptar esta invitacion{inviteEmail ? <> como <strong>{inviteEmail}</strong></> : null}, cierra esa sesion primero.
+      </p>
+      <button
+        type="button"
+        onClick={onSignOut}
+        disabled={signingOut}
+        className="rounded-lg bg-amber-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+      >
+        {signingOut ? "Cerrando sesion…" : "Cerrar sesion y continuar"}
+      </button>
     </div>
   );
 }

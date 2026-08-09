@@ -70,7 +70,13 @@ export function RowMenu({ children, label = "Mas opciones" }: { children: ReactN
               style={{ position: "fixed", top: coords.top, right: coords.right }}
               className="z-[70] w-56 overflow-hidden rounded-lg border border-[#e1e5ea] bg-white py-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.18)] animate-in fade-in zoom-in-95 duration-100"
               role="menu"
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                // Defer el cierre al siguiente tick: si se cierra en el mismo
+                // click que dispara un submit de formulario (reenviar/eliminar),
+                // el nodo del boton se desmonta a mitad de la dispatch de la
+                // server action -- causaba una pantalla en blanco/glitch.
+                setTimeout(() => setOpen(false), 0);
+              }}
             >
               {children}
             </div>,
