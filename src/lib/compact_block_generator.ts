@@ -65,7 +65,11 @@ export function drawCompactBlockSheet(ctx: Ctx2D, opts: CompactBlockOptions): vo
     ctx.font = "16px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText(CAPTION_TEXT, (band.xFrom + band.xTo) / 2, band.baseline);
+    // Tope por nº de caracteres (Ctx2D no expone measureText): a 16px sans son
+    // ~7.5 px por caracter, y la banda mide xTo-xFrom. Pasarse invadiria el
+    // aislamiento de las marcas inferiores.
+    const maxChars = Math.floor((band.xTo - band.xFrom) / 7.5);
+    ctx.fillText(CAPTION_TEXT.slice(0, maxChars), (band.xFrom + band.xTo) / 2, band.baseline);
     ctx.textAlign = "left";
   }
 }

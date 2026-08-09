@@ -14,6 +14,7 @@ import { drawCompactBlock } from "./src/tulector/compact_render";
 import { detectCompactBlock, warpCompactBlock, readCompactCode, gradeCompactBlock, scoreCompact } from "./src/tulector/compact_block";
 import * as C from "./src/tulector/compact_layout";
 import { type SheetCodeData } from "./src/tulector/sheet_code";
+import { drawCompactBlockSheet, pngWithDpi, readPngDpi } from "./src/lib/compact_block_generator";
 
 (globalThis as unknown as { ImageData: typeof CanvasImageData }).ImageData = CanvasImageData;
 
@@ -440,6 +441,108 @@ function barridoDeConfiguraciones(): void {
   console.log(`Guardia de capacidad passed: max ${C.MAX_ROWS} filas/columna; 30q/1col → ${apretado.numColumns} columnas, ultima fila y=${ultimaFilaY}`);
 }
 
+/**
+ * Fase 1.5 — exportacion para pegar en Word.
+ *
+ * Dos riesgos distintos que se verifican por separado:
+ *  1. Los textos que agrega el GENERADOR (guia anti-reescalado y etiqueta) no
+ *     deben invadir el aislamiento de las marcas ni romper la lectura.
+ *  2. El PNG debe declarar 300 DPI de verdad (chunk pHYs), que es lo unico que
+ *     evita que Word lo inserte ~3x mas grande asumiendo 96 DPI.
+ */
+async function faseExportacion(): Promise<void> {
+  console.log("\nFase 1.5 — exportacion (guia impresa + PNG con DPI)");
+
+  // 1. Bloque CON los textos del generador → sigue detectando y leyendo 20/20.
+  const canvas = createCanvas(C.BLOCK_W, C.BLOCK_H);
+  const ctx = canvas.getContext("2d");
+  drawCompactBlockSheet(ctx as unknown as Parameters<typeof drawCompactBlockSheet>[0], {
+    cfg: CFG, code: CODE, label: "8A - Matematica", caption: true,
+    marks: { answers: ANSWERS, filled: true },
+  });
+  const conGuias = ctx.getImageData(0, 0, C.BLOCK_W, C.BLOCK_H) as unknown as ImageData;
+
+  const conGuiasPeg = pasteBlock(PAGE_W, PAGE_H, placedQuad(300, 900, 0.9), CFG, ANSWERS, conGuias);
+  const detG = detectCompactBlock(conGuiasPeg.page);
+  if (!detG) fail("bloque con guia/etiqueta: NO DETECTADO");
+  if (detG.candidates !== 3) fail(`bloque con guia/etiqueta: ${detG.candidates} candidatos (esperado 3) — el texto agregado genera falsos finders`);
+  const errG = maxCornerError(detG.corners, conGuiasPeg.truth);
+  if (errG > 8) fail(`bloque con guia/etiqueta: error de esquina ${errG.toFixed(1)}px`);
+  const warpG = warpCompactBlock(conGuiasPeg.page, detG.corners);
+  if (JSON.stringify(readCompactCode(warpG)) !== JSON.stringify(CODE)) fail("bloque con guia/etiqueta: codigo ilegible");
+  const gradeG = gradeCompactBlock(warpG, CFG);
+  const malasG = gradeG.results.filter((r, i) => r.answer !== ESPERADAS[i]).length;
+  if (!gradeG.valid || malasG > 0) fail(`bloque con guia/etiqueta: ${malasG} respuesta(s) mal (${gradeG.reason ?? "valido"})`);
+  console.log(`  ✓ guia + etiqueta impresas — 3 candidatos, error ${errG.toFixed(1)}px, 20/20 respuestas`);
+
+  // 2. PNG con pHYs: DPI declarado y archivo que sigue siendo PNG valido.
+  const raw = new Uint8Array(canvas.toBuffer("image/png"));
+  if (readPngDpi(raw) !== null) console.log(`  (nota: node-canvas ya traia pHYs=${readPngDpi(raw)})`);
+  const conDpi = pngWithDpi(raw, 300);
+  const leido = readPngDpi(conDpi);
+  if (leido !== 300) fail(`PNG: DPI declarado = ${leido}, esperado 300`);
+
+  // Idempotencia: reaplicar no debe duplicar el chunk ni corromper el archivo.
+  const dosVeces = pngWithDpi(conDpi, 300);
+  if (readPngDpi(dosVeces) !== 300) fail("PNG: reaplicar pngWithDpi corrompio el pHYs");
+
+  const recargado = await loadImage(Buffer.from(dosVeces));
+  if (recargado.width !== C.BLOCK_W || recargado.height !== C.BLOCK_H) {
+    fail(`PNG: al recargar quedo ${recargado.width}x${recargado.height}`);
+  }
+  const c2 = createCanvas(C.BLOCK_W, C.BLOCK_H);
+  c2.getContext("2d").drawImage(recargado, 0, 0);
+  const desdePng = c2.getContext("2d").getImageData(0, 0, C.BLOCK_W, C.BLOCK_H) as unknown as ImageData;
+  const pegado = pasteBlock(PAGE_W, PAGE_H, placedQuad(280, 880, 0.85), CFG, ANSWERS, desdePng);
+  const detP = detectCompactBlock(pegado.page);
+  if (!detP) fail("PNG exportado: NO DETECTADO tras el round-trip");
+  const gradeP = gradeCompactBlock(warpCompactBlock(pegado.page, detP.corners), CFG);
+  const malasP = gradeP.results.filter((r, i) => r.answer !== ESPERADAS[i]).length;
+  if (!gradeP.valid || malasP > 0) fail(`PNG exportado: ${malasP} respuesta(s) mal`);
+  console.log(`  ✓ PNG exportado — pHYs=300 DPI, idempotente, round-trip 20/20`);
+
+  // 3. Tamaño fisico: es el contrato con Word. Si esto cambia, el profesor
+  //    imprime un bloque de otro porte y las marcas dejan de calzar.
+  const wmm = C.BLOCK_W_MM, hmm = C.BLOCK_H_MM;
+  if (Math.abs(wmm - 98.2) > 0.3 || Math.abs(hmm - 76.2) > 0.3) {
+    fail(`tamaño impreso inesperado: ${wmm.toFixed(1)}x${hmm.toFixed(1)} mm`);
+  }
+  console.log(`  ✓ tamaño impreso ${wmm.toFixed(1)} x ${hmm.toFixed(1)} mm a ${C.BLOCK_DPI} DPI`);
+
+  // 4. Invariante geometrico: las zonas donde escribe el generador no pueden
+  //    solaparse con el aislamiento de NINGUNA de las 4 marcas. Se comprueba
+  //    como solape de rectangulos, no por distancia a un eje.
+  type Rect = { x0: number; y0: number; x1: number; y1: number };
+  const solapan = (a: Rect, b: Rect) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+
+  const limite = C.FINDER_HALF + C.QUIET_ZONE;
+  const protegidas: { nombre: string; r: Rect }[] = [...C.FINDER_CENTERS, C.ALIGN_CENTER].map(([mx, my], i) => ({
+    nombre: ["finder TL", "finder TR", "finder BL", "alineacion BR"][i],
+    r: { x0: mx - limite, y0: my - limite, x1: mx + limite, y1: my + limite },
+  }));
+
+  const zonasTexto: { nombre: string; r: Rect }[] = [
+    {
+      nombre: "banda de guia",
+      r: { x0: C.CAPTION_BAND.xFrom, y0: C.CAPTION_BAND.baseline - 16, x1: C.CAPTION_BAND.xTo, y1: C.CAPTION_BAND.baseline },
+    },
+    {
+      nombre: "zona de etiqueta",
+      r: { x0: C.LABEL_ZONE.xFrom, y0: C.LABEL_ZONE.baseline - 18, x1: C.LABEL_ZONE.xTo, y1: C.LABEL_ZONE.baseline },
+    },
+  ];
+
+  for (const zona of zonasTexto) {
+    for (const marca of protegidas) {
+      if (solapan(zona.r, marca.r)) fail(`la ${zona.nombre} invade el aislamiento de ${marca.nombre}`);
+    }
+    if (zona.r.x0 < 0 || zona.r.y0 < 0 || zona.r.x1 > C.BLOCK_W || zona.r.y1 > C.BLOCK_H) {
+      fail(`la ${zona.nombre} se sale del bloque`);
+    }
+  }
+  console.log("  ✓ zonas de texto fuera del aislamiento de las 4 marcas y dentro del bloque");
+}
+
 async function main() {
   let okCount = 0;
   const fallos: string[] = [];
@@ -499,8 +602,9 @@ async function main() {
 
   await faseDegradacion();
   barridoDeConfiguraciones();
+  await faseExportacion();
 
-  console.log("\nSub-motor compacto (Fases 0, 0.5 y 1) OK");
+  console.log("\nSub-motor compacto (Fases 0, 0.5, 1 y 1.5) OK");
 }
 
 main().catch((e) => { console.error(e.message); process.exit(1); });

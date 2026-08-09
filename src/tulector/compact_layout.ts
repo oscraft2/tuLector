@@ -111,12 +111,19 @@ export const CODE_ROW_STEP = 40;   // separacion vertical entre las 2 filas
 // que no tienen marcas, franja de codigo ni burbujas. Se derivan de la geometria
 // (no son numeros sueltos) para que sigan siendo validas si el layout cambia.
 
-/** Banda inferior, DEBAJO de las dos marcas de abajo. Para la guia anti-reescalado. */
+/**
+ * Banda inferior para la guia anti-reescalado.
+ *
+ * El X se limita a la franja CENTRAL: debajo de las marcas de abajo solo quedan
+ * 38 px hasta el borde del bloque, que son exactamente su zona de aislamiento.
+ * Escribir de lado a lado se la comeria. Acotando el X a [borde-de-aislamiento
+ * izquierdo, derecho] el texto queda demostrablemente fuera de las 4 marcas.
+ */
 export const CAPTION_BAND = {
-  yTop: BLOCK_H - MARK_INSET + FINDER_HALF + 4,   // 866
-  baseline: BLOCK_H - 12,                          // 888
-  xFrom: 40,
-  xTo: BLOCK_W - 40,
+  yTop: BLOCK_H - MARK_INSET + FINDER_HALF + 4,          // 866
+  baseline: BLOCK_H - 12,                                 // 888
+  xFrom: MARK_INSET + FINDER_HALF + QUIET_ZONE,           // 160
+  xTo: BLOCK_W - MARK_INSET - FINDER_HALF - QUIET_ZONE,   // 1000
 };
 
 /** Hueco superior entre el fin de la franja del codigo y el aislamiento del finder TR. */
