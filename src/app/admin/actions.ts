@@ -47,6 +47,38 @@ export async function updateSchoolStatus(formData: FormData) {
   revalidatePath("/admin/schools");
 }
 
+export async function updateSchoolDetails(formData: FormData) {
+  const { user, role, admin } = await requirePlatformContext(["platform_admin", "support"]);
+  const schoolId = String(formData.get("school_id") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  const countryCode = String(formData.get("country_code") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+
+  if (!schoolId || !name || !reason) {
+    throw new Error("Colegio, nombre y motivo son obligatorios.");
+  }
+
+  const { error } = await admin
+    .from("schools")
+    .update({ name, country_code: countryCode || null, updated_at: new Date().toISOString() })
+    .eq("id", schoolId);
+  if (error) throw new Error(`Error al actualizar datos: ${error.message}`);
+
+  await writeAuditLog({
+    actorUserId: user.id,
+    actorRole: role,
+    schoolId,
+    targetType: "school",
+    targetId: schoolId,
+    action: "school.details_update",
+    reason,
+    metadata: { name, country_code: countryCode },
+  });
+
+  revalidatePath(`/admin/schools/${schoolId}`);
+  revalidatePath("/admin/schools");
+}
+
 export async function saveSiteConfig(formData: FormData) {
   const { user, role, admin } = await requirePlatformContext(["platform_admin"]);
   const key = String(formData.get("key") ?? "").trim();
