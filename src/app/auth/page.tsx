@@ -376,6 +376,8 @@ function AuthForm() {
           <h2 className="text-center text-lg font-black">{mode === "login" ? "Inicia sesion" : "Crear cuenta"}</h2>
           <p className="mt-1 mb-5 text-center text-xs text-gray-400">Accede con {platform === "ios" ? "Apple" : "Google"} o tu correo para escanear</p>
 
+          {!inviteInfo?.valid && (
+          <>
           {platform !== "ios" && (
             <button
               type="button"
@@ -401,6 +403,8 @@ function AuthForm() {
           )}
 
           <div className="mb-4 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.14em] text-[#9aa3af]"><span className="h-px flex-1 bg-[#e5e9ee]" />o con correo<span className="h-px flex-1 bg-[#e5e9ee]" /></div>
+          </>
+          )}
 
           {inviteInfo ? <InviteBanner inviteInfo={inviteInfo} /> : null}
 
@@ -487,13 +491,27 @@ function AuthForm() {
       <div className="mx-auto grid min-h-[calc(100vh-32px)] max-w-6xl items-start gap-6 md:min-h-[calc(100vh-80px)] lg:grid-cols-[1fr_460px] lg:items-center">
         <section className="hidden max-w-2xl py-6 lg:block">
           <TuLectorLogo href="/" size="lg" />
-          <p className="mt-10 text-xs font-bold uppercase tracking-[0.18em] text-[#2f6f5e]">Plataforma internacional para equipos educativos</p>
-          <h1 className="mt-4 max-w-xl text-5xl font-semibold leading-[0.98] tracking-tight text-[#111827] md:text-6xl">
-            Corrige ensayos, simulacros y pruebas en minutos.
-          </h1>
-          <p className="mt-6 max-w-xl text-lg leading-8 text-[#55615b]">
-            Una cuenta para administrar estudiantes, hojas de respuesta, escaneos y resultados desde web y app movil.
-          </p>
+          {inviteInfo?.valid ? (
+            <>
+              <p className="mt-10 text-xs font-bold uppercase tracking-[0.18em] text-[#2f6f5e]">Invitacion de equipo</p>
+              <h1 className="mt-4 max-w-xl text-5xl font-semibold leading-[1.02] tracking-tight text-[#111827] md:text-6xl">
+                Fuiste invitado a colaborar en {inviteInfo.schoolName}.
+              </h1>
+              <p className="mt-6 max-w-xl text-lg leading-8 text-[#55615b]">
+                Tu rol asignado: <strong className="text-[#111827]">{roleLabelForInvite(inviteInfo.role)}</strong>. Crea tu contrasena para unirte con {inviteInfo.email}.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="mt-10 text-xs font-bold uppercase tracking-[0.18em] text-[#2f6f5e]">Plataforma internacional para equipos educativos</p>
+              <h1 className="mt-4 max-w-xl text-5xl font-semibold leading-[0.98] tracking-tight text-[#111827] md:text-6xl">
+                Corrige ensayos, simulacros y pruebas en minutos.
+              </h1>
+              <p className="mt-6 max-w-xl text-lg leading-8 text-[#55615b]">
+                Una cuenta para administrar estudiantes, hojas de respuesta, escaneos y resultados desde web y app movil.
+              </p>
+            </>
+          )}
 
           <div className="mt-8 grid max-w-xl gap-3 sm:grid-cols-2">
             <TrustItem title="Google y Apple" body="Acceso rapido con proveedores confiables." />
@@ -530,6 +548,8 @@ function AuthForm() {
             <AlreadyLoggedInNotice email={existingSessionEmail} inviteEmail={inviteInfo?.email} signingOut={signingOut} onSignOut={handleSignOutForInvite} />
           ) : (
           <>
+          {!inviteInfo?.valid && (
+          <>
           <div className="mt-6 grid gap-3">
             <button
               type="button"
@@ -552,8 +572,10 @@ function AuthForm() {
           </div>
 
           <div className="my-6 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.14em] text-[#9aa3af]"><span className="h-px flex-1 bg-[#e1e7e3]" />o continua con correo<span className="h-px flex-1 bg-[#e1e7e3]" /></div>
+          </>
+          )}
 
-          <form onSubmit={handleAuth} className="space-y-4">
+          <form onSubmit={handleAuth} className={inviteInfo?.valid ? "mt-2 space-y-4" : "space-y-4"}>
             <label className="block text-sm font-bold text-[#111827]">
               Correo electronico
               <input
@@ -646,6 +668,10 @@ function AuthForm() {
   );
 }
 
+function roleLabelForInvite(role?: string) {
+  return role === "admin" ? "Administrador" : role === "viewer" ? "Observador" : "Profesor";
+}
+
 function InviteBanner({ inviteInfo }: { inviteInfo: { valid: boolean; email?: string; role?: string; schoolName?: string } }) {
   if (!inviteInfo.valid) {
     return (
@@ -654,10 +680,9 @@ function InviteBanner({ inviteInfo }: { inviteInfo: { valid: boolean; email?: st
       </div>
     );
   }
-  const roleLabel = inviteInfo.role === "admin" ? "Administrador" : inviteInfo.role === "viewer" ? "Observador" : "Profesor";
   return (
     <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-[#07305f]">
-      Fuiste invitado a colaborar en <strong>{inviteInfo.schoolName}</strong> como <strong>{roleLabel}</strong>. Crea tu contrasena para unirte.
+      Fuiste invitado a colaborar en <strong>{inviteInfo.schoolName}</strong> como <strong>{roleLabelForInvite(inviteInfo.role)}</strong>. Crea tu contrasena para unirte.
     </div>
   );
 }
