@@ -248,6 +248,26 @@ function AuthForm() {
           return;
         }
 
+        if (inviteInfo?.valid && inviteId) {
+          // Invitacion de equipo: el correo ya esta vetado por el admin --
+          // se crea la cuenta ya confirmada (sin correo de confirmacion) y
+          // se entra directo al panel, sin pasar por signUp normal.
+          const res = await fetch("/api/invitations/accept", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ inviteId, password }),
+          });
+          const json = await res.json();
+          if (!res.ok) {
+            setMessage(json.error || "No se pudo crear la cuenta.");
+            return;
+          }
+          const { error: signInError } = await client.auth.signInWithPassword({ email: inviteInfo.email!, password });
+          if (signInError) throw signInError;
+          router.replace(postAuthPath ?? homeAfterAuth());
+          return;
+        }
+
         const { error } = await client.auth.signUp({
           email: normalizedEmail,
           password,
