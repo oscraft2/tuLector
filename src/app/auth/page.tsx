@@ -20,7 +20,7 @@ const passwordEstimator = new ZxcvbnFactory({
   graphs: adjacencyGraphs,
 });
 
-const PASSWORD_MIN_LENGTH = 12;
+const PASSWORD_MIN_LENGTH = 6;
 
 type OAuthProvider = "google" | "apple";
 
@@ -59,6 +59,7 @@ function AuthForm() {
   const [inviteInfo, setInviteInfo] = useState<{ valid: boolean; email?: string; role?: string; schoolName?: string } | null>(null);
   const [existingSessionEmail, setExistingSessionEmail] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+  const [resetSending, setResetSending] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -224,6 +225,28 @@ function AuthForm() {
     await client.auth.signOut();
     setExistingSessionEmail(null);
     setSigningOut(false);
+  };
+
+  const handleForgotPassword = async () => {
+    const target = email.trim().toLowerCase();
+    if (!target) {
+      setMessage("Escribe tu correo arriba primero para poder enviarte el enlace.");
+      return;
+    }
+    setResetSending(true);
+    setMessage("");
+    try {
+      const { error } = await client.auth.resetPasswordForEmail(target, {
+        redirectTo: isNativeApp() ? `${OAUTH_DEEP_LINK}?from=app&next=/auth/reset-password` : authCallbackUrl("/auth/reset-password"),
+      });
+      if (error) throw error;
+      setMessage(`Si existe una cuenta con ${target}, te enviamos un enlace para restablecer tu contrasena.`);
+    } catch (err) {
+      const authErr = err as AuthError;
+      setMessage(authErr.message || "No se pudo enviar el enlace de recuperacion.");
+    } finally {
+      setResetSending(false);
+    }
   };
 
   const handleAuth = async (event: React.FormEvent) => {
@@ -443,6 +466,18 @@ function AuthForm() {
               className="w-full rounded-xl border border-[#cfd6df] bg-white px-4 py-3.5 text-sm outline-none transition-all placeholder:text-[#9aa3af] focus:border-[#07305f] focus:ring-2 focus:ring-[#07305f]/10"
               placeholder="Contrasena" autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={6}
             />
+            {mode === "login" && (
+              <div className="text-right">
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  disabled={resetSending}
+                  className="text-xs font-bold text-[#07305f] hover:underline disabled:opacity-60"
+                >
+                  {resetSending ? "Enviando…" : "Olvidaste tu contrasena?"}
+                </button>
+              </div>
+            )}
             {mode === "register" && (
               <input
                 type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
@@ -623,6 +658,19 @@ function AuthForm() {
                 minLength={mode === "register" ? PASSWORD_MIN_LENGTH : 6}
               />
             </label>
+
+            {mode === "login" && (
+              <div className="text-right">
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  disabled={resetSending}
+                  className="text-xs font-bold text-[#123b5d] hover:underline disabled:opacity-60"
+                >
+                  {resetSending ? "Enviando…" : "Olvidaste tu contrasena?"}
+                </button>
+              </div>
+            )}
 
             {mode === "register" && password && (
               <PasswordStrength score={passwordScore} passwordStrongEnough={passwordStrongEnough} feedback={passwordAnalysis?.feedback.warning || passwordAnalysis?.feedback.suggestions?.[0]} />
