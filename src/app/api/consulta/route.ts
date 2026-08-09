@@ -4,11 +4,22 @@ import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { resolveNationalId } from "@/lib/national_id";
 import { resolveCountryProfile } from "@/lib/country_profiles";
 import { resolveDisplayName, type PrivacyLevel } from "@/lib/display_name";
+import { rateLimit } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
+    const clientIp = request.headers.get("x-forwarded-for") ?? "anon";
+    const rl = await rateLimit({ key: `consulta_${clientIp}`, windowMs: 60_000, max: 10 });
+    if (!rl.success) {
+      const retryAfter = rl.reset ? Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000)) : 60;
+      return NextResponse.json(
+        { error: { code: "RATE_LIMITED", retryAfter } },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const rut = searchParams.get("rut")?.trim();
     // Default "CL" por compatibilidad: links viejos guardados/compartidos antes

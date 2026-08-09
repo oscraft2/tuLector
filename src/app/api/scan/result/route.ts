@@ -364,6 +364,11 @@ async function readQuotaStatus(supabase: SupabaseClient, school: DashboardCtx["s
 
 export async function POST(request: Request) {
   try {
+    const contentLength = Number(request.headers.get("content-length") || "0");
+    if (contentLength > 2 * 1024 * 1024) { // 2MB maximo para evitar DoS
+      return NextResponse.json({ error: "El payload es demasiado grande (max 2MB)." }, { status: 413 });
+    }
+
     const payload = (await request.json().catch(() => null)) as ScanResultPayload | null;
     if (!payload) return NextResponse.json({ error: "Payload invalido" }, { status: 400 });
 

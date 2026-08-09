@@ -16,9 +16,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Falta token" }, { status: 400 });
     }
 
-    // 1. Fetch real status from Flow to prevent spoofing
-    const payment = await getFlowPaymentStatus(token);
     const admin = createSupabaseAdminClient();
+
+    // Idempotencia: Verificar si ya procesamos este token (Flow no reintenta mucho,
+    // pero evitamos doble ejecución o ataques de replay).
+    const { error: insertError } = await admin.from("webhook_events").insert({
+      event_id: `flow_${token}`,
+      gateway: "flow"
+    });
+    if (insertError) {
+      return NextResponse.json({ status: "ignored", reason: "already processed event" });
+    }
+
+    // 1. Fetch real status from Flow to prevent spoofing. Flow no envía signature 
+    // en el webhook, sino que nosotros firmamos (HMAC-SHA256 orden canónico) 
+    // nuestra consulta de estado, haciéndolo 100% seguro contra spoofing.
+    const payment = await getFlowPaymentStatus(token);
 
     if (payment.status !== 2) {
       console.log(`[flow_webhook] pago no aprobado (status: ${payment.status}) para orden: ${payment.commerceOrder}`);

@@ -6,9 +6,40 @@ import { resolveLocaleForCountry } from "@/lib/country_profiles";
 import { markOrderPaidAndApplyEntitlement, sendOrderReceiptIfNeeded, notifyPaymentFailed } from "@/lib/billing_orders";
 import { getSiteUrl } from "@/lib/site_url";
 
+import crypto from "crypto";
+
 export async function POST(request: Request) {
   try {
     const url = new URL(request.url);
+    
+    // Verificacion de firma
+    const xSignature = request.headers.get("x-signature");
+    const xRequestId = request.headers.get("x-request-id");
+    if (xSignature && xRequestId && process.env.MERCADOPAGO_WEBHOOK_SECRET) {
+      let ts = "", v1 = "";
+      for (const p of xSignature.split(",")) {
+        const [k, v] = p.split("=");
+        if (k === "ts") ts = v;
+        if (k === "v1") v1 = v;
+      }
+      if (ts && v1) {
+        if (Math.abs(Date.now() - parseInt(ts, 10)) > 300000) {
+          return NextResponse.json({ error: "Firma expirada" }, { status: 400 });
+        }
+        const dataId = url.searchParams.get("data.id") || url.searchParams.get("id") || "";
+        const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
+        const hmac = crypto.createHmac("sha256", process.env.MERCADOPAGO_WEBHOOK_SECRET);
+        const digest = hmac.update(manifest).digest("hex");
+        try {
+          if (!crypto.timingSafeEqual(Buffer.from(v1), Buffer.from(digest))) {
+            return NextResponse.json({ error: "Firma invalida" }, { status: 403 });
+          }
+        } catch {
+          return NextResponse.json({ error: "Firma malformada" }, { status: 403 });
+        }
+      }
+    }
+
     let topic = url.searchParams.get("topic");
     let paymentId = url.searchParams.get("id");
 
@@ -30,9 +61,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ status: "ignored", reason: "not a payment topic" });
     }
 
+    const admin = createSupabaseAdminClient();
+
+    // Idempotencia
+    const { error: insertError } = await admin.from("webhook_events").insert({
+      event_id: `mp_${paymentId}`,
+      gateway: "mercadopago"
+    });
+    if (insertError) {
+      return NextResponse.json({ status: "ignored", reason: "already processed event" });
+    }
+
     // 1. Fetch real payment details from MercadoPago
     const payment = await getMercadoPagoPayment(paymentId);
-    const admin = createSupabaseAdminClient();
 
     if (payment.status !== "approved") {
       console.log(`[mp_webhook] pago no aprobado (status: ${payment.status}) para ID: ${paymentId}`);

@@ -17,13 +17,31 @@ export async function completeOnboarding(formData: FormData) {
   const country = resolveCountryProfile(String(formData.get("country_code") ?? "CL"));
   const defaults = countryDefaults(country.code);
   const rbd = String(formData.get("rbd") ?? "").trim() || null;
+  if (rbd && country.code === "CL") {
+    const { data: chileSchool } = await supabase.from("chile_schools").select("rbd").eq("rbd", rbd).maybeSingle();
+    if (!chileSchool) throw new Error("El RBD ingresado no existe en los registros oficiales.");
+    const { data: existingSchool } = await supabase.from("schools").select("id").eq("rbd", rbd).maybeSingle();
+    if (existingSchool) throw new Error("Este RBD ya ha sido registrado en la plataforma.");
+  }
+
+  const subdomain = String(formData.get("subdomain") ?? "").trim() || null;
+  if (subdomain) {
+    if (!/^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$/.test(subdomain)) {
+      throw new Error("Formato de subdominio invalido.");
+    }
+    const blacklist = ["www", "admin", "api", "app", "auth", "tulector"];
+    if (blacklist.includes(subdomain)) {
+      throw new Error("Subdominio reservado.");
+    }
+  }
+
   const institucionTipo = String(formData.get("institucion_tipo") ?? "").trim() || null;
 
   const { data: school, error } = await supabase.from("schools").insert({
     name,
     rbd,
     institucion_tipo: institucionTipo,
-    subdomain: String(formData.get("subdomain") ?? "") || null,
+    subdomain,
     country_code: country.code,
     region: String(formData.get("region") ?? "") || null,
     city: String(formData.get("city") ?? "") || null,

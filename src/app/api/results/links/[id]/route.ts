@@ -6,14 +6,15 @@ export const dynamic = "force-dynamic";
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const { supabase, isAdmin } = await getDashboardContext();
+    const { supabase, isAdmin, school } = await getDashboardContext();
 
-    if (!isAdmin) return NextResponse.json({ error: "Solo administradores pueden revocar enlaces" }, { status: 403 });
+    if (!isAdmin || !school) return NextResponse.json({ error: "Solo administradores pueden revocar enlaces" }, { status: 403 });
 
     const { data: existing, error: fetchError } = await supabase
       .from("result_links")
       .select("id, revoked_at")
       .eq("id", id)
+      .eq("school_id", school.id)
       .maybeSingle();
 
     if (fetchError || !existing) {
@@ -27,7 +28,8 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     const { error } = await supabase
       .from("result_links")
       .update({ revoked_at: new Date().toISOString() })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("school_id", school.id);
 
     if (error) throw error;
 

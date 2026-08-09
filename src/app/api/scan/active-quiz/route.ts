@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase_server";
+import { getDashboardContext } from "@/lib/supabase_server";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 
 export async function GET() {
@@ -8,14 +8,19 @@ export async function GET() {
   const quizId = cookieStore.get("tulector_active_quiz")?.value;
   if (!quizId) return NextResponse.json({ error: "No hay ensayo activo" }, { status: 404 });
 
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+  let context;
+  try {
+    context = await getDashboardContext();
+  } catch (error) {
+    return NextResponse.json({ error: "No autenticado o sin colegio" }, { status: 401 });
+  }
+  const { supabase, school } = context;
 
   let result = await supabase
     .from("quizzes")
     .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions,open_boxes_per_page")
     .eq("id", quizId)
+    .eq("school_id", school.id)
     .is("archived_at", null)
     .single();
 
@@ -26,6 +31,7 @@ export async function GET() {
       .from("quizzes")
       .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions")
       .eq("id", quizId)
+      .eq("school_id", school.id)
       .is("archived_at", null)
       .single();
   }
@@ -35,6 +41,7 @@ export async function GET() {
       .from("quizzes")
       .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions")
       .eq("id", quizId)
+      .eq("school_id", school.id)
       .is("archived_at", null)
       .single();
   }
@@ -44,6 +51,7 @@ export async function GET() {
       .from("quizzes")
       .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code")
       .eq("id", quizId)
+      .eq("school_id", school.id)
       .is("archived_at", null)
       .single();
   }

@@ -27,6 +27,8 @@
     "@revenuecat/purchases-capacitor": "^13.2.1",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.2",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.38.2",
     "@zxcvbn-ts/core": "^4.1.2",
     "@zxcvbn-ts/language-common": "^4.1.2",
     "capacitor-secure-storage-plugin": "^0.13.0",

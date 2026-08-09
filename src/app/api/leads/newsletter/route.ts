@@ -4,6 +4,7 @@ import { publicLocales, type PublicLocale } from "@/lib/public_i18n";
 import { normalizeRut, validateRut } from "@/lib/rut";
 import { sendTemplatedEmail } from "@/lib/email";
 import { getSiteUrl } from "@/lib/site_url";
+import { rateLimit } from "@/lib/rateLimit";
 import type { DashboardLocale } from "@/locales";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -20,6 +21,16 @@ function cleanText(value: unknown, maxLength: number) {
 }
 
 export async function POST(request: NextRequest) {
+  const clientIp = request.headers.get("x-forwarded-for") ?? "anon";
+  const rl = await rateLimit({ key: `newsletter_${clientIp}`, windowMs: 3600000, max: 5 });
+  if (!rl.success) {
+    const retryAfter = rl.reset ? Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000)) : 3600;
+    return NextResponse.json(
+      { error: "Demasiadas solicitudes. Intenta nuevamente mas tarde." },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } }
+    );
+  }
+
   let body: unknown;
 
   try {

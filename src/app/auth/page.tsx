@@ -21,7 +21,7 @@ const passwordEstimator = new ZxcvbnFactory({
   graphs: adjacencyGraphs,
 });
 
-const PASSWORD_MIN_LENGTH = 6;
+const PASSWORD_MIN_LENGTH = 12;
 
 type OAuthProvider = "google" | "apple";
 
@@ -487,7 +487,7 @@ function AuthForm() {
             <input
               type="password" value={password} onChange={(e) => setPassword(e.target.value)}
               className="w-full rounded-xl border border-[#cfd6df] bg-white px-4 py-3.5 text-sm outline-none transition-all placeholder:text-[#9aa3af] focus:border-[#07305f] focus:ring-2 focus:ring-[#07305f]/10"
-              placeholder="Contrasena" autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={6}
+              placeholder="Contrasena" autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={mode === "register" ? PASSWORD_MIN_LENGTH : 6}
             />
             {mode === "login" && (
               <div className="text-right">
@@ -500,7 +500,7 @@ function AuthForm() {
               <input
                 type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
                 className="w-full rounded-xl border border-[#cfd6df] bg-white px-4 py-3.5 text-sm outline-none transition-all placeholder:text-[#9aa3af] focus:border-[#07305f] focus:ring-2 focus:ring-[#07305f]/10"
-                placeholder="Confirmar contrasena" autoComplete="new-password" required minLength={6}
+                placeholder="Confirmar contrasena" autoComplete="new-password" required minLength={PASSWORD_MIN_LENGTH}
               />
             )}
             {mode === "register" && (
