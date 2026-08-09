@@ -9,6 +9,7 @@ import {
   linkUserToSchool,
   unlinkUserFromSchool,
   updateUserSchoolRole,
+  updateSchoolPlan,
 } from "@/app/admin/actions";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +40,7 @@ export default async function UserDetailPage({ params }: PageProps) {
     { data: auditLogs },
   ] = await Promise.all([
     admin.from("profiles").select("*").eq("user_id", id).maybeSingle(),
-    admin.from("school_members").select("id, school_id, role, created_at, schools(name)").eq("user_id", id),
+    admin.from("school_members").select("id, school_id, role, created_at, schools(name, plan)").eq("user_id", id),
     admin.from("platform_users").select("*").eq("user_id", id).is("revoked_at", null).maybeSingle(),
     admin.from("schools").select("id, name").order("name"),
     admin
@@ -87,15 +88,29 @@ export default async function UserDetailPage({ params }: PageProps) {
             <div className="rounded-md border border-[#e5e7eb] bg-white p-5">
               <h2 className="text-base font-semibold mb-4">Colegios Asociados (Workspace)</h2>
               <DataTable
-                columns={["Colegio", "Rol Escolar", "Fecha Unión", "Acciones"]}
+                columns={["Colegio", "Plan", "Rol Escolar", "Fecha Unión", "Acciones"]}
                 rows={memberships ?? []}
                 empty="Este usuario no está asociado a ningún colegio."
                 renderRow={(m) => {
-                  const schoolName = (m.schools as any)?.name || "Colegio sin nombre";
+                  const schoolInfo = m.schools as unknown as { name?: string; plan?: string } | { name?: string; plan?: string }[] | null;
+                  const school = Array.isArray(schoolInfo) ? schoolInfo[0] : schoolInfo;
+                  const schoolName = school?.name || "Colegio sin nombre";
                   return (
                     <tr key={m.id} className="border-b border-[#eef0f3] last:border-0 text-sm">
                       <td className="px-5 py-4 font-semibold text-[#111827]">
                         <Link href={`/admin/schools/${m.school_id}`} className="hover:underline">{schoolName}</Link>
+                      </td>
+                      <td className="px-5 py-4">
+                        <form action={updateSchoolPlan} className="flex gap-2">
+                          <input type="hidden" name="school_id" value={m.school_id} />
+                          <input type="hidden" name="reason" value={`Cambio de plan desde ficha de usuario (${id})`} />
+                          <select name="plan" defaultValue={school?.plan ?? "starter"} className="rounded border border-[#cfd6df] px-2 py-1 text-xs">
+                            <option value="starter">gratis</option>
+                            <option value="pro">pro</option>
+                            <option value="school">school</option>
+                          </select>
+                          <button className="rounded border border-[#cfd6df] px-2 py-1 text-xs font-semibold">Guardar</button>
+                        </form>
                       </td>
                       <td className="px-5 py-4">
                         <form action={updateUserSchoolRole} className="flex gap-2">
