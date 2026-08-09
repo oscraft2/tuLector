@@ -114,7 +114,7 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     // seguro y da una config invalida). Ver docs/plan-multipagina-fase1.md.
     const numColumns = suggestColumns(Math.min(numQuestions, QUIZ_MAX_QUESTIONS));
     const SHEET_CODE_MAX = 0xfffff; // 1.048.575
-    const baseCode = await nextSheetCode(supabase, school.id);
+    let baseCode = await nextSheetCode(supabase, school.id);
     // Un mismo ensayo puede aplicarse a varios cursos a la vez: se crea 1 fila
     // de `quizzes` POR curso elegido (mismo patron que duplicateQuiz -- clona
     // titulo/preguntas/clave/config con su propio sheet_code y course_id). El
@@ -208,7 +208,21 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
           error = (await supabase.from("quizzes").insert(withoutOpenQuestions(insertPayload))).error;
         }
         if (!error) { sheetOffset++; break; }
-        if (error.code === "23505" && retries < 3) { sheetOffset++; continue; } // unique_violation -> reintenta
+        if (error.code === "23505" && retries < 6) {
+          // unique_violation en sheet_code -- puede pasar si dos personas
+          // crean un ensayo casi al mismo tiempo (nextSheetCode lee el
+          // maximo y sigue siendo una carrera). El primer reintento solo
+          // suma 1 (barato, cubre el choque simple); si vuelve a chocar,
+          // se relee el maximo real en vez de seguir sumando a ciegas sobre
+          // un baseCode que ya quedo desactualizado por la otra insercion.
+          sheetOffset++;
+          if (retries >= 1) {
+            baseCode = await nextSheetCode(supabase, school.id);
+            sheetOffset = 0;
+          }
+          continue;
+        }
+        if (error.code === "23505") throw new Error("Hubo mucha actividad creando ensayos al mismo tiempo. Intenta de nuevo.");
         throw new Error(error.message);
       }
     }
@@ -386,10 +400,10 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
 
 export async function archiveQuiz(_prevState: DashboardActionState, formData: FormData): Promise<DashboardActionState> {
   try {
-    const { supabase } = await getDashboardContext();
+    const { supabase, school } = await getDashboardContext();
     const id = String(formData.get("id") ?? "");
     if (!id) throw new Error("Falta el ensayo a archivar.");
-    const { error } = await supabase.from("quizzes").update({ archived_at: new Date().toISOString() }).eq("id", id);
+    const { error } = await supabase.from("quizzes").update({ archived_at: new Date().toISOString() }).eq("id", id).eq("school_id", school.id);
     if (error) throw new Error(error.message);
     revalidatePath("/dashboard/quizzes");
     return actionSuccess("Ensayo archivado", "Se movio a archivados.", "🗃");
@@ -402,11 +416,10 @@ export async function duplicateQuiz(_prevState: DashboardActionState, formData: 
   try {
     const { supabase, user, school } = await getDashboardContext();
     const id = String(formData.get("id") ?? "");
-    const { data } = await supabase.from("quizzes").select("*").eq("id", id).single();
+    const { data } = await supabase.from("quizzes").select("*").eq("id", id).eq("school_id", school.id).single();
     if (!data) throw new Error("Ensayo no encontrado.");
-    const sheetCode = await nextSheetCode(supabase, school.id);
     const courseId = data.course_id ?? (data.grade ? await findOrCreateCourse(supabase, school.id, String(data.grade)) : null);
-    const payload = {
+    const basePayload = {
       school_id: school.id,
       user_id: user.id,
       created_by: user.id,
@@ -414,7 +427,6 @@ export async function duplicateQuiz(_prevState: DashboardActionState, formData: 
       num_questions: data.num_questions,
       options_per_question: data.options_per_question,
       num_columns: data.num_columns ?? suggestColumns(Math.min(Number(data.num_questions), QUIZ_MAX_QUESTIONS)),
-      sheet_code: sheetCode,
       option_labels: data.option_labels,
       answer_key: data.answer_key,
       subject: data.subject,
@@ -425,11 +437,24 @@ export async function duplicateQuiz(_prevState: DashboardActionState, formData: 
       ...(data.exigencia != null ? { exigencia: data.exigencia } : {}),
       duplicated_from: data.id,
     };
-    let { error } = await supabase.from("quizzes").insert(payload);
-    if (error && isMissingColumnError(error, "course_id")) {
-      error = (await supabase.from("quizzes").insert(withoutCourseId(payload))).error;
+    let error: { message: string; code?: string } | null = null;
+    for (let retries = 0; ; retries++) {
+      // Mismo choque posible que en createQuiz si dos personas duplican/crean
+      // un ensayo casi al mismo tiempo -- se relee el maximo real en cada
+      // reintento (aca no hay lote, asi que no hace falta el offset barato).
+      const sheetCode = await nextSheetCode(supabase, school.id);
+      const payload = { ...basePayload, sheet_code: sheetCode };
+      const result = await supabase.from("quizzes").insert(payload);
+      error = result.error;
+      if (error && isMissingColumnError(error, "course_id")) {
+        const retryResult = await supabase.from("quizzes").insert(withoutCourseId(payload));
+        error = retryResult.error;
+      }
+      if (!error) break;
+      if (error.code === "23505" && retries < 5) continue;
+      break;
     }
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(error.code === "23505" ? "Hubo mucha actividad creando ensayos al mismo tiempo. Intenta de nuevo." : error.message);
     revalidatePath("/dashboard/quizzes");
     return actionSuccess("Ensayo duplicado", `Se creo "${data.title} copia".`, "⧉");
   } catch (error) {
@@ -919,10 +944,10 @@ export async function confirmOpenAnswer(formData: FormData) {
 }
 
 export async function startScanForQuiz(formData: FormData) {
-  const { supabase } = await getDashboardContext();
+  const { supabase, school } = await getDashboardContext();
   const quizId = String(formData.get("quiz_id") ?? "");
   if (!quizId) throw new Error("Selecciona un ensayo.");
-  const { data, error } = await supabase.from("quizzes").select("id").eq("id", quizId).is("archived_at", null).single();
+  const { data, error } = await supabase.from("quizzes").select("id").eq("id", quizId).eq("school_id", school.id).is("archived_at", null).single();
   if (error || !data) throw new Error("No tienes acceso a ese ensayo.");
   const cookieStore = await cookies();
   cookieStore.set("tulector_active_quiz", quizId, {
