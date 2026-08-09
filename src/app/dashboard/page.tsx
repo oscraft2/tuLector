@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getDashboardContext } from "@/lib/supabase_server";
-import { getDashboardMessages, formatNumber } from "@/locales";
+import { getDashboardMessages, formatNumber, type DashboardLocale } from "@/locales";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { QuotaBar } from "@/components/dashboard/QuotaBar";
 import { EmptyState } from "@/components/dashboard/EmptyState";
@@ -51,7 +51,7 @@ type SimceRow = {
 type PageProps = { searchParams?: Promise<{ from?: string; to?: string }> };
 
 export default async function DashboardPage({ searchParams }: PageProps) {
-  const { supabase, school, countryProfile, locale } = await getDashboardContext();
+  const { supabase, school, countryProfile, locale, isAdmin } = await getDashboardContext();
   const t = getDashboardMessages(locale);
   const sp = ((await searchParams) ?? {}) as { from?: string; to?: string };
   const from = sp.from ?? null;
@@ -177,6 +177,26 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
   const maxGradeStat = Math.max(1, ...gradeStats.map((g) => g.avg));
 
+  const showTeamCard = isAdmin && school.plan === "school";
+  let teamCardStats: { teachers: number; quizzes: number; papers: number; pendingInvites: number } | null = null;
+  if (showTeamCard) {
+    const [{ count: teachersCount }, { count: pendingInvitesCount }, { data: teamQuizRows }] = await Promise.all([
+      supabase.from("school_members").select("id", { count: "exact", head: true }).eq("school_id", school.id),
+      supabase.from("invitations").select("id", { count: "exact", head: true }).eq("school_id", school.id).eq("status", "pending"),
+      supabase.from("quizzes").select("id").eq("school_id", school.id),
+    ]);
+    const teamQuizIds = (teamQuizRows ?? []).map((q) => q.id);
+    const { count: teamPapersCount } = teamQuizIds.length > 0
+      ? await supabase.from("papers").select("id", { count: "exact", head: true }).in("quiz_id", teamQuizIds)
+      : { count: 0 };
+    teamCardStats = {
+      teachers: teachersCount ?? 0,
+      quizzes: teamQuizIds.length,
+      papers: teamPapersCount ?? 0,
+      pendingInvites: pendingInvitesCount ?? 0,
+    };
+  }
+
   return (
     <>
       <section className="mb-5 overflow-hidden rounded-[1.75rem] bg-[#07305f] p-5 text-white shadow-xl shadow-[#07305f]/15 md:hidden">
@@ -224,6 +244,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             <Link href="/scan" className="rounded-md bg-[#07305f] px-4 py-2 text-sm font-semibold text-white">Escanear</Link>
           </div>
         </div>
+
+        {showTeamCard && teamCardStats ? <TeamSummaryCard stats={teamCardStats} locale={locale} /> : null}
 
         <MobileWorkflowCard />
 
@@ -383,6 +405,32 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         </section>
       </div>
     </>
+  );
+}
+
+function TeamSummaryCard({ stats, locale }: { stats: { teachers: number; quizzes: number; papers: number; pendingInvites: number }; locale: DashboardLocale }) {
+  return (
+    <section className="overflow-hidden rounded-[1.25rem] bg-[#07305f] p-5 text-white shadow-xl shadow-[#07305f]/20 md:rounded-2xl md:p-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/60">Plan school</p>
+          <h2 className="mt-1 text-xl font-bold tracking-tight md:text-2xl">Tu equipo</h2>
+          {stats.pendingInvites > 0 ? (
+            <p className="mt-1 text-sm text-white/75">{formatNumber(stats.pendingInvites, locale)} invitacion{stats.pendingInvites === 1 ? "" : "es"} pendiente{stats.pendingInvites === 1 ? "" : "s"}</p>
+          ) : (
+            <p className="mt-1 text-sm text-white/75">Docentes, ensayos y hojas de todo el colegio.</p>
+          )}
+        </div>
+        <Link href="/dashboard/settings" className="inline-flex items-center justify-center rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#07305f] shadow-sm active:scale-[0.99] md:self-center">
+          Gestionar equipo
+        </Link>
+      </div>
+      <div className="mt-5 grid grid-cols-3 gap-2 text-center">
+        <MobileHeroMetric label="Docentes" value={formatNumber(stats.teachers, locale)} />
+        <MobileHeroMetric label="Ensayos" value={formatNumber(stats.quizzes, locale)} />
+        <MobileHeroMetric label="Hojas" value={formatNumber(stats.papers, locale)} />
+      </div>
+    </section>
   );
 }
 
