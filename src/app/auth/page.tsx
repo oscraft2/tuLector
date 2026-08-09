@@ -633,15 +633,6 @@ function AuthForm() {
               <GoogleIcon />
               {oauthLoading === "google" ? "Conectando..." : "Continuar con Google"}
             </button>
-            <button
-              type="button"
-              onClick={() => handleOAuth("apple")}
-              disabled={busy}
-              className="flex min-h-12 w-full items-center justify-center gap-3 rounded-lg bg-[#111827] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-black disabled:opacity-50 active:scale-[0.99]"
-            >
-              <AppleIcon />
-              {oauthLoading === "apple" ? "Conectando..." : "Continuar con Apple"}
-            </button>
           </div>
 
           <div className="my-6 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.14em] text-[#9aa3af]"><span className="h-px flex-1 bg-[#e1e7e3]" />o continua con correo<span className="h-px flex-1 bg-[#e1e7e3]" /></div>
