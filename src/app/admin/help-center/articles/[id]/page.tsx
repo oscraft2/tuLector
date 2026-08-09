@@ -20,7 +20,7 @@ export default async function ArticleEditorPage({ params }: { params: { id: stri
   }
 
   return (
-    <AdminShell active="/admin/help-center" title={isNew ? "Nuevo Artículo" : "Editar Artículo"}>
+    <AdminShell active="/admin/help-center" title={isNew ? "Nuevo Artículo" : "Editar Artículo"} description="Redacta el contenido de este artículo del FAQ.">
       <div className="max-w-4xl bg-white p-6 rounded-md shadow-sm border border-[#e5e7eb]">
         <form action={upsertFaqArticle} className="space-y-4 flex flex-col">
           {article && <input type="hidden" name="id" value={article.id} />}

@@ -18,7 +18,7 @@ export default async function CategoryEditorPage({ params }: { params: { id: str
   }
 
   return (
-    <AdminShell active="/admin/help-center" title={isNew ? "Nueva Categoría" : "Editar Categoría"}>
+    <AdminShell active="/admin/help-center" title={isNew ? "Nueva Categoría" : "Editar Categoría"} description="Gestiona esta categoría del FAQ.">
       <div className="max-w-xl bg-white p-6 rounded-md shadow-sm border border-[#e5e7eb]">
         <form action={upsertFaqCategory} className="space-y-4">
           {category && <input type="hidden" name="id" value={category.id} />}

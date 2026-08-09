@@ -39,7 +39,7 @@ export default async function HelpCenterArticlePage({ params }: { params: { loca
 
   return (
     <>
-      <PublicHeader activeLocale={locale} />
+      <PublicHeader currentLocale={locale} />
       <main className="min-h-screen bg-[#fafafa]">
         {/* Breadcrumbs & Header */}
         <div className="bg-[#0a0a0a] text-white pt-24 pb-12 px-6">

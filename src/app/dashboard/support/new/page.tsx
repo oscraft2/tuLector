@@ -10,7 +10,7 @@ export default async function NewTicketDashboardPage() {
 
   return (
     <>
-      <PageHeader title="Nuevo Ticket de Soporte" />
+      <PageHeader title="Nuevo Ticket de Soporte" description="Envía tus consultas a nuestro equipo de ayuda." />
       <SearchHero locale={locale} />
       <div className="max-w-2xl bg-white p-6 rounded-xl shadow-sm border border-[#e5e7eb] mx-auto mt-8">
         <h2 className="text-2xl font-bold mb-4">Contactar Soporte</h2>

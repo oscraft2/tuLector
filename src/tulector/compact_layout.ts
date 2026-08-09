@@ -61,7 +61,10 @@ export const ALIGN_HALF = ALIGN_SIZE / 2;
 // de zona blanca alrededor de cada finder DENTRO del propio bloque: el render
 // pinta siempre ese fondo, asi el aislamiento de la marca no depende de que el
 // profesor deje espacio al pegarlo en su documento.
-const MARK_INSET = 80;
+export const MARK_INSET = 80;
+
+/** Aislamiento minimo que hay que respetar alrededor de cualquier marca. */
+export const QUIET_ZONE = 38;
 
 /** Centros de los 3 finders, en orden TL, TR, BL. */
 export const FINDER_CENTERS: [number, number][] = [
@@ -101,6 +104,27 @@ export const CODE_R = 6;           // radio de muestreo del motor (interior a la
 export const CODE_X0 = 200;        // centro X de la primera celda de cada fila
 export const CODE_Y0 = 52;         // centro Y de la fila 0
 export const CODE_ROW_STEP = 40;   // separacion vertical entre las 2 filas
+
+// ─── Zonas libres para texto del generador ────────────────────
+// El generador (src/lib/compact_block_generator.ts) escribe SOLO aca, igual que
+// sheet_generator.ts hace con la hoja completa: son las unicas bandas del bloque
+// que no tienen marcas, franja de codigo ni burbujas. Se derivan de la geometria
+// (no son numeros sueltos) para que sigan siendo validas si el layout cambia.
+
+/** Banda inferior, DEBAJO de las dos marcas de abajo. Para la guia anti-reescalado. */
+export const CAPTION_BAND = {
+  yTop: BLOCK_H - MARK_INSET + FINDER_HALF + 4,   // 866
+  baseline: BLOCK_H - 12,                          // 888
+  xFrom: 40,
+  xTo: BLOCK_W - 40,
+};
+
+/** Hueco superior entre el fin de la franja del codigo y el aislamiento del finder TR. */
+export const LABEL_ZONE = {
+  xFrom: 800,
+  xTo: BLOCK_W - MARK_INSET - FINDER_HALF - QUIET_ZONE, // 1000
+  baseline: MARK_INSET - 4,                             // 76
+};
 
 /** Centro (x, y) de la celda i (0..45) de la franja del codigo. */
 export function codeCell(i: number): [number, number] {

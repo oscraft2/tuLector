@@ -38,7 +38,7 @@ export default async function HelpCenterPage({ params, searchParams }: { params:
     // Si no hay búsqueda, traer los 5 artículos más vistos globales del locale
     const { data: topArticles } = await supabase
       .from("faq_articles")
-      .select("id, title, slug, category_id")
+      .select("id, title, slug, category_id, body_md")
       .eq("locale", locale)
       .eq("published", true)
       .order("view_count", { ascending: false })
@@ -48,7 +48,7 @@ export default async function HelpCenterPage({ params, searchParams }: { params:
 
   return (
     <>
-      <PublicHeader activeLocale={locale} />
+      <PublicHeader currentLocale={locale} />
       <main className="min-h-screen bg-[#fafafa]">
         {/* Hero & Search */}
         <div className="bg-[#0a0a0a] text-white py-20 px-6">

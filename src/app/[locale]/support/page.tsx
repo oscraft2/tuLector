@@ -31,7 +31,7 @@ export default function SupportPage({ params }: { params: { locale: string } }) 
   
   return (
     <>
-      <PublicHeader activeLocale={validLocale} />
+      <PublicHeader currentLocale={validLocale} />
       <main className="min-h-screen bg-[#fafafa] py-16 px-6">
         <div className="max-w-4xl mx-auto">
           <SearchHero locale={validLocale} />

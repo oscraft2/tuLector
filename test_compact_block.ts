@@ -125,8 +125,9 @@ function applyHom(hm: number[], x: number, y: number): [number, number] {
 function pasteBlock(
   pageW: number, pageH: number, quad: [number, number][],
   cfg: C.CompactConfig = CFG, answers: number[] = ANSWERS,
+  blockImg?: ImageData,
 ): { page: ImageData; truth: [number, number][] } {
-  const block = renderBlock(cfg, answers);
+  const block = blockImg ?? renderBlock(cfg, answers);
   const canvas = createCanvas(pageW, pageH);
   const ctx = canvas.getContext("2d");
   drawForeignPage(ctx, pageW, pageH);
