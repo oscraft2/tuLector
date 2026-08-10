@@ -7,7 +7,7 @@ import { locales, type Locale, defaultLocale } from "@/i18n/config";
 
 export const dynamic = "force-dynamic";
 
-export default async function HelpCenterPage({ params, searchParams }: { params: { locale: string }, searchParams: { q?: string } }) {
+export default async function HelpCenterPage({ params, searchParams }: { params: { locale: string }, searchParams: { q?: string, c?: string } }) {
   const { locale } = params;
   const q = searchParams.q ?? "";
   

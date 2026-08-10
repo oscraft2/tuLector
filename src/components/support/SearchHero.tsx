@@ -25,7 +25,7 @@ export function SearchHero({ locale }: { locale: string }) {
           placeholder="Ej: ¿Cómo escaneo las hojas?" 
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          className="w-full rounded-full py-4 pl-6 pr-32 focus:outline-none focus:ring-4 focus:ring-blue-500/30 text-lg shadow-lg"
+          className="w-full bg-white text-gray-900 rounded-full py-4 pl-6 pr-32 focus:outline-none focus:ring-4 focus:ring-blue-500/30 text-lg shadow-lg"
         />
         <button 
           type="submit" 

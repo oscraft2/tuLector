@@ -10,9 +10,11 @@
 | 0 — Localización | ✅ **GO** | 8/8 casos. Error de esquina **0.6–1.4 px**. Exactamente 3 candidatos por caso: el logo negro sólido y el cuadrado de doble borde sembrados como señuelos **no** generaron ni un falso finder. Página sin bloque → `null` (sin falso positivo). |
 | 0.5 — Degradación | ✅ | 8/8. JPEG q=0.3, desenfoque, ruido ±28, sombra diagonal al 45%, remuestreo 0.6x y combinaciones. Error máximo **1.4 px**. |
 | 1 — Layout + calificación | ✅ | 54/54 configuraciones (preguntas × opciones × columnas) leídas al **100%**. |
-| 1.5 — Exportación PNG/PDF | ⬜ pendiente | |
+| 1.5 — Exportación PNG/PDF | ✅ | PNG con `pHYs` = **300 DPI** real e idempotente; bloque de **98 × 76 mm**; guía y etiqueta impresas sin generar falsos finders (3 candidatos, 20/20); invariante de zonas verificado. |
 | 2 — `sheet_mode` + modo sin identificación | ⬜ pendiente | |
 | 3 — UI de generación y escaneo | ⬜ pendiente | |
+
+`npm run build` pasa (exit 0) con todo lo anterior.
 
 Correr con `npm run test:compact` (suite propia, separada de `test:omr`).
 
@@ -28,6 +30,18 @@ de `Q_BOTTOM`, encima de las marcas de localización inferiores — rompía la
 (`minColumnsFor()`), y render y motor pasan por esa misma función, así que no
 pueden discrepar. Se exportan `maxQuestionsFor(cols)` y `minColumnsFor(n)` para
 que la UI de la Fase 3 lo muestre antes de generar, en vez de corregirlo callada.
+
+### Hallazgo de la Fase 1.5: por qué el PNG necesita el chunk `pHYs`
+
+Un PNG de canvas no declara resolución, así que Word asume 96 DPI y lo inserta
+**~3× más grande** de lo diseñado. Por eso `compactBlockPngBlob()` inyecta un
+chunk `pHYs` con 11811 píxeles/metro (300 DPI): es lo único que hace que Word lo
+coloque al tamaño físico correcto sin que el profesor ajuste nada.
+
+También apareció un conflicto geométrico real: debajo de las dos marcas inferiores
+solo quedan 38 px hasta el borde, que son **exactamente** su zona de aislamiento.
+La banda de la guía se acotó al tramo central (`x ∈ [160, 1000]`, derivado de la
+geometría de las marcas) y hay un test que lo comprueba como solape de rectángulos.
 
 ### Verificación pendiente que NO es automatizable
 
