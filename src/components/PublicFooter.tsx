@@ -68,15 +68,37 @@ export function PublicFooter({ currentLocale }: PublicFooterProps) {
               </div>
             </div>
           </div>
-          <div className="hidden md:flex items-end justify-center relative">
-            <div className="absolute inset-0 bg-gradient-to-t from-[#123b5d] to-transparent z-10 bottom-0 h-16 top-auto"></div>
-            <Image
-              src="/app-screenshot.png"
-              alt="TuLector App Captura de Pantalla"
-              width={400}
-              height={800}
-              className="h-64 lg:h-80 w-auto object-contain drop-shadow-2xl translate-y-4 lg:translate-y-6 hover:-translate-y-0 transition-transform duration-500"
-            />
+          <div className="w-full md:w-[50%] lg:w-[55%] mt-12 md:mt-0 relative">
+            <div className="absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-[#123b5d] to-transparent z-10 pointer-events-none"></div>
+            <div className="absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[#123b5d] to-transparent z-10 pointer-events-none"></div>
+            <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#123b5d] to-transparent z-10 pointer-events-none"></div>
+            
+            <div className="flex gap-4 overflow-x-auto pb-4 pt-4 px-4 -mx-5 md:mx-0 snap-x snap-mandatory scroll-smooth [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none' }}>
+              {[
+                { src: "/store-assets/03-escanear.png", alt: "Escaneo rápido con cámara" },
+                { src: "/store-assets/04-resultados.png", alt: "Métricas y resultados inmediatos" },
+                { src: "/store-assets/05-alumnos.png", alt: "Gestión de rendimiento por alumno" },
+                { src: "/store-assets/02-menu.png", alt: "Panel de control principal" },
+                { src: "/store-assets/01-login.png", alt: "Acceso seguro" },
+              ].map((img, idx) => (
+                <div key={idx} className="snap-center shrink-0 flex items-end transition-transform duration-500 hover:-translate-y-2">
+                  <Image
+                    src={img.src}
+                    alt={img.alt}
+                    width={350}
+                    height={700}
+                    className="h-64 sm:h-72 md:h-80 lg:h-96 w-auto object-contain drop-shadow-2xl rounded-xl sm:rounded-2xl border border-white/10 bg-[#071625]"
+                  />
+                </div>
+              ))}
+            </div>
+            
+            {/* Indicador de scroll manual para móviles */}
+            <div className="flex justify-center mt-2 md:hidden gap-1.5 opacity-50">
+              <div className="w-2 h-2 rounded-full bg-white"></div>
+              <div className="w-2 h-2 rounded-full bg-white/50"></div>
+              <div className="w-2 h-2 rounded-full bg-white/50"></div>
+            </div>
           </div>
         </div>
       </section>
