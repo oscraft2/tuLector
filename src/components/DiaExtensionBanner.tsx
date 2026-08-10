@@ -28,23 +28,20 @@ export function DiaExtensionBanner({ locale }: { locale: string }) {
       <div className="mx-auto grid max-w-7xl items-center gap-10 px-5 py-14 md:px-8 md:py-20 lg:grid-cols-[1.05fr_0.95fr] lg:gap-14">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.12em] text-white/85">
-              Nuevo · Exclusivo Chile
+            <span className="inline-flex rounded-full border border-[#d9a62e]/50 bg-[#d9a62e]/20 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.12em] text-[#facc15]">
+              BETA · Exclusivo Chile
             </span>
             <span className="inline-flex rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.12em] text-white/85">
-              Extension gratuita de Chrome
+              Extensión gratuita de Chrome
             </span>
           </div>
 
           <h2 className="mt-5 text-3xl font-semibold leading-tight tracking-tight text-white md:text-5xl">
-            Del papel a la plataforma DIA, sin digitar una sola respuesta
+            Sube tu Prueba DIA Integral sin digitar una sola respuesta
           </h2>
 
           <p className="mt-4 max-w-xl text-base leading-7 text-white/70 md:text-lg md:leading-8">
-            DIA Bot ingresa en la plataforma DIA de la Agencia de Calidad de la Educacion las
-            alternativas que TuLector ya leyo en papel: curso completo, en minutos, usando tu
-            propia sesion del navegador. Olvidate de transcribir alumno por alumno, pregunta
-            por pregunta.
+            DIA Bot ingresa las respuestas directamente en la plataforma del Diagnóstico Integral de Aprendizajes (<a href="https://diagnosticointegral.agenciaeducacion.cl/" target="_blank" rel="noopener noreferrer" className="text-blue-300 hover:underline">diagnosticointegral.agenciaeducacion.cl</a>) leyendo las alternativas que TuLector escaneó en papel. Ingresa cursos completos en minutos usando tu propia sesión.
           </p>
 
           <ol className="mt-8 space-y-5">

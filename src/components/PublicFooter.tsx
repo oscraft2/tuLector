@@ -68,13 +68,14 @@ export function PublicFooter({ currentLocale }: PublicFooterProps) {
               </div>
             </div>
           </div>
-          <div className="hidden lg:flex items-center justify-center opacity-90 hover:opacity-100 transition-opacity transform hover:scale-105 duration-300">
+          <div className="hidden md:flex items-end justify-center relative">
+            <div className="absolute inset-0 bg-gradient-to-t from-[#123b5d] to-transparent z-10 bottom-0 h-16 top-auto"></div>
             <Image
-              src="/store-badges/google-play.png"
-              alt="Disponible en Google Play"
-              width={646}
-              height={250}
-              className="h-[60px] w-auto drop-shadow-2xl"
+              src="/workflow/scan-phone.png"
+              alt="TuLector App Escaneando"
+              width={400}
+              height={800}
+              className="h-64 lg:h-80 w-auto object-contain drop-shadow-2xl translate-y-4 lg:translate-y-6 hover:-translate-y-0 transition-transform duration-500"
             />
           </div>
         </div>
