@@ -23,125 +23,83 @@ export function DiaExtensionBanner({ locale }: { locale: string }) {
     },
   ];
 
-  return (
-    <section aria-label="Extension DIA Bot para Chile" className="bg-[#111827] text-white">
-      <div className="mx-auto grid max-w-7xl items-center gap-10 px-5 py-14 md:px-8 md:py-20 lg:grid-cols-[1.05fr_0.95fr] lg:gap-14">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex rounded-full border border-[#d9a62e]/50 bg-[#d9a62e]/20 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.12em] text-[#facc15]">
-              BETA · Exclusivo Chile
-            </span>
-            <span className="inline-flex rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.12em] text-white/85">
-              Extensión gratuita de Chrome
-            </span>
+    <section aria-label="Extension DIA Bot para Chile" className="mx-auto max-w-7xl px-5 py-8 md:px-8 mt-4 md:mt-8">
+      <div className="relative overflow-hidden rounded-2xl border border-[#dfe5e2] bg-white shadow-sm flex flex-col lg:flex-row items-center justify-between p-6 md:p-10 gap-8">
+        
+        {/* Left Side: Texto y Botones */}
+        <div className="flex-1">
+          <div className="flex flex-wrap items-center gap-3 mb-5">
+            <div className="flex items-center gap-1.5 bg-[#f0f7f4] border border-[#2f6f5e]/30 text-[#2f6f5e] px-3 py-1 rounded-md text-xs font-black uppercase tracking-widest shadow-sm">
+              <span className="relative flex h-2 w-2 mr-1">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2f6f5e] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2f6f5e]"></span>
+              </span>
+              BETA
+            </div>
+            <div className="flex items-center gap-1.5 bg-[#f6f7f9] text-[#4b5563] border border-[#e6e8eb] px-3 py-1 rounded-md text-xs font-bold uppercase tracking-widest">
+              🇨🇱 Exclusivo Chile
+            </div>
           </div>
-
-          <h2 className="mt-5 text-3xl font-semibold leading-tight tracking-tight text-white md:text-5xl">
-            Sube tu Prueba DIA Integral sin digitar una sola respuesta
+          
+          <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight text-[#111827] mb-3">
+            Sube tu Prueba DIA Integral sin digitar a mano
           </h2>
-
-          <p className="mt-4 max-w-xl text-base leading-7 text-white/70 md:text-lg md:leading-8">
-            DIA Bot ingresa las respuestas directamente en la plataforma del Diagnóstico Integral de Aprendizajes (<a href="https://diagnosticointegral.agenciaeducacion.cl/" target="_blank" rel="noopener noreferrer" className="text-blue-300 hover:underline">diagnosticointegral.agenciaeducacion.cl</a>) leyendo las alternativas que TuLector escaneó en papel. Ingresa cursos completos en minutos usando tu propia sesión.
+          
+          <p className="text-[#4b5563] mb-6 text-base md:text-lg leading-relaxed max-w-3xl">
+            Nuestra extensión gratuita lee las alternativas de TuLector y las ingresa automáticamente en la plataforma del <strong>Diagnóstico Integral de Aprendizajes</strong> (<a href="https://diagnosticointegral.agenciaeducacion.cl/" target="_blank" rel="noopener noreferrer" className="text-[#123b5d] font-semibold hover:underline">diagnosticointegral.agenciaeducacion.cl</a>).
           </p>
 
-          <ol className="mt-8 space-y-5">
-            {steps.map((step, i) => (
-              <li key={step.title} className="flex gap-4">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/15 bg-white/5 text-sm font-bold text-white/85">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <div>
-                  <p className="text-sm font-semibold text-white md:text-base">{step.title}</p>
-                  <p className="mt-1 text-sm leading-6 text-white/60">{step.body}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
-
-          <div className="mt-8 flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-4">
             <Link
               href={`/${locale}/precios`}
-              className="rounded-lg bg-white px-6 py-3.5 text-center text-sm font-semibold text-[#111827] transition-all hover:bg-[#f0f7f4] active:scale-[0.98]"
+              className="inline-flex items-center gap-3 rounded-xl bg-[#111827] px-6 py-3.5 text-sm font-bold text-white transition-all hover:bg-[#07305f] hover:shadow-md active:scale-95"
             >
-              Ver planes con sync DIA
+              <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" xmlns="http://www.w3.org/2000/svg">
+                 <path d="M12.012 0C5.388 0 .012 5.376.012 12s5.376 12 12 12 12-5.376 12-12-5.376-12-12-12zm-3.666 4.708l2.96 5.127a5.578 5.578 0 011.026-.098h9.432A9.593 9.593 0 0012.012 2.396a9.636 9.636 0 00-3.666.864zM2.41 12c0-1.874.542-3.626 1.488-5.111l4.717 8.169a5.556 5.556 0 01-1.028 1.78l-4.716-8.169A9.57 9.57 0 002.41 12zm9.602 9.604a9.585 9.585 0 01-8.114-4.502l2.946-5.105a5.568 5.568 0 014.542-2.316v10.252a5.578 5.578 0 01-1.026.098c-.12 0-.238-.01-.357-.014z" />
+              </svg>
+              Extensión para Chrome
             </Link>
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-white/50">
-              Disponible en Plan Pro y School
+            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6b7280]">
+              Solo en Plan Pro y School
             </span>
           </div>
         </div>
 
-        {/* Tarjeta con el resumen que muestra la extension */}
-        <div>
-          <div className="rounded-xl border border-[#e6e8eb] bg-white p-5 text-[#111827] shadow-lg shadow-black/20 md:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <Image
-                  src="/dia-bot-icon.png"
-                  alt="Logo de DIA Bot"
-                  width={40}
-                  height={40}
-                  className="h-10 w-10 rounded-md"
-                />
-                <div>
-                  <p className="text-sm font-semibold">DIA Bot</p>
-                  <p className="text-xs text-[#6b7280]">Ingreso de respuestas desde TuLector</p>
-                </div>
-              </div>
-              <span className="rounded-full border border-[#2f6f5e]/30 bg-[#f0f7f4] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-[#2f6f5e]">
-                Curso detectado
-              </span>
-            </div>
-
-            <div className="mt-4 rounded-lg border border-[#e6e8eb] bg-[#f6f7f9] p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6b7280]">Resumen de simulacion</p>
-              <p className="mt-1 text-sm font-semibold">6° Básico B · Lectura · Ensayo 2</p>
-              <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-[#e6e8eb]">
-                <div className="w-[86%] bg-[#2f6f5e]" />
-                <div className="w-[10%] bg-[#d9a62e]" />
-                <div className="w-[4%] bg-[#c3cad2]" />
-              </div>
-              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                <div className="rounded-md bg-white px-2 py-2">
-                  <p className="text-lg font-semibold text-[#2f6f5e]">38</p>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6b7280]">ok</p>
-                </div>
-                <div className="rounded-md bg-white px-2 py-2">
-                  <p className="text-lg font-semibold text-[#b8860b]">2</p>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6b7280]">sin match</p>
-                </div>
-                <div className="rounded-md bg-white px-2 py-2">
-                  <p className="text-lg font-semibold text-[#6b7280]">0</p>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6b7280]">errores</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 flex items-center gap-2 text-xs text-[#6b7280]">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-[#2f6f5e]" aria-hidden="true">
-                <path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3Z" />
-                <path d="m9 12 2 2 4-4" />
-              </svg>
-              No guarda tu clave: trabaja con la sesion que ya tienes abierta.
-            </div>
-          </div>
-
-          <div className="mt-4 flex items-center gap-4 rounded-xl border border-white/10 p-4">
-            <div className="flex h-14 w-20 shrink-0 items-center justify-center rounded-lg bg-white p-2">
+        {/* Right Side: Logos Visuales */}
+        <div className="flex flex-col items-center gap-5 lg:border-l border-[#dfe5e2] lg:pl-10 pt-6 lg:pt-0 w-full lg:w-auto">
+          <div className="flex items-center justify-center gap-6 bg-[#f8faf9] px-6 py-4 rounded-xl border border-[#dfe5e2]">
+            <div className="flex flex-col items-center gap-2">
               <Image
-                src="/agencia-calidad-educacion.png"
-                alt="Agencia de Calidad de la Educacion"
-                width={200}
-                height={130}
-                className="h-full w-full object-contain"
+                src="/dia-bot-icon.png"
+                alt="Logo DIA Bot"
+                width={56}
+                height={56}
+                className="rounded-lg shadow-sm w-14 h-14"
               />
+              <span className="text-[10px] font-bold text-[#111827]">DIA Bot</span>
             </div>
-            <p className="text-xs leading-5 text-white/50">
-              Herramienta independiente de TuLector. No afiliada ni patrocinada por la Agencia de
-              Calidad de la Educacion.
-            </p>
+            
+            <div className="text-[#a0aab8] font-light text-3xl">➔</div>
+            
+            <div className="flex flex-col items-center gap-2">
+              <div className="h-14 w-24 bg-white rounded-lg flex items-center justify-center border border-[#dfe5e2] p-2 shadow-sm">
+                <Image
+                  src="/agencia-calidad-educacion.png"
+                  alt="Agencia de Calidad de la Educación"
+                  width={90}
+                  height={50}
+                  className="object-contain w-full h-full"
+                />
+              </div>
+              <span className="text-[10px] font-bold text-[#111827]">Agencia Calidad</span>
+            </div>
           </div>
+          
+          <p className="text-[10px] text-center text-[#6b7280] max-w-[280px] leading-relaxed">
+            Herramienta independiente, no patrocinada por la Agencia de Calidad de la Educación ni el Ministerio.
+          </p>
         </div>
+
       </div>
     </section>
   );
