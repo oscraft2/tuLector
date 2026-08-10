@@ -23,7 +23,7 @@ export function PublicFooter({ currentLocale }: PublicFooterProps) {
 
   return (
     <>
-      <PublicLeadCapture currentLocale={locale} />
+      {/* <PublicLeadCapture currentLocale={locale} /> */}
       
       {/* App Download Banner */}
       <section className="bg-[#123b5d] text-white py-16 border-t border-[#0f2f49] relative overflow-hidden">
