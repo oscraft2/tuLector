@@ -71,8 +71,8 @@ export function PublicFooter({ currentLocale }: PublicFooterProps) {
           <div className="hidden md:flex items-end justify-center relative">
             <div className="absolute inset-0 bg-gradient-to-t from-[#123b5d] to-transparent z-10 bottom-0 h-16 top-auto"></div>
             <Image
-              src="/workflow/scan-phone.png"
-              alt="TuLector App Escaneando"
+              src="/app-screenshot.png"
+              alt="TuLector App Captura de Pantalla"
               width={400}
               height={800}
               className="h-64 lg:h-80 w-auto object-contain drop-shadow-2xl translate-y-4 lg:translate-y-6 hover:-translate-y-0 transition-transform duration-500"
