@@ -23,7 +23,8 @@ export function DiaExtensionBanner({ locale }: { locale: string }) {
     },
   ];
 
-    <section aria-label="Extension DIA Bot para Chile" className="mx-auto max-w-7xl px-5 py-8 md:px-8">
+  return (
+    <section aria-label="Extension DIA Bot para Chile" className="mx-auto max-w-7xl px-5 py-8 md:px-8 mt-4 md:mt-8">
       <div className="border border-[#dfe5e2] bg-white rounded-lg flex flex-col md:flex-row items-center justify-between p-6 gap-6">
         
         {/* Left Side: Texto y Botones */}
