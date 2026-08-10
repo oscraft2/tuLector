@@ -45,26 +45,21 @@ export default async function HelpCenterPage({ params, searchParams }: { params:
   }
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] font-sans selection:bg-blue-200">
+    <div className="min-h-screen bg-[#fafafa] font-sans selection:bg-blue-200">
       <PublicHeader currentLocale={validLocale} />
       
-      {/* Hero Section Premium */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-[#071625] via-[#102b42] to-[#071625] py-28 px-6 text-white">
-        <div className="absolute inset-0 bg-[url('/noise.png')] opacity-10 mix-blend-overlay pointer-events-none"></div>
-        <div className="absolute -top-40 -right-40 h-96 w-96 rounded-full bg-blue-500/20 blur-[100px] pointer-events-none"></div>
-        <div className="absolute -bottom-40 -left-40 h-96 w-96 rounded-full bg-teal-500/20 blur-[100px] pointer-events-none"></div>
-        
-        <div className="relative mx-auto max-w-4xl text-center">
-          <h1 className="mb-6 text-5xl font-extrabold tracking-tight md:text-6xl lg:text-7xl">
-            ¿Cómo podemos <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-teal-300">ayudarte?</span>
+      {/* Hero Section */}
+      <section className="bg-[#0a0a0a] py-20 px-6 text-white border-b border-[#e5e7eb]">
+        <div className="mx-auto max-w-4xl text-center">
+          <h1 className="mb-6 text-4xl md:text-5xl font-bold tracking-tight">
+            ¿Cómo podemos ayudarte?
           </h1>
-          <p className="mb-10 text-lg text-blue-100/80 md:text-xl font-medium max-w-2xl mx-auto">
+          <p className="mb-10 text-lg text-gray-300 max-w-2xl mx-auto">
             Explora nuestros artículos, guías paso a paso o contacta con nuestro equipo para sacarle el máximo provecho a TuLector.
           </p>
           
-          <form className="relative mx-auto max-w-3xl group shadow-2xl rounded-2xl" method="GET" action={`/${validLocale}/ayuda`}>
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-teal-400 rounded-2xl blur-md opacity-20 group-hover:opacity-40 transition duration-500"></div>
-            <div className="relative flex items-center bg-white rounded-2xl overflow-hidden border border-white/20 p-2">
+          <form className="relative mx-auto max-w-3xl" method="GET" action={`/${validLocale}/ayuda`}>
+            <div className="relative flex items-center bg-white rounded-lg overflow-hidden border border-[#d1d5db]">
               <svg className="h-6 w-6 text-gray-400 ml-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
@@ -73,9 +68,9 @@ export default async function HelpCenterPage({ params, searchParams }: { params:
                 name="q"
                 defaultValue={q}
                 placeholder="Ej: ¿Cómo escaneo las hojas?"
-                className="w-full bg-transparent px-4 py-4 text-lg text-gray-900 placeholder-gray-500 outline-none"
+                className="w-full bg-white px-4 py-4 text-lg text-[#111827] placeholder-gray-500 outline-none"
               />
-              <button type="submit" className="shrink-0 bg-[#0f2f49] hover:bg-[#071625] text-white px-8 py-4 rounded-xl font-bold transition-all duration-300 shadow-md transform hover:scale-105 active:scale-95">
+              <button type="submit" className="shrink-0 bg-[#2563eb] hover:bg-[#1d4ed8] text-white px-8 py-4 font-bold transition-colors border-l border-[#d1d5db]">
                 Buscar
               </button>
             </div>
@@ -83,36 +78,36 @@ export default async function HelpCenterPage({ params, searchParams }: { params:
         </div>
       </section>
 
-      <main className="mx-auto max-w-7xl px-6 py-20">
+      <main className="mx-auto max-w-7xl px-6 py-16">
         <div className="grid grid-cols-1 items-start gap-12 lg:grid-cols-4">
           
           {/* Navigation Sidebar */}
-          <aside className="sticky top-32 hidden lg:block rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
-            <h2 className="mb-4 text-xs font-bold uppercase tracking-wider text-gray-400">Categorías</h2>
+          <aside className="sticky top-24 hidden lg:block rounded-lg bg-white p-6 shadow-sm border border-[#e5e7eb]">
+            <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-[#4b5563]">Categorías</h2>
             <nav className="flex flex-col space-y-1">
-              <Link href={`/${validLocale}/ayuda`} className={`px-4 py-3 rounded-lg text-sm font-semibold transition-colors ${!searchParams.c && !q ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+              <Link href={`/${validLocale}/ayuda`} className={`px-4 py-2.5 rounded text-sm font-medium transition-colors ${!searchParams.c && !q ? 'bg-[#f3f4f6] text-[#111827] font-semibold' : 'text-[#4b5563] hover:bg-[#f9fafb] hover:text-[#111827]'}`}>
                 Todos los artículos
               </Link>
               {categories?.map(cat => (
-                <Link key={cat.id} href={`/${validLocale}/ayuda?c=${cat.id}`} className={`px-4 py-3 rounded-lg text-sm font-medium transition-colors ${searchParams.c === cat.id ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+                <Link key={cat.id} href={`/${validLocale}/ayuda?c=${cat.id}`} className={`px-4 py-2.5 rounded text-sm font-medium transition-colors ${searchParams.c === cat.id ? 'bg-[#f3f4f6] text-[#111827] font-semibold' : 'text-[#4b5563] hover:bg-[#f9fafb] hover:text-[#111827]'}`}>
                   {cat.name}
                 </Link>
               ))}
               {categories?.length === 0 && (
-                <p className="px-4 py-3 text-sm text-gray-400">Sin categorías creadas.</p>
+                <p className="px-4 py-3 text-sm text-[#9ca3af]">Sin categorías creadas.</p>
               )}
             </nav>
           </aside>
 
           {/* Mobile Categories (Dropdown) */}
           <div className="lg:hidden mb-8">
-             <h2 className="mb-3 text-sm font-bold text-gray-900">Explorar por categoría</h2>
+             <h2 className="mb-3 text-sm font-bold text-[#111827]">Explorar por categoría</h2>
              <div className="flex gap-2 overflow-x-auto pb-2 -mx-6 px-6 snap-x">
-               <Link href={`/${validLocale}/ayuda`} className="snap-start shrink-0 rounded-full border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 shadow-sm">
+               <Link href={`/${validLocale}/ayuda`} className="snap-start shrink-0 rounded border border-[#e5e7eb] bg-white px-5 py-2 text-sm font-semibold text-[#111827] shadow-sm">
                  Todos
                </Link>
                {categories?.map(cat => (
-                 <Link key={cat.id} href={`/${validLocale}/ayuda?c=${cat.id}`} className="snap-start shrink-0 rounded-full border border-gray-200 bg-white px-5 py-2.5 text-sm font-medium text-gray-600 shadow-sm hover:border-gray-300">
+                 <Link key={cat.id} href={`/${validLocale}/ayuda?c=${cat.id}`} className="snap-start shrink-0 rounded border border-[#e5e7eb] bg-white px-5 py-2 text-sm font-medium text-[#4b5563] shadow-sm hover:border-[#d1d5db]">
                    {cat.name}
                  </Link>
                ))}
@@ -121,12 +116,12 @@ export default async function HelpCenterPage({ params, searchParams }: { params:
 
           {/* Results Area */}
           <div className="lg:col-span-3">
-            <div className="mb-8 flex items-end justify-between border-b border-gray-200 pb-4">
-              <h2 className="text-2xl font-bold tracking-tight text-gray-900">
+            <div className="mb-8 flex items-end justify-between border-b border-[#e5e7eb] pb-4">
+              <h2 className="text-2xl font-bold text-[#111827]">
                 {q ? `Resultados para "${q}"` : "Artículos destacados"}
               </h2>
               {searchResults?.length ? (
-                <span className="text-sm font-medium text-gray-500">{searchResults.length} resultados</span>
+                <span className="text-sm font-medium text-[#6b7280]">{searchResults.length} resultados</span>
               ) : null}
             </div>
 
@@ -138,25 +133,25 @@ export default async function HelpCenterPage({ params, searchParams }: { params:
                   <Link 
                     key={art.id} 
                     href={`/${validLocale}/ayuda/${catSlug}/${art.slug}`} 
-                    className="group flex flex-col justify-between rounded-2xl bg-white p-6 shadow-sm border border-gray-200 hover:border-blue-300 hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+                    className="group flex flex-col justify-between rounded-lg bg-white p-6 shadow-sm border border-[#e5e7eb] hover:border-[#93c5fd] transition-colors"
                   >
                     <div>
                       <div className="mb-3 flex items-center gap-2">
-                        <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
+                        <span className="inline-flex items-center rounded bg-[#eff6ff] px-2.5 py-1 text-xs font-medium text-[#1d4ed8]">
                           {cat?.name || "General"}
                         </span>
                       </div>
-                      <h3 className="mb-3 text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors">{art.title}</h3>
+                      <h3 className="mb-2 text-lg font-bold text-[#111827] group-hover:text-[#2563eb] transition-colors">{art.title}</h3>
                       {art.body_md && (
-                        <p className="text-sm leading-relaxed text-gray-600 line-clamp-3">
+                        <p className="text-sm leading-relaxed text-[#4b5563] line-clamp-3">
                           {art.body_md.replace(/#|\*|_/g, "")}
                         </p>
                       )}
                     </div>
-                    <div className="mt-6 flex items-center font-semibold text-blue-600 text-sm">
+                    <div className="mt-5 flex items-center font-semibold text-[#2563eb] text-sm">
                       Leer artículo 
-                      <svg className="ml-1 h-4 w-4 transform transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                      <svg className="ml-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
                     </div>
                   </Link>
@@ -165,33 +160,33 @@ export default async function HelpCenterPage({ params, searchParams }: { params:
             </div>
 
             {searchResults?.length === 0 && (
-              <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-gray-300 bg-gray-50 py-24 px-6 text-center">
-                <div className="mb-4 rounded-full bg-gray-200 p-4">
-                  <svg className="h-8 w-8 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-[#d1d5db] bg-white py-20 px-6 text-center">
+                <div className="mb-4 rounded bg-[#f3f4f6] p-4">
+                  <svg className="h-8 w-8 text-[#6b7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                 </div>
-                <h3 className="mb-2 text-xl font-bold text-gray-900">No hay resultados</h3>
-                <p className="max-w-md text-gray-500">
+                <h3 className="mb-2 text-xl font-bold text-[#111827]">No hay resultados</h3>
+                <p className="max-w-md text-[#4b5563]">
                   No pudimos encontrar ningún artículo que coincida con tu búsqueda. Intenta con otras palabras clave o contáctanos directamente.
                 </p>
-                <Link href={`/${validLocale}/support`} className="mt-8 rounded-xl bg-gray-900 px-6 py-3 font-semibold text-white shadow hover:bg-gray-800 transition">
+                <Link href={`/${validLocale}/support`} className="mt-6 rounded bg-[#111827] px-6 py-2.5 font-semibold text-white hover:bg-[#374151] transition-colors">
                   Crear un ticket de soporte
                 </Link>
               </div>
             )}
             
             {!q && searchResults && searchResults.length > 0 && (
-              <div className="mt-16 flex flex-col items-center justify-center rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 p-10 text-center border border-blue-100">
-                <h3 className="mb-3 text-2xl font-bold text-gray-900">¿Aún necesitas ayuda?</h3>
-                <p className="mb-8 max-w-lg text-gray-600">
+              <div className="mt-16 flex flex-col items-center justify-center rounded-lg bg-white p-10 text-center border border-[#e5e7eb] shadow-sm">
+                <h3 className="mb-2 text-2xl font-bold text-[#111827]">¿Aún necesitas ayuda?</h3>
+                <p className="mb-8 max-w-lg text-[#4b5563]">
                   Nuestro equipo de expertos está listo para resolver tus dudas. Accede a soporte prioritario registrando tu consulta.
                 </p>
                 <div className="flex flex-wrap gap-4 justify-center">
-                  <Link href={`/auth?mode=register&next=/dashboard/support/new`} className="rounded-xl bg-blue-600 px-8 py-3.5 font-bold text-white shadow-md hover:bg-blue-700 hover:shadow-lg transition-all transform hover:-translate-y-0.5">
+                  <Link href={`/auth?mode=register&next=/dashboard/support/new`} className="rounded bg-[#2563eb] px-6 py-3 font-bold text-white hover:bg-[#1d4ed8] transition-colors">
                     Crear Cuenta y Consultar
                   </Link>
-                  <Link href={`/${validLocale}/support`} className="rounded-xl bg-white border border-gray-200 px-8 py-3.5 font-bold text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-all">
+                  <Link href={`/${validLocale}/support`} className="rounded bg-white border border-[#d1d5db] px-6 py-3 font-bold text-[#374151] hover:bg-[#f9fafb] transition-colors">
                     Continuar como Invitado
                   </Link>
                 </div>
