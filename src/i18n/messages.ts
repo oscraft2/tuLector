@@ -270,8 +270,7 @@ export const messages: Record<Locale, Messages> = {
           { href: "/precios", label: "Precios" },
         ],
         resources: [
-          { href: "/ayuda", label: "Centro de Ayuda" },
-          { href: "/support", label: "Soporte" },
+          { href: "/ayuda", label: "Soporte y Ayuda" },
           { href: "/security", label: "Seguridad" },
           { href: "/privacy", label: "Privacidad" },
           { href: "/data-request", label: "Solicitud de datos" },
@@ -408,8 +407,7 @@ export const messages: Record<Locale, Messages> = {
           { href: "/precios", label: "Precios" },
         ],
         resources: [
-          { href: "/ayuda", label: "Centro de Ayuda" },
-          { href: "/support", label: "Soporte" },
+          { href: "/ayuda", label: "Soporte y Ayuda" },
           { href: "/security", label: "Seguridad" },
           { href: "/privacy", label: "Privacidad" },
           { href: "/data-request", label: "Solicitud de datos" },
@@ -546,8 +544,7 @@ export const messages: Record<Locale, Messages> = {
           { href: "/precios", label: "Precios" },
         ],
         resources: [
-          { href: "/ayuda", label: "Centro de Ayuda" },
-          { href: "/support", label: "Soporte" },
+          { href: "/ayuda", label: "Soporte y Ayuda" },
           { href: "/security", label: "Seguridad" },
           { href: "/privacy", label: "Privacidad" },
           { href: "/data-request", label: "Solicitud de datos" },
@@ -684,8 +681,7 @@ export const messages: Record<Locale, Messages> = {
           { href: "/precios", label: "Precios" },
         ],
         resources: [
-          { href: "/ayuda", label: "Centro de Ayuda" },
-          { href: "/support", label: "Soporte" },
+          { href: "/ayuda", label: "Soporte y Ayuda" },
           { href: "/security", label: "Seguridad" },
           { href: "/privacy", label: "Privacidad" },
           { href: "/data-request", label: "Solicitud de datos" },
@@ -822,8 +818,7 @@ export const messages: Record<Locale, Messages> = {
           { href: "/precios", label: "Precos" },
         ],
         resources: [
-          { href: "/ayuda", label: "Central de Ajuda" },
-          { href: "/support", label: "Suporte" },
+          { href: "/ayuda", label: "Suporte e Ajuda" },
           { href: "/security", label: "Seguranca" },
           { href: "/privacy", label: "Privacidade" },
           { href: "/data-request", label: "Solicitacao de dados" },
