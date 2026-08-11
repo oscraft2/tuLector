@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { startScanForQuiz } from "@/app/dashboard/actions";
 import { CreateQuizFab } from "@/components/native/CreateQuizFab";
+import { parseSheetMode } from "@/lib/sheet_mode";
 
 type QuizRow = {
   id: string;
@@ -12,7 +13,13 @@ type QuizRow = {
   num_questions: number | null;
   options_per_question: number | null;
   archived_at: string | null;
+  /** 'full' | 'compact' (ver src/lib/sheet_mode.ts). */
+  sheet_mode?: string | null;
 };
+
+/** Un ensayo de bloque compacto se genera en /bloque, no en /sheet. */
+const sheetHref = (quiz: QuizRow) =>
+  parseSheetMode(quiz.sheet_mode) === "compact" ? `/bloque?quiz=${quiz.id}` : `/sheet?quiz=${quiz.id}`;
 
 /**
  * Pantalla nativa de "Escanear": elegir el ensayo (o seguir con el ultimo
@@ -27,14 +34,26 @@ export default async function NativeScanPage() {
   const [{ data: quizzes }, { data: courses }] = await Promise.all([
     supabase
       .from("quizzes")
-      .select("id,title,subject,grade,num_questions,options_per_question,archived_at")
+      .select("id,title,subject,grade,num_questions,options_per_question,archived_at,sheet_mode")
       .eq("school_id", school.id)
       .is("archived_at", null)
       .order("created_at", { ascending: false }),
     supabase.from("courses").select("id,name,grade").is("archived_at", null).order("name"),
   ]);
 
-  const quizList = (quizzes ?? []) as QuizRow[];
+  // BD sin la migracion sheet_mode: se relee sin la columna en vez de dejar la
+  // lista vacia (degradacion silenciosa -- sin columna no hay compactos).
+  let quizRows: unknown = quizzes;
+  if (!quizRows) {
+    const { data } = await supabase
+      .from("quizzes")
+      .select("id,title,subject,grade,num_questions,options_per_question,archived_at")
+      .eq("school_id", school.id)
+      .is("archived_at", null)
+      .order("created_at", { ascending: false });
+    quizRows = data;
+  }
+  const quizList = (quizRows ?? []) as unknown as QuizRow[];
   const activeQuiz = activeQuizId ? quizList.find((q) => q.id === activeQuizId) : null;
   const otherQuizzes = activeQuiz ? quizList.filter((q) => q.id !== activeQuiz.id) : quizList;
 
@@ -58,14 +77,15 @@ export default async function NativeScanPage() {
                 <p className="mt-1 text-sm text-white/70">{activeQuiz.num_questions} preguntas · {activeQuiz.options_per_question ?? 5} opciones</p>
               </button>
             </form>
-            {/* /sheet?quiz=<id> hereda formato, clave y codigo de hoja del ensayo,
-                y es del mismo origen que server.url: se abre DENTRO del APK. */}
+            {/* /sheet?quiz=<id> (o /bloque?quiz=<id> si el ensayo es compacto)
+                hereda formato, clave y codigo del ensayo, y es del mismo origen
+                que server.url: se abre DENTRO del APK. */}
             <Link
-              href={`/sheet?quiz=${activeQuiz.id}`}
+              href={sheetHref(activeQuiz)}
               className="flex items-center gap-2 border-t border-white/15 px-5 py-3 text-sm font-bold text-white/90 active:bg-white/10"
             >
               <SheetIcon />
-              Ver / generar su hoja de respuestas
+              {parseSheetMode(activeQuiz.sheet_mode) === "compact" ? "Ver / generar su bloque compacto" : "Ver / generar su hoja de respuestas"}
             </Link>
           </div>
         ) : null}
@@ -96,7 +116,7 @@ export default async function NativeScanPage() {
                     </button>
                   </form>
                   <Link
-                    href={`/sheet?quiz=${quiz.id}`}
+                    href={sheetHref(quiz)}
                     aria-label={`Ver la hoja de respuestas de ${quiz.title}`}
                     title="Ver / generar su hoja de respuestas"
                     className="flex shrink-0 items-center border-l border-[#e6e8eb] px-4 text-[#07305f] active:bg-[#eef4ff]"

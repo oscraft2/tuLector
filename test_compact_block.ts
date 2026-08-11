@@ -15,6 +15,7 @@ import { detectCompactBlock, warpCompactBlock, readCompactCode, gradeCompactBloc
 import * as C from "./src/tulector/compact_layout";
 import { type SheetCodeData } from "./src/tulector/sheet_code";
 import { drawCompactBlockSheet, pngWithDpi, readPngDpi } from "./src/lib/compact_block_generator";
+import { compactModeIssue } from "./src/lib/sheet_mode";
 
 (globalThis as unknown as { ImageData: typeof CanvasImageData }).ImageData = CanvasImageData;
 
@@ -442,6 +443,50 @@ function barridoDeConfiguraciones(): void {
 }
 
 /**
+ * Fase 2 — regla de producto vs fisica del bloque.
+ *
+ * compactModeIssue() es lo que decide en la UI y en el servidor si un ensayo
+ * puede guardarse como sheet_mode='compact'. Si esa regla y la geometria se
+ * despegan, el sistema deja crear un ensayo cuyo bloque no se puede imprimir
+ * (o prohibe uno que si cabria). Esta guardia las ata: la regla se comprueba
+ * contra compact_layout, y el caso LIMITE se imprime y se lee de verdad.
+ */
+function faseModoDeHoja(): void {
+  console.log("\nFase 2 — regla de sheet_mode (producto) contra la fisica del bloque");
+
+  const max = C.COMPACT_MAX_QUESTIONS;
+  if (max > C.maxQuestionsFor(3)) {
+    fail(`COMPACT_MAX_QUESTIONS=${max} no cabe ni en 3 columnas (max ${C.maxQuestionsFor(3)})`);
+  }
+  if (compactModeIssue(max, 5) !== null) fail(`el limite exacto (${max}q/5op) deberia aceptarse: ${compactModeIssue(max, 5)}`);
+  if (compactModeIssue(max + 1, 5) === null) fail(`${max + 1} preguntas deberian rechazarse`);
+  if (compactModeIssue(20, 6) === null) fail("6 opciones deberian rechazarse (el bloque dibuja hasta 5)");
+  if (compactModeIssue(20, 5, 1) === null) fail("un ensayo con preguntas de desarrollo deberia rechazarse (el bloque no tiene reverso)");
+
+  // El caso limite, impreso y leido de punta a punta sobre una hoja ajena.
+  const cfg: C.CompactConfig = { numQuestions: max, numOptions: 5 };
+  const answers = Array.from({ length: max }, (_, i) => (i * 3) % 5);
+  const esperadas = answers.map((a) => C.OPTION_LABELS[a]);
+  const { page } = pasteBlock(PAGE_W, PAGE_H, placedQuad(300, 900, 0.9), cfg, answers);
+  const det = detectCompactBlock(page);
+  if (!det) fail(`el bloque del limite (${max} preguntas) no se detecto`);
+  const grade = gradeCompactBlock(warpCompactBlock(page, det.corners), cfg);
+  if (!grade.valid) fail(`el bloque del limite no se pudo calificar: ${grade.reason}`);
+  const malas = grade.results.filter((r, i) => r.answer !== esperadas[i]);
+  if (malas.length) fail(`${malas.length} respuesta(s) mal en el bloque del limite`);
+
+  // Formato del payload que /scan/compacto manda a /api/scan/result: una
+  // respuesta por pregunta, numeradas 1..N (el endpoint descarta q<1 o no entero).
+  const payload = grade.results.map((r) => ({ q: r.question, a: r.answer }));
+  if (payload.length !== max) fail(`payload con ${payload.length} respuestas, esperaba ${max}`);
+  if (payload.some((p, i) => p.q !== i + 1)) fail("la numeracion del payload no es 1..N");
+  const { correct, total } = scoreCompact(grade.results, esperadas);
+  if (correct !== total) fail(`score del limite ${correct}/${total}`);
+
+  console.log(`Guardia de sheet_mode passed: limite ${max}q/5op impreso y leido ${correct}/${total}; abiertas y 6 opciones rechazadas`);
+}
+
+/**
  * Fase 1.5 — exportacion para pegar en Word.
  *
  * Dos riesgos distintos que se verifican por separado:
@@ -603,8 +648,9 @@ async function main() {
   await faseDegradacion();
   barridoDeConfiguraciones();
   await faseExportacion();
+  faseModoDeHoja();
 
-  console.log("\nSub-motor compacto (Fases 0, 0.5, 1 y 1.5) OK");
+  console.log("\nSub-motor compacto (Fases 0, 0.5, 1, 1.5 y 2) OK");
 }
 
 main().catch((e) => { console.error(e.message); process.exit(1); });

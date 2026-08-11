@@ -18,11 +18,23 @@ export async function GET() {
 
   let result = await supabase
     .from("quizzes")
-    .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions,open_boxes_per_page")
+    .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions,open_boxes_per_page,sheet_mode")
     .eq("id", quizId)
     .eq("school_id", school.id)
     .is("archived_at", null)
     .single();
+
+  if (result.error && isMissingColumnError(result.error, "sheet_mode")) {
+    // BD sin migrar (sheet_mode): degradacion silenciosa -- sin la columna
+    // ningun ensayo es compacto y el lector de hoja completa sigue igual.
+    result = await supabase
+      .from("quizzes")
+      .select("id,school_id,title,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions,open_boxes_per_page")
+      .eq("id", quizId)
+      .eq("school_id", school.id)
+      .is("archived_at", null)
+      .single();
+  }
 
   if (result.error && isMissingColumnError(result.error, "open_boxes_per_page")) {
     // BD sin migrar (open_boxes_per_page): degradacion SIEMPRE silenciosa --
@@ -82,6 +94,9 @@ export async function GET() {
     option_overrides: (data as { option_overrides?: string | null }).option_overrides ?? null,
     multi_select_questions: (data as { multi_select_questions?: string | null }).multi_select_questions ?? null,
     open_boxes_per_page: (data as { open_boxes_per_page?: number | null }).open_boxes_per_page ?? null,
+    // 'full' | 'compact' -- decide con que motor se lee esta hoja (/scan vs
+    // /scan/compacto). Siempre presente, exista o no la columna todavia.
+    sheet_mode: (data as { sheet_mode?: unknown }).sheet_mode === "compact" ? "compact" : "full",
     country_code: schoolRow?.country_code ?? "CL",
   });
 }

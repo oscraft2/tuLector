@@ -31,6 +31,7 @@ import {
 import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
 import { type StudentCsvRow, guessColumnMapping, rowsFromMapping } from "@/lib/student_import";
 import { suggestColumns, OPEN_BOXES_PER_PAGE } from "@/lib/sheet_generator";
+import { parseSheetMode, compactModeIssue } from "@/lib/sheet_mode";
 import { sendTemplatedEmail } from "@/lib/email";
 import { calculateGrade } from "@/lib/latam";
 import { computeQuizScore } from "@/lib/grading";
@@ -130,6 +131,17 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     // se derivaba del total, que para >100 preguntas cae fuera del sobre
     // seguro y da una config invalida). Ver docs/plan-multipagina-fase1.md.
     const numColumns = suggestColumns(Math.min(numQuestions, QUIZ_MAX_QUESTIONS));
+    // Modo de hoja. El ensayo NACE 'full': el formato lo elige el profesor al
+    // GENERAR la hoja (/sheet ↔ /bloque, que lo persisten via
+    // POST /api/quiz/[id]/sheet-mode), no al crear el ensayo. Se sigue leyendo
+    // del form por si algun cliente lo manda, y se valida aca igual: el limite
+    // fisico del bloque (30 preguntas, 5 opciones, sin reverso) rompe la
+    // DETECCION, no solo la lectura -- ver compact_layout.MAX_ROWS.
+    const sheetMode = parseSheetMode(formData.get("sheet_mode"));
+    if (sheetMode === "compact") {
+      const issue = compactModeIssue(numQuestions, numOptions, openQuestions.length);
+      if (issue) throw new Error(issue);
+    }
     const SHEET_CODE_MAX = 0xfffff; // 1.048.575
     let baseCode = await nextSheetCode(supabase, school.id);
     // Un mismo ensayo puede aplicarse a varios cursos a la vez: se crea 1 fila
@@ -178,6 +190,7 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
         batch_id: batchId,
         evaluation_type: evalType,
         evaluation_variant: evalVariant,
+        sheet_mode: sheetMode,
         ...(exigencia !== null ? { exigencia } : {}),
       };
       for (let retries = 0; ; retries++) {
@@ -188,6 +201,14 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
           // simplemente no se auto-reconoce como hermana al escanear (cae al
           // manual_review de siempre), pero se crea igual.
           insertPayload = withoutBatchId(insertPayload);
+          error = (await supabase.from("quizzes").insert(insertPayload)).error;
+        }
+        if (error && isMissingColumnError(error, "sheet_mode")) {
+          // BD sin migrar: 'full' se degrada en silencio (es el default), pero
+          // 'compact' NO -- sin la columna el lector no tiene como saber que
+          // esta hoja se lee con el sub-motor compacto y leeria mal en silencio.
+          if (sheetMode === "compact") throw new Error("El bloque compacto requiere actualizar la base de datos (migracion 20260811000000_quiz_sheet_mode.sql).");
+          insertPayload = withoutSheetMode(insertPayload);
           error = (await supabase.from("quizzes").insert(insertPayload)).error;
         }
         if (error && isMissingColumnError(error, "course_id")) {
@@ -320,6 +341,14 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
     const exigencia = rawExigencia ? Math.max(0, Math.min(1, Number(rawExigencia) || 0.60)) : null;
     const grade = String(formData.get("grade") ?? "") || null;
     const courseId = grade ? await findOrCreateCourse(supabase, school.id, grade) : existing.course_id ?? null;
+    // El form de edicion NO manda sheet_mode (el formato se elige en el
+    // generador de hojas): se conserva el que ya tenia el ensayo, para que
+    // editar el titulo no le cambie el formato de impresion.
+    const sheetMode = parseSheetMode(formData.get("sheet_mode") ?? existing.sheet_mode);
+    if (sheetMode === "compact") {
+      const issue = compactModeIssue(numQuestions, numOptions, openQuestions.length);
+      if (issue) throw new Error(issue);
+    }
 
     const updatePayload = {
       title,
@@ -337,6 +366,7 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
       course_id: courseId,
       evaluation_type: evalType,
       evaluation_variant: evalVariant,
+      sheet_mode: sheetMode,
       updated_at: new Date().toISOString(),
       ...(exigencia !== null ? { exigencia } : {}),
     };
@@ -348,6 +378,13 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
 
     let effectivePayload: Record<string, unknown> = updatePayload;
     let { error: updateError } = await supabase.from("quizzes").update(effectivePayload).eq("id", id);
+    if (updateError && isMissingColumnError(updateError, "sheet_mode")) {
+      // Igual que en createQuiz: 'full' se degrada en silencio, 'compact' no
+      // (sin la columna el lector no sabria leer esa hoja con el sub-motor).
+      if (sheetMode === "compact") throw new Error("El bloque compacto requiere actualizar la base de datos (migracion 20260811000000_quiz_sheet_mode.sql).");
+      effectivePayload = withoutSheetMode(effectivePayload);
+      updateError = (await supabase.from("quizzes").update(effectivePayload).eq("id", id)).error;
+    }
     if (updateError && isMissingColumnError(updateError, "course_id")) {
       effectivePayload = withoutCourseId(effectivePayload);
       updateError = (await supabase.from("quizzes").update(effectivePayload).eq("id", id)).error;
@@ -457,6 +494,9 @@ export async function duplicateQuiz(_prevState: DashboardActionState, formData: 
       course_id: courseId,
       evaluation_type: data.evaluation_type ?? "custom",
       evaluation_variant: data.evaluation_variant ?? null,
+      // La copia hereda el modo de hoja del original: duplicar un ensayo de
+      // bloque compacto y que salga como hoja completa seria una sorpresa.
+      sheet_mode: parseSheetMode(data.sheet_mode),
       ...(data.exigencia != null ? { exigencia: data.exigencia } : {}),
       duplicated_from: data.id,
     };
@@ -469,8 +509,15 @@ export async function duplicateQuiz(_prevState: DashboardActionState, formData: 
       const payload = { ...basePayload, sheet_code: sheetCode };
       const result = await supabase.from("quizzes").insert(payload);
       error = result.error;
+      let effective: Record<string, unknown> = payload;
+      if (error && isMissingColumnError(error, "sheet_mode")) {
+        // BD sin migrar: el original tampoco puede ser compacto (la columna no
+        // existe), asi que quitarlo es exactamente su valor real.
+        effective = withoutSheetMode(effective);
+        error = (await supabase.from("quizzes").insert(effective)).error;
+      }
       if (error && isMissingColumnError(error, "course_id")) {
-        const retryResult = await supabase.from("quizzes").insert(withoutCourseId(payload));
+        const retryResult = await supabase.from("quizzes").insert(withoutCourseId(effective));
         error = retryResult.error;
       }
       if (!error) break;
@@ -544,6 +591,12 @@ function withoutOpenBoxesPerPage<T extends { open_boxes_per_page?: unknown }>(pa
 function withoutBatchId<T extends { batch_id?: unknown }>(payload: T) {
   const { batch_id: _batchId, ...rest } = payload;
   void _batchId;
+  return rest;
+}
+
+function withoutSheetMode<T extends { sheet_mode?: unknown }>(payload: T) {
+  const { sheet_mode: _sheetMode, ...rest } = payload;
+  void _sheetMode;
   return rest;
 }
 
@@ -1021,7 +1074,13 @@ export async function startScanForQuiz(formData: FormData) {
   const { supabase, school } = await getDashboardContext();
   const quizId = String(formData.get("quiz_id") ?? "");
   if (!quizId) throw new Error("Selecciona un ensayo.");
-  const { data, error } = await supabase.from("quizzes").select("id").eq("id", quizId).eq("school_id", school.id).is("archived_at", null).single();
+  let result = await supabase.from("quizzes").select("id,sheet_mode").eq("id", quizId).eq("school_id", school.id).is("archived_at", null).single();
+  if (result.error && isMissingColumnError(result.error, "sheet_mode")) {
+    // BD sin migrar: no hay ensayos compactos posibles, se abre el lector de
+    // hoja completa de siempre.
+    result = await supabase.from("quizzes").select("id").eq("id", quizId).eq("school_id", school.id).is("archived_at", null).single();
+  }
+  const { data, error } = result;
   if (error || !data) throw new Error("No tienes acceso a ese ensayo.");
   const cookieStore = await cookies();
   cookieStore.set("tulector_active_quiz", quizId, {
@@ -1031,7 +1090,11 @@ export async function startScanForQuiz(formData: FormData) {
     path: "/",
     maxAge: 60 * 60 * 8,
   });
-  redirect("/scan");
+  // Un ensayo de bloque compacto se lee con el sub-motor de compact_block.ts,
+  // que localiza finder patterns dentro de una hoja ajena -- no con el lector
+  // de hoja completa (que busca las 12 anclas de la hoja de TuLector). El
+  // ensayo activo ya quedo en la cookie, asi que ambos lectores parten igual.
+  redirect(parseSheetMode((data as { sheet_mode?: unknown }).sheet_mode) === "compact" ? "/scan/compacto" : "/scan");
 }
 
 export async function switchActiveSchool(formData: FormData) {

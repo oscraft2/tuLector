@@ -8,6 +8,7 @@ import { QuizCreateForm } from "@/components/dashboard/QuizCreateForm";
 import { ActionButton } from "@/components/dashboard/ActionButton";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 import { resolveCountryProfile } from "@/lib/country_profiles";
+import { parseSheetMode } from "@/lib/sheet_mode";
 
 export const dynamic = "force-dynamic";
 
@@ -39,12 +40,21 @@ type QuizRow = {
   options_per_question: number | null;
   answer_key: string | null;
   created_at: string;
+  /** 'full' | 'compact'; ausente en una BD sin la migracion sheet_mode. */
+  sheet_mode?: string | null;
 };
 
 function isKeyIncomplete(quiz: Pick<QuizRow, "answer_key" | "num_questions">) {
   const key = String(quiz.answer_key ?? "");
   return key.includes("-") || key.length < Number(quiz.num_questions ?? 0);
 }
+
+/** Un ensayo de bloque compacto se genera en /bloque, no en /sheet. */
+function isCompactQuiz(quiz: Pick<QuizRow, "sheet_mode">) {
+  return parseSheetMode(quiz.sheet_mode) === "compact";
+}
+const sheetHref = (quiz: QuizRow) => (isCompactQuiz(quiz) ? `/bloque?quiz=${quiz.id}` : `/sheet?quiz=${quiz.id}`);
+const sheetLabel = (quiz: QuizRow) => (isCompactQuiz(quiz) ? "Bloque" : "Hoja");
 
 type CourseRow = { id: string; name: string; grade: string | null };
 
@@ -53,12 +63,20 @@ export default async function QuizzesPage() {
   const t = getDashboardMessages(locale);
 
   const [quizzesResult, { data: courses }] = await Promise.all([
-    supabase.from("quizzes").select("id,title,subject,grade,course_id,num_questions,options_per_question,answer_key,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false }),
+    supabase.from("quizzes").select("id,title,subject,grade,course_id,num_questions,options_per_question,answer_key,created_at,archived_at,sheet_mode").is("archived_at", null).order("created_at", { ascending: false }),
     supabase.from("courses").select("id,name,grade").is("archived_at", null).order("name"),
   ]);
 
   let quizzesData: unknown = quizzesResult.data;
-  if (quizzesResult.error && isMissingColumnError(quizzesResult.error, "course_id")) {
+  let quizzesError = quizzesResult.error;
+  if (quizzesError && isMissingColumnError(quizzesError, "sheet_mode")) {
+    // BD sin migrar: sin la columna no hay ensayos compactos, la lista queda
+    // exactamente como antes (todo 'full' por el default de parseSheetMode).
+    const fallbackResult = await supabase.from("quizzes").select("id,title,subject,grade,course_id,num_questions,options_per_question,answer_key,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false });
+    quizzesData = fallbackResult.data;
+    quizzesError = fallbackResult.error;
+  }
+  if (quizzesError && isMissingColumnError(quizzesError, "course_id")) {
     const fallbackResult = await supabase.from("quizzes").select("id,title,subject,grade,num_questions,options_per_question,answer_key,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false });
     quizzesData = fallbackResult.data;
   }
@@ -124,8 +142,8 @@ export default async function QuizzesPage() {
               <td className="px-5 py-4 text-xs text-[#5b6472]">{formatDate(quiz.created_at, locale)}</td>
               <td className="px-5 py-4">
                 <div className="flex flex-wrap gap-2">
-                  <Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-3 py-1.5 text-xs font-semibold hover:bg-gray-50">
-                    Hoja
+                  <Link href={sheetHref(quiz)} className="rounded-md border border-[#cfd6df] px-3 py-1.5 text-xs font-semibold hover:bg-gray-50">
+                    {sheetLabel(quiz)}
                   </Link>
                   <form action={startScanForQuiz}>
                     <input type="hidden" name="quiz_id" value={quiz.id} />
@@ -168,7 +186,7 @@ export default async function QuizzesPage() {
                 <p><span className="font-semibold text-[#111827]">Creado:</span> {formatDate(quiz.created_at, locale)}</p>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold hover:bg-gray-50">Hoja</Link>
+                <Link href={sheetHref(quiz)} className="rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold hover:bg-gray-50">{sheetLabel(quiz)}</Link>
                 <form action={startScanForQuiz}><input type="hidden" name="quiz_id" value={quiz.id} /><button className="rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold hover:bg-gray-50">Escanear</button></form>
                 <ExportDiaLink quizId={quiz.id} hasPapers={(papersCountByQuiz.get(quiz.id) ?? 0) > 0} mobile />
                 <ActionButton action={duplicateQuiz} fields={{ id: quiz.id }} label="Duplicar" pendingLabel="Duplicando…" className={DUP_CLS_M} />

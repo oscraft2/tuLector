@@ -1,8 +1,8 @@
 # Sub-motor OMR compacto (bloque embebible) — plan de ejecución
 
-## Estado (2026-08-09)
+## Estado (2026-08-11)
 
-**Fases 0, 0.5 y 1 construidas y verdes. La decisión go/no-go de la Fase 0 salió GO.**
+**Todas las fases (0 → 3) construidas y verdes. La decisión go/no-go de la Fase 0 salió GO.**
 
 | Fase | Estado | Resultado |
 |---|---|---|
@@ -11,12 +11,67 @@
 | 0.5 — Degradación | ✅ | 8/8. JPEG q=0.3, desenfoque, ruido ±28, sombra diagonal al 45%, remuestreo 0.6x y combinaciones. Error máximo **1.4 px**. |
 | 1 — Layout + calificación | ✅ | 54/54 configuraciones (preguntas × opciones × columnas) leídas al **100%**. |
 | 1.5 — Exportación PNG/PDF | ✅ | PNG con `pHYs` = **300 DPI** real e idempotente; bloque de **98 × 76 mm**; guía y etiqueta impresas sin generar falsos finders (3 candidatos, 20/20); invariante de zonas verificado. |
-| 2 — `sheet_mode` + modo sin identificación | ⬜ pendiente | |
-| 3 — UI de generación y escaneo | ⬜ pendiente | |
+| 2 — `sheet_mode` + modo sin identificación | ✅ | Migración `20260811000000_quiz_sheet_mode.sql`; regla de producto en `src/lib/sheet_mode.ts` validada igual en cliente y servidor; guardia nueva en `test:compact` (límite 30q/5op impreso y leído 30/30). |
+| 3 — UI de generación y escaneo | ✅ | `/bloque` (generar/descargar) y `/scan/compacto` (leer). `npm run build` exit 0 con ambas rutas. |
 
 `npm run build` pasa (exit 0) con todo lo anterior.
 
 Correr con `npm run test:compact` (suite propia, separada de `test:omr`).
+
+### Qué se construyó en las Fases 2 y 3 (2026-08-11)
+
+**Fase 2 — el modo vive en el ensayo, no en la pantalla.**
+`quizzes.sheet_mode ∈ ('full','compact')` con DEFAULT `'full'`: todo ensayo
+existente se imprime y se lee exactamente igual que antes. El SQL evita
+dollar-quoting a propósito (se pega a mano en el editor de Supabase, donde `$$`
+se corrompe) y termina con `NOTIFY pgrst, 'reload schema'`.
+
+`src/lib/sheet_mode.ts` concentra la **regla de producto** (`compactModeIssue`):
+un ensayo no puede ser compacto con más de 30 preguntas, más de 5 opciones o con
+preguntas de desarrollo (el bloque no tiene reverso donde escribir). La misma
+función corre en el generador (apaga la opción y escribe el motivo), en el
+endpoint que persiste el formato y en `createQuiz`/`updateQuiz`. Los límites
+duros los sigue definiendo `compact_layout.ts`: `sheet_mode.ts` los importa, no
+los repite.
+
+**Dónde se elige el formato (decisión del usuario, 2026-08-11):** en el
+**generador de hojas**, no en el formulario del ensayo. El ensayo nace `'full'`
+y el switch vive arriba de los controles de `/sheet` y `/bloque`
+(`SheetFormatSwitch`), que son dos caras de "generar la hoja". Al **descargar**,
+la pantalla persiste el formato en el ensayo vía
+`POST /api/quiz/[id]/sheet-mode` y lo dice a la vista — descargar es el momento
+en que la elección se vuelve real, y es lo que hace que "Abrir lector" entre al
+lector correcto. Editar un ensayo NO toca su formato (`updateQuiz` conserva el
+valor existente cuando el form no manda `sheet_mode`).
+
+Degradación ante una BD sin migrar, con un criterio deliberado por caso:
+`'full'` se degrada **en silencio** (es el default real), `'compact'` **no** —
+sin la columna el lector no tendría cómo saber que esa hoja se lee con el
+sub-motor, y leería mal sin avisar.
+
+El camino **sin identificación** no hubo que construirlo: `/api/scan/result` ya
+rotulaba `student_name: "Sin RUT"` cuando no llega RUT (hallazgo de la
+corrección 4 de este plan). `/scan/compacto` manda el ID que el profesor tipee,
+o vacío.
+
+**Fase 3 — dos pantallas nuevas, cero cambios en `/scan`.**
+
+- `/bloque` (+ `?quiz=<id>`): vista previa con regla en mm, descarga PNG 300 DPI
+  y PDF, instrucciones de pegado, y el código del ensayo impreso en el bloque.
+  Avisa si el ensayo está guardado como hoja completa.
+- `/scan/compacto`: cámara con latido de detección para el HUD (cuadro reducido
+  cada 600 ms; la lectura real usa el cuadro completo al capturar), captura
+  manual o subida de foto, verificación **suave** del código de bloque, y POST
+  al mismo `/api/scan/result` de siempre.
+
+Se creó una página aparte, como `/scan/reverso`, en vez de meter el sub-motor en
+`/scan` (2.400 líneas, en producción): son dos **localizadores** distintos sobre
+el mismo clasificador de burbuja, y mezclarlos obligaría a tocar el lector que
+hoy funciona.
+
+Enrutado: `startScanForQuiz` manda a `/scan/compacto` cuando el ensayo es
+compacto, y los enlaces "Hoja"/"Generar hoja" pasan a "Bloque"/"Generar bloque"
+en el listado, el detalle y la pantalla de escaneo del APK.
 
 ### Hallazgo de la Fase 1: límite físico de filas
 
@@ -46,8 +101,22 @@ geometría de las marcas) y hay un test que lo comprueba como solape de rectáng
 ### Verificación pendiente que NO es automatizable
 
 El ciclo real **pegar en Word → imprimir → fotografiar** necesita impresora y
-cámara: queda como pasada de aceptación manual del usuario al cerrar la Fase 1.5.
-Lo sintético (escalado, compresión, desenfoque, sombra) ya está cubierto en 0.5.
+cámara: es lo único que queda por validar, y lo tiene que hacer el usuario. Lo
+sintético (escalado, compresión, desenfoque, sombra) ya está cubierto en 0.5.
+
+Pasada de aceptación sugerida, en orden:
+
+1. Aplicar `supabase/migrations/20260811000000_quiz_sheet_mode.sql` en Supabase →
+   SQL Editor (**Vercel no corre migraciones**).
+2. Tomar cualquier ensayo de ≤30 preguntas (no hace falta crearlo de nuevo),
+   entrar a "Generar hoja" → cambiar el *Formato* a **Bloque compacto** y
+   descargar el PNG.
+3. Pegarlo en un Word, **sin tocarle el tamaño**, imprimir al 100% y medir con
+   regla: debe dar 98 mm de ancho. Si no da, el problema es el reescalado de
+   Word, no el motor.
+4. Marcar respuestas a mano, "Abrir lector" desde el ensayo (lleva solo a
+   `/scan/compacto`) y capturar. `/scan/compacto` también acepta subir una foto,
+   que es la vía más rápida para probar desde el escritorio.
 
 ---
 

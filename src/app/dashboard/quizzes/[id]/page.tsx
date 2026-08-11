@@ -11,6 +11,9 @@ import { canonicalRut } from "@/lib/rut";
 import { PrintButton } from "@/components/dashboard/PrintButton";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
 import { parseOpenQuestions } from "@/lib/quiz_constraints";
+import { parseSheetMode, compactModeIssue } from "@/lib/sheet_mode";
+import { isMissingColumnError } from "@/lib/supabase_errors";
+import { buildPaperCourseResolver } from "@/lib/paper_course";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +24,7 @@ type QuizPaper = {
   student_name: string | null;
   student_id: string | null;
   student_rut_norm: string | null;
+  course_id?: string | null;
   score: number | null;
   total: number | null;
   status: string | null;
@@ -33,14 +37,26 @@ type QuizPaper = {
 export default async function QuizDetailPage({ params }: PageProps) {
   const { id } = await params;
   const { supabase, school } = await getDashboardContext();
-  const [{ data: quiz }, { data: papers }, { data: metadata }, { data: students }] = await Promise.all([
+  // `course_id` (20260812000000) puede faltar en una BD sin migrar: se reintenta
+  // sin la columna y el curso se resuelve igual por el alumno (paper_course.ts).
+  const papersQuery = (select: string) =>
+    supabase.from("papers").select(select).eq("quiz_id", id).order("scanned_at", { ascending: false });
+  const PAPER_COLUMNS = "id,student_name,student_id,student_rut_norm,score,total,status,scanned_at,equivalent_score,grade,answers";
+
+  const [{ data: quiz }, papersResult, { data: metadata }, { data: students }] = await Promise.all([
     supabase.from("quizzes").select("*").eq("id", id).single(),
-    supabase.from("papers").select("id,student_name,student_id,student_rut_norm,score,total,status,scanned_at,equivalent_score,grade,answers").eq("quiz_id", id).order("scanned_at", { ascending: false }),
+    papersQuery(`${PAPER_COLUMNS},course_id`),
     supabase.from("question_metadata").select("question_number,axis_name,skill_name,difficulty").eq("quiz_id", id).order("question_number"),
     supabase.from("students").select("id,rut,student_id,rut_normalized").eq("school_id", school.id),
   ]);
   if (!quiz) notFound();
-  const quizPapers = (papers ?? []) as QuizPaper[];
+  const papers = papersResult.error && isMissingColumnError(papersResult.error, "course_id")
+    ? (await papersQuery(PAPER_COLUMNS)).data
+    : papersResult.data;
+  const quizPapers = (papers ?? []) as unknown as QuizPaper[];
+  // Curso REAL del alumno (la hoja no manda: un curso puede rendir con la hoja
+  // de otro -- ver src/lib/paper_course.ts).
+  const courseOf = await buildPaperCourseResolver(supabase, school.id, quizPapers);
   const avg = quizPapers.length ? Math.round(quizPapers.reduce((s, p) => s + ((p.score ?? 0) / Math.max(1, p.total ?? quiz.num_questions)) * 100, 0) / quizPapers.length) : 0;
   // Preguntas de desarrollo: su slot de clave es "-" fijo — no cuentan como
   // "clave incompleta" ni tienen letra en la grilla.
@@ -50,6 +66,11 @@ export default async function QuizDetailPage({ params }: PageProps) {
   const missingClosed = Array.from({ length: Number(quiz.num_questions ?? 0) }, (_, i) => i)
     .filter((i) => !openSet0.has(i) && (keySlots[i] ?? "-") === "-").length;
   const keyIncomplete = missingClosed > 0;
+  // Formato de la hoja (migracion sheet_mode): decide si "Generar" ofrece la
+  // hoja completa o el bloque pegable. `compactIssue` es el mismo criterio que
+  // valida el servidor al guardar el ensayo.
+  const isCompact = parseSheetMode(quiz.sheet_mode) === "compact";
+  const compactIssue = compactModeIssue(Number(quiz.num_questions ?? 0), Number(quiz.options_per_question ?? 5), openQuestions.length);
 
   // Sugerencias de la IA para las preguntas de desarrollo (Fase 3, docs/plan-
   // correccion-ia-abiertas.md) -- consulta aparte porque open_answers no tiene
@@ -153,7 +174,22 @@ export default async function QuizDetailPage({ params }: PageProps) {
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Link href={`/dashboard/quizzes/${quiz.id}/edit`} className="rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold hover:bg-gray-50">Editar</Link>
-              <Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold">Generar hoja</Link>
+              {/* Un ensayo de bloque compacto se imprime desde /bloque (imagen
+                  pegable), no desde /sheet (hoja completa). Se ofrece el otro
+                  formato igual, en gris: el profesor puede querer verlo. */}
+              {isCompact ? (
+                <>
+                  <Link href={`/bloque?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold">Generar bloque</Link>
+                  <Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#e1e5ea] px-4 py-2 text-center text-sm font-semibold text-[#6b7280] hover:bg-gray-50">Hoja completa</Link>
+                </>
+              ) : (
+                <>
+                  <Link href={`/sheet?quiz=${quiz.id}`} className="rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold">Generar hoja</Link>
+                  {!compactIssue && (
+                    <Link href={`/bloque?quiz=${quiz.id}`} className="rounded-md border border-[#e1e5ea] px-4 py-2 text-center text-sm font-semibold text-[#6b7280] hover:bg-gray-50">Bloque compacto</Link>
+                  )}
+                </>
+              )}
               <form action={startScanForQuiz}><input type="hidden" name="quiz_id" value={quiz.id} /><button className="w-full rounded-md bg-[#07305f] px-4 py-2 text-sm font-semibold text-white sm:w-auto">Abrir lector</button></form>
               <PrintButton label="Imprimir" className="rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold text-[#111827] hover:bg-gray-50" />
             </div>
@@ -168,7 +204,7 @@ export default async function QuizDetailPage({ params }: PageProps) {
             <h2 className="whitespace-nowrap text-[12.5px] font-semibold uppercase tracking-[0.1em] text-[#6b7280]">Estadística global</h2>
             <span className="h-px flex-1 bg-[#e6e8eb]" />
           </div>
-          <QuizStats quiz={quiz} papers={papers ?? []} metadata={metadata ?? []} />
+          <QuizStats quiz={quiz} papers={quizPapers} metadata={metadata ?? []} />
         </section>
 
         {openQuestions.length > 0 && (
@@ -260,17 +296,19 @@ export default async function QuizDetailPage({ params }: PageProps) {
           </div>
         </section>
         <DataTable
-          columns={["Alumno", "Respuestas Correctas", "Resultado Equivalente", "Estado", "Fecha"]}
+          columns={["Alumno", "Curso", "Respuestas Correctas", "Resultado Equivalente", "Estado", "Fecha"]}
           rows={quizPapers}
           empty="Aun no hay lecturas sincronizadas para este ensayo."
           renderRow={(paper) => {
             const studentLabel = paper.student_name ?? paper.student_id ?? "Sin identificar";
             const studentHref = studentHrefForPaper(paper);
+            const course = courseOf(paper);
             return (
               <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0">
                 <td className="px-5 py-4 font-semibold">
                   {studentHref ? <Link href={studentHref} className="text-[#07305f] hover:underline">{studentLabel}</Link> : studentLabel}
                 </td>
+                <td className="px-5 py-4 text-[#5b6472]">{course?.name ?? "-"}</td>
                 <td className="px-5 py-4">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</td>
                 <td className="px-5 py-4 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
                 <td className="px-5 py-4"><StatusPill>{paper.status ?? "active"}</StatusPill></td>
@@ -292,6 +330,7 @@ export default async function QuizDetailPage({ params }: PageProps) {
                   <StatusPill>{paper.status ?? "active"}</StatusPill>
                 </div>
                 <div className="mt-3 grid gap-1 text-sm text-[#5b6472]">
+                  <p>Curso: <span className="font-semibold text-[#111827]">{courseOf(paper)?.name ?? "-"}</span></p>
                   <p>Correctas: <span className="font-semibold text-[#111827]">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</span></p>
                   <p>Resultado: <span className="font-semibold text-[#07305f]">{getScoreDisplay(paper)}</span></p>
                   <p className="text-xs">Fecha: {new Date(paper.scanned_at).toLocaleString("es-CL")}</p>

@@ -11,11 +11,24 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   let result = await supabase
     .from("quizzes")
-    .select("id,title,subject,grade,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions,open_boxes_per_page,course_id")
+    .select("id,title,subject,grade,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions,open_boxes_per_page,course_id,sheet_mode")
     .eq("id", id)
     .eq("school_id", school.id)
     .is("archived_at", null)
     .single();
+
+  if (result.error && isMissingColumnError(result.error, "sheet_mode")) {
+    // BD sin migrar (sheet_mode): degradacion silenciosa -- sin la columna
+    // ningun ensayo puede ser compacto, asi que /sheet y /bloque leen el
+    // default 'full' igual que hoy.
+    result = await supabase
+      .from("quizzes")
+      .select("id,title,subject,grade,answer_key,num_questions,options_per_question,option_labels,num_columns,sheet_code,open_questions,option_overrides,multi_select_questions,open_boxes_per_page,course_id")
+      .eq("id", id)
+      .eq("school_id", school.id)
+      .is("archived_at", null)
+      .single();
+  }
 
   if (result.error && isMissingColumnError(result.error, "open_boxes_per_page")) {
     // BD sin migrar (open_boxes_per_page): degradacion SIEMPRE silenciosa --
@@ -54,5 +67,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (error || !data) return NextResponse.json({ error: "Ensayo no disponible" }, { status: 404 });
   // country_code del colegio: /sheet lo usa para imprimir el bloque de ID
   // nacional correcto (RUT/DNI/CPF/... — Fase 0/1, plan-multipais-motor.md).
-  return NextResponse.json({ ...data, country_code: school.country_code ?? "CL" });
+  return NextResponse.json({
+    ...data,
+    // Siempre presente para el cliente, exista o no la columna todavia.
+    sheet_mode: (data as { sheet_mode?: unknown }).sheet_mode === "compact" ? "compact" : "full",
+    country_code: school.country_code ?? "CL",
+  });
 }

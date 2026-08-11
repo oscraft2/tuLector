@@ -15,6 +15,8 @@ import { countryProfiles, resolveCountryProfile } from "@/lib/country_profiles";
 import { resolveIdBlock } from "@/lib/country_id_blocks";
 import { SHEET_CODE_VERSION, SHEET_COUNTRY_CODES, type SheetCodeData } from "@/lib/sheet_code";
 import { isNativeApp, shareNativeImage } from "@/lib/native/capacitor";
+import { SheetFormatSwitch } from "@/components/SheetFormatSwitch";
+import { parseSheetMode, compactModeIssue, type SheetMode } from "@/lib/sheet_mode";
 
 const DEFAULT_TEST_RUT = "12345678-5";
 const LABELS = "ABCDE";
@@ -86,7 +88,10 @@ export default function SheetPage() {
   const [markUpTo, setMarkUpTo] = useState(10);
 
   // Ensayo heredado via /sheet?quiz=<id>: la hoja toma su formato + clave + codigo.
-  const [quizInfo, setQuizInfo] = useState<{ id: string; title: string; sheetCode: number | null; answerKey: string; openBoxesPerPage: number | null; courseId: string | null } | null>(null);
+  const [quizInfo, setQuizInfo] = useState<{ id: string; title: string; sheetCode: number | null; answerKey: string; openBoxesPerPage: number | null; courseId: string | null; sheetMode: SheetMode } | null>(null);
+  // Aviso cuando descargar la hoja cambia el formato guardado del ensayo (y por
+  // lo tanto a que lector manda "Abrir lector").
+  const [formatNote, setFormatNote] = useState("");
   // Roster real auto-cargado del curso del ensayo (si tiene curso asociado):
   // cuantos alumnos trajo el fetch, para mostrar "N alumnos detectados" en vez
   // del textarea vacio (ver useEffect de carga del ensayo, mas abajo).
@@ -261,6 +266,7 @@ export default function SheetPage() {
           // vigente actual (ver effectiveOpenBoxesPerPage mas abajo).
           openBoxesPerPage: typeof q.open_boxes_per_page === "number" ? q.open_boxes_per_page : null,
           courseId,
+          sheetMode: parseSheetMode(q.sheet_mode),
         });
         setOpenQuestions(parseOpenQuestions(q.open_questions ?? "", nq));
         setOptionOverrides(parseOptionOverrides(q.option_overrides ?? "", nq));
@@ -377,14 +383,14 @@ export default function SheetPage() {
   // ya soporta multi-pagina, se reusa sin cambios). 1 pagina -> comportamiento
   // identico al de siempre. Con preguntas de desarrollo, intercala la(s)
   // pagina(s) de reverso DESPUES de cada frente (calza con impresion duplex).
-  const pdfOne = () => exportPdf(
+  const pdfOne = () => (void rememberFullFormat(), exportPdf(
     pages.flatMap((p) => [
       renderPageToDataUrl(p, "jpeg"),
       ...openChunksForPage(p).map((qs, i, arr) =>
         renderOpenPageToDataUrl(qs, p.page, i + 1, arr.length > 1 || isMultipage ? `Reverso ${i + 1} de ${arr.length}${isMultipage ? ` — Hoja ${p.page}` : ""}` : undefined, "jpeg")),
     ]),
     fillRut ? `hoja_tulector_${rut}.pdf` : "hoja_tulector.pdf",
-  );
+  ));
 
   /** N hojas REALES del curso: 1 por alumno del roster (parsedRuts, real o
    *  pegado a mano), RUT ya marcado, respuestas SIEMPRE en blanco -- a
@@ -397,6 +403,7 @@ export default function SheetPage() {
       alert(`Pega o carga al menos un ${countryProfile.studentIdLabel} válido del curso.`);
       return;
     }
+    void rememberFullFormat();
     setBusy(true);
     setProgress({ done: 0, total: parsedRoster.length });
     await new Promise((r) => setTimeout(r, 30)); // deja pintar el "Generando…"
@@ -418,11 +425,40 @@ export default function SheetPage() {
     setProgress(null);
   };
 
+  /**
+   * Deja anotado en el ensayo que se va a imprimir en HOJA COMPLETA.
+   *
+   * El lector de hoja completa y el del bloque compacto son motores distintos,
+   * y "Abrir lector" tiene que llevar al que corresponde. Como el formato se
+   * elige aca (imprimiendo) y no al crear el ensayo, descargar es el momento
+   * en que esa eleccion se vuelve real: si este ensayo estaba marcado como
+   * compacto y ahora se imprime la hoja completa, se corrige, con aviso a la
+   * vista (nunca callado -- cambia a que lector se entra despues).
+   */
+  const rememberFullFormat = async () => {
+    if (!quizInfo || quizInfo.sheetMode === "full") return;
+    try {
+      const res = await fetch(`/api/quiz/${quizInfo.id}/sheet-mode`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "full" }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      setQuizInfo((prev) => (prev ? { ...prev, sheetMode: "full" } : prev));
+      setFormatNote(payload?.stored === false
+        ? "Este ensayo estaba marcado como bloque compacto y no se pudo cambiar (falta aplicar la migración sheet_mode)."
+        : "Este ensayo quedó configurado como hoja completa: “Abrir lector” usará el lector de hoja.");
+    } catch { /* sin red: la hoja se descarga igual */ }
+  };
+
   const downloadPNG = () => {
     const a = document.createElement("a");
     a.href = renderToDataUrl(marks);
     a.download = fillRut ? `hoja_tulector_${rut}.png` : "hoja_tulector.png";
     a.click();
+    void rememberFullFormat();
   };
 
   /** Comparte un PNG de la hoja via share sheet nativo (Android/iOS). */
@@ -580,6 +616,19 @@ export default function SheetPage() {
         {/* Controles */}
         <div className="space-y-5 text-sm">
           {/* Config del lector */}
+          {/* Formato: hoja completa (esta pantalla) o bloque compacto (/bloque).
+              Va ARRIBA de todo porque es lo primero que hay que decidir: el
+              resto de los controles solo tienen sentido dentro de un formato. */}
+          <section className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+            <h3 className="font-bold text-white">Formato</h3>
+            <SheetFormatSwitch
+              mode="full"
+              quizId={quizInfo?.id ?? null}
+              compactDisabledReason={compactModeIssue(numQuestions, numOptions, openQuestions.length)}
+            />
+            {formatNote && <p className="text-[11px] text-emerald-300">{formatNote}</p>}
+          </section>
+
           <section className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
             <h3 className="font-bold text-white">Configuración</h3>
             {quizInfo && (
