@@ -22,31 +22,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep link de vuelta del OAuth (Supabase → https://tulector.vercel.app/auth/callback/app).
+            <!-- Deep link de vuelta del OAuth (Supabase → https://tulector.vercel.app/auth/callback).
                  Android App Link verificado (autoVerify) en vez de un scheme custom:
                  un scheme custom (cl.tulector.app://) no es exclusivo — cualquier otra
                  app puede declarar el mismo scheme e interceptar el ?code= de OAuth.
                  Con autoVerify + assetlinks.json (public/.well-known/), el sistema
                  SOLO entrega el link a esta app si el dominio prueba ser dueño del
-                 paquete (firma con nuestro keystore). Ver SECURITY_PROMPT_APK.md Tarea A.
-
-                 La ruta es /auth/callback/APP, exclusiva de la app, y NO /auth/callback.
-                 Mientras apuntaba a /auth/callback (que es tambien la ruta del flujo
-                 web), Android le quitaba a Chrome su propio callback y se lo entregaba
-                 a esta app: quien iniciaba sesion en Chrome en un telefono con el APK
-                 instalado terminaba con "PKCE code verifier not found in storage",
-                 porque el code_verifier se habia quedado en Chrome.
-                 Ver docs/plan-apk-applink-fase2.md.
-
-                 OJO al orden de despliegue: el APK carga la web REMOTA (server.url),
-                 asi que la web debe estar desplegada ANTES de instalar este APK — es
-                 la que decide, por el token de version del User-Agent, a que ruta
-                 mandar el callback. -->
+                 paquete (firma con nuestro keystore). Ver SECURITY_PROMPT_APK.md Tarea A. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="tulector.vercel.app" android:pathPrefix="/auth/callback/app" />
+                <data android:scheme="https" android:host="tulector.vercel.app" android:pathPrefix="/auth/callback" />
             </intent-filter>
         </activity>
 

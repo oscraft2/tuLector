@@ -9,7 +9,7 @@ import { adjacencyGraphs, dictionary } from "@zxcvbn-ts/language-common";
 import { createClient } from "@/lib/supabase";
 import { safeNextPath } from "@/lib/safe_next";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
-import { isNativeApp, nativePlatform, openExternalUrl, googleNativeSignIn, appleNativeSignIn, biometricAvailable, plugin, oauthDeepLink } from "@/lib/native/capacitor";
+import { isNativeApp, nativePlatform, openExternalUrl, googleNativeSignIn, appleNativeSignIn, biometricAvailable, plugin, OAUTH_DEEP_LINK } from "@/lib/native/capacitor";
 import { isBiometricLoginEnabled } from "@/lib/native/biometric_pref";
 import { BiometricGate } from "@/components/native/BiometricGate";
 import { BiometricToggle } from "@/components/native/BiometricToggle";
@@ -306,7 +306,7 @@ function AuthForm() {
             // que usa Apple en Android) y canjea el code en el WebView. El
             // marcador ?from=app distingue este caso en auth/callback/route.ts
             // (pagina puente si el App Link no logra abrir la app).
-              emailRedirectTo: isNativeApp() ? `${oauthDeepLink()}?from=app` : authCallbackUrl(postAuthPath ?? undefined),
+              emailRedirectTo: isNativeApp() ? `${OAUTH_DEEP_LINK}?from=app` : authCallbackUrl(postAuthPath ?? undefined),
           },
         });
         if (error) throw error;
@@ -384,7 +384,7 @@ function AuthForm() {
         const { data, error } = await client.auth.signInWithOAuth({
           provider,
           options: {
-            redirectTo: oauthDeepLink(),
+            redirectTo: OAUTH_DEEP_LINK,
             skipBrowserRedirect: true,
           },
         });

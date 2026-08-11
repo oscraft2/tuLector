@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { AuthError } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase";
 import { TuLectorLogo } from "@/components/TuLectorLogo";
-import { isNativeApp, oauthDeepLink } from "@/lib/native/capacitor";
+import { isNativeApp, OAUTH_DEEP_LINK } from "@/lib/native/capacitor";
 import { getSiteUrl } from "@/lib/site_url";
 import { translateAuthError } from "@/lib/auth_error_messages";
 
@@ -23,7 +23,7 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     try {
       const redirectTo = isNativeApp()
-        ? `${oauthDeepLink()}?from=app&next=/auth/reset-password`
+        ? `${OAUTH_DEEP_LINK}?from=app&next=/auth/reset-password`
         : (() => {
             const url = new URL("/auth/callback", getSiteUrl(window.location.origin));
             url.searchParams.set("next", "/auth/reset-password");

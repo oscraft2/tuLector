@@ -24,12 +24,6 @@ export default function AppBridgePage() {
   );
 }
 
-/** intent:// que abre el APK en la ruta indicada, saltandose la verificacion. */
-function buildIntent(path: string, code: string): string {
-  const target = `tulector.vercel.app${path}?code=${encodeURIComponent(code)}&from=app`;
-  return `intent://${target}#Intent;scheme=https;package=cl.tulector.app;end`;
-}
-
 function AppBridgeContent() {
   const searchParams = useSearchParams();
   const code = searchParams.get("code") ?? "";
@@ -38,14 +32,10 @@ function AppBridgeContent() {
   // dispositivo (a diferencia de un link https:// normal, que si no hay
   // verificacion simplemente se queda en Chrome). cl.tulector.app es el
   // applicationId real (android/app/build.gradle).
-  //
-  // Hay DOS enlaces porque esta pagina corre en Chrome y no puede saber que
-  // version del APK hay instalada: un intent:// solo abre la app si la ruta
-  // calza con su manifiesto. El v2 declara /auth/callback/app; el v1, la ruta
-  // antigua. El boton principal apunta al v2 (lo que tendra casi todo el
-  // mundo) y debajo queda el de respaldo para quien no haya actualizado.
-  const intentUrl = useMemo(() => buildIntent("/auth/callback/app", code), [code]);
-  const legacyIntentUrl = useMemo(() => buildIntent("/auth/callback", code), [code]);
+  const intentUrl = useMemo(() => {
+    const target = `tulector.vercel.app/auth/callback?code=${encodeURIComponent(code)}&from=app`;
+    return `intent://${target}#Intent;scheme=https;package=cl.tulector.app;end`;
+  }, [code]);
 
   const isAndroid = typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
 
@@ -59,17 +49,12 @@ function AppBridgeContent() {
         </p>
 
         {isAndroid && code && (
-          <>
-            <a
-              href={intentUrl}
-              className="mt-5 block rounded-md bg-[#07305f] px-4 py-3 text-sm font-semibold text-white"
-            >
-              Abrir tuLector
-            </a>
-            <a href={legacyIntentUrl} className="mt-2 block text-xs font-semibold text-[#07305f] underline">
-              ¿No se abrió? Prueba aquí (versión antigua de la app)
-            </a>
-          </>
+          <a
+            href={intentUrl}
+            className="mt-5 block rounded-md bg-[#07305f] px-4 py-3 text-sm font-semibold text-white"
+          >
+            Abrir tuLector
+          </a>
         )}
 
         <p className="mt-4 text-xs text-[#5b6472]">

@@ -190,49 +190,15 @@ export async function biometricVerify(reason: string): Promise<boolean> {
 // push_server.ts quedan intactos (no-op sin FCM_SERVER_KEY).
 
 /**
- * Deep link con el que Supabase vuelve al APK tras el OAuth externo.
- *
- * Es un Android App Link HTTPS verificado (autoVerify en el manifest +
- * public/.well-known/assetlinks.json), NO un scheme custom — un scheme custom
- * no es exclusivo de esta app, cualquier otra podria registrar el mismo e
- * interceptar el ?code=.
+ * Deep link con el que Supabase vuelve al APK tras el OAuth externo (Apple en
+ * Android). Android App Link HTTPS verificado (autoVerify en el manifest +
+ * public/.well-known/assetlinks.json), NO un scheme custom — un scheme
+ * custom no es exclusivo de esta app, cualquier otra puede registrar el mismo
+ * e interceptar el ?code=. Reusa /auth/callback (la misma ruta que ya usa el
+ * flujo web) como fallback: si la verificacion del App Link aun no propago,
+ * el SO abre esto en un navegador normal y esa ruta ya sabe manejarlo.
  */
-const SITE_ORIGIN = "https://tulector.vercel.app";
-
-/**
- * Version del contenedor nativo, leida del token que Capacitor agrega al
- * User-Agent (`appendUserAgent`). Los APK v1 mandan "TuLectorApp" a secas; del
- * v2 en adelante, "TuLectorApp/N".
- *
- * Hace falta porque el APK carga la web REMOTA (server.url), asi que un APK ya
- * instalado siempre ejecuta el JS mas nuevo. Sin esta version, cualquier cambio
- * de ruta de callback aqui rompeira el login de todos los APK ya instalados,
- * cuyo manifiesto solo declara la ruta antigua.
- */
-export function nativeAppVersion(): number {
-  if (typeof navigator === "undefined") return 0;
-  const match = /TuLectorApp\/(\d+)/i.exec(navigator.userAgent);
-  if (match) return Number(match[1]);
-  return /TuLectorApp/i.test(navigator.userAgent) ? 1 : 0;
-}
-
-/**
- * Ruta de vuelta del OAuth, segun lo que sepa manejar el APK instalado.
- *
- * v2+ usa `/auth/callback/app`, una ruta EXCLUSIVA de la app. El v1 usaba
- * `/auth/callback`, la misma del flujo web, y por eso el App Link verificado
- * le quitaba a Chrome su propio callback: quien iniciaba sesion en Chrome en un
- * telefono con la app instalada terminaba con "PKCE code verifier not found in
- * storage", porque el code_verifier se habia quedado en Chrome.
- *
- * En web (version 0) se devuelve la ruta clasica, que es la que usa el flujo
- * del navegador.
- */
-export function oauthDeepLink(): string {
-  return nativeAppVersion() >= 2
-    ? `${SITE_ORIGIN}/auth/callback/app`
-    : `${SITE_ORIGIN}/auth/callback`;
-}
+export const OAUTH_DEEP_LINK = "https://tulector.vercel.app/auth/callback";
 
 /** Web Client ID de Google (mismo que usa el proveedor Google en Supabase Auth). */
 const GOOGLE_WEB_CLIENT_ID = "390355977468-k6fr90qikaor197g7rslrmo36ei1bur3.apps.googleusercontent.com";
