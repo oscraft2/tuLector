@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { SignOutButton } from "@/components/native/SignOutButton";
-import { NativeAwareLink } from "@/components/native/NativeAwareLink";
+import { BillingHandoffLink } from "@/components/native/BillingHandoffLink";
 import { APP_VERSION } from "@/lib/version";
 
 /**
@@ -99,9 +99,8 @@ export default async function AppMenuPage() {
             <svg className="ml-auto h-5 w-5 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
           </Link>
 
-          <NativeAwareLink
+          <BillingHandoffLink
             href="/dashboard/billing"
-            external
             className="group flex items-center gap-4 rounded-2xl border border-[#e6e8eb] bg-white p-5 shadow-sm transition-all active:scale-[0.98]"
           >
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#e6e8eb] text-[#111827]">
@@ -114,7 +113,7 @@ export default async function AppMenuPage() {
               <p className="mt-0.5 text-sm text-[#5b6472]">Plan {school.plan}. Toca para comprar o cambiar de plan desde el navegador.</p>
             </div>
             <svg className="ml-auto h-5 w-5 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
-          </NativeAwareLink>
+          </BillingHandoffLink>
         </div>
       </section>
 

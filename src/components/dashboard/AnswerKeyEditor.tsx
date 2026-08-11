@@ -10,6 +10,7 @@ import {
 import { resolveCountryProfile } from "@/lib/country_profiles";
 import { DIA_PRESETS, DIA_CUSTOM_ID, findDiaPreset } from "@/lib/dia_presets";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
+import { AnswerKeyFromSheet } from "@/components/dashboard/AnswerKeyFromSheet";
 import { ChevronIcon } from "@/components/header/icons";
 
 export type EvaluationType = "custom" | "paes" | "simce" | "dia";
@@ -623,6 +624,16 @@ export function AnswerKeyEditor({
             </label>
             {fileError && <p className="mt-1 text-xs font-semibold text-[#b45309]">{fileError}</p>}
           </div>
+
+          {/* Tercera via de carga, junto al pegado manual y al archivo: leer la
+              clave de una hoja TuLector rellenada con las respuestas correctas.
+              Corre entera en el cliente con el mismo motor OMR del escaner. */}
+          <AnswerKeyFromSheet
+            numQuestions={questionCount}
+            numOptions={optionCount}
+            openQuestions={openQuestions}
+            onAccept={(letters) => { setValue(letters); setFileError(null); }}
+          />
         </div>
       </details>
 

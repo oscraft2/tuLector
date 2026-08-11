@@ -49,14 +49,25 @@ export default async function NativeScanPage() {
 
       <section className="space-y-5 px-5 py-6 pb-24">
         {activeQuiz ? (
-          <form action={startScanForQuiz}>
-            <input type="hidden" name="quiz_id" value={activeQuiz.id} />
-            <button className="w-full rounded-2xl bg-[#07305f] p-5 text-left text-white shadow-sm active:scale-[0.98]">
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-white/60">Seguir escaneando</p>
-              <p className="mt-1 text-lg font-black">{activeQuiz.title}</p>
-              <p className="mt-1 text-sm text-white/70">{activeQuiz.num_questions} preguntas · {activeQuiz.options_per_question ?? 5} opciones</p>
-            </button>
-          </form>
+          <div className="overflow-hidden rounded-2xl bg-[#07305f] shadow-sm">
+            <form action={startScanForQuiz}>
+              <input type="hidden" name="quiz_id" value={activeQuiz.id} />
+              <button className="w-full p-5 text-left text-white active:scale-[0.98]">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-white/60">Seguir escaneando</p>
+                <p className="mt-1 text-lg font-black">{activeQuiz.title}</p>
+                <p className="mt-1 text-sm text-white/70">{activeQuiz.num_questions} preguntas · {activeQuiz.options_per_question ?? 5} opciones</p>
+              </button>
+            </form>
+            {/* /sheet?quiz=<id> hereda formato, clave y codigo de hoja del ensayo,
+                y es del mismo origen que server.url: se abre DENTRO del APK. */}
+            <Link
+              href={`/sheet?quiz=${activeQuiz.id}`}
+              className="flex items-center gap-2 border-t border-white/15 px-5 py-3 text-sm font-bold text-white/90 active:bg-white/10"
+            >
+              <SheetIcon />
+              Ver / generar su hoja de respuestas
+            </Link>
+          </div>
         ) : null}
 
         <div>
@@ -69,17 +80,30 @@ export default async function NativeScanPage() {
             </div>
           ) : (
             <div className="divide-y divide-[#e6e8eb] overflow-hidden rounded-2xl border border-[#e6e8eb] bg-white">
+              {/* Dos acciones por ensayo: escanear (el <form>) y ver su hoja
+                  (un <Link>). Van como HERMANOS en un contenedor flex: anidar
+                  un enlace dentro del boton del formulario es HTML invalido. */}
               {otherQuizzes.map((quiz) => (
-                <form key={quiz.id} action={startScanForQuiz}>
-                  <input type="hidden" name="quiz_id" value={quiz.id} />
-                  <button className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-[#f4f6f8]">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold text-[#111827]">{quiz.title}</p>
-                      <p className="mt-0.5 text-xs text-[#5b6472]">{quiz.subject ?? quiz.grade ?? "Ensayo"} · {quiz.num_questions} preguntas</p>
-                    </div>
-                    <svg className="h-5 w-5 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
-                  </button>
-                </form>
+                <div key={quiz.id} className="flex items-stretch">
+                  <form action={startScanForQuiz} className="min-w-0 flex-1">
+                    <input type="hidden" name="quiz_id" value={quiz.id} />
+                    <button className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-[#f4f6f8]">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-bold text-[#111827]">{quiz.title}</p>
+                        <p className="mt-0.5 text-xs text-[#5b6472]">{quiz.subject ?? quiz.grade ?? "Ensayo"} · {quiz.num_questions} preguntas</p>
+                      </div>
+                      <svg className="h-5 w-5 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+                    </button>
+                  </form>
+                  <Link
+                    href={`/sheet?quiz=${quiz.id}`}
+                    aria-label={`Ver la hoja de respuestas de ${quiz.title}`}
+                    title="Ver / generar su hoja de respuestas"
+                    className="flex shrink-0 items-center border-l border-[#e6e8eb] px-4 text-[#07305f] active:bg-[#eef4ff]"
+                  >
+                    <SheetIcon />
+                  </Link>
+                </div>
               ))}
             </div>
           )}
@@ -89,5 +113,15 @@ export default async function NativeScanPage() {
 
       <CreateQuizFab courses={(courses ?? []) as { id: string; name: string; grade: string | null }[]} isAdmin={isAdmin} />
     </main>
+  );
+}
+
+/** Icono de hoja de respuestas (documento con lineas). */
+function SheetIcon() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6M8 13h8M8 17h5" />
+    </svg>
   );
 }

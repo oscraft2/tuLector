@@ -36,6 +36,7 @@ import { calculateGrade } from "@/lib/latam";
 import { computeQuizScore } from "@/lib/grading";
 import type { DashboardSchool } from "@/lib/supabase_server";
 import { isMissingColumnError } from "@/lib/supabase_errors";
+import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 export async function updateLocale(formData: FormData) {
   const { supabase, user } = await getDashboardContext();
@@ -968,6 +969,52 @@ export async function confirmOpenAnswer(formData: FormData) {
     .eq("school_id", school.id);
   if (error) throw new Error(error.message);
   if (quizId) revalidatePath(`/dashboard/quizzes/${quizId}`);
+}
+
+/**
+ * Enlace de un solo uso que abre la sesion del PROPIO usuario en otro navegador,
+ * aterrizando en Mi plan.
+ *
+ * Por que existe: el pago no puede ocurrir dentro del APK (reglas de compra
+ * in-app; ver dashboard/billing/page.tsx), asi que "Mi plan" abre Chrome. Pero
+ * el WebView del APK y Chrome tienen almacenamientos separados: en Chrome no
+ * habia sesion, el profesor tenia que iniciarla de nuevo, y ahi reventaba con
+ * "PKCE code verifier not found in storage" -- porque el App Link verificado
+ * sobre /auth/callback (AndroidManifest) hace que Android le quite ese callback
+ * a Chrome y lo entregue al APK, donde el code_verifier no existe.
+ *
+ * Con este traspaso NO se inicia ningun login en Chrome: el enlace es del tipo
+ * verify-por-token (el mismo mecanismo de un magic link de correo), que por
+ * diseno funciona entre navegadores distintos y no usa PKCE.
+ *
+ * Devuelve null (y el cliente cae a su respaldo) ante cualquier problema, en vez
+ * de dejar al profesor sin camino para pagar.
+ */
+export async function createBillingHandoffLink(): Promise<{ url: string | null }> {
+  try {
+    const { user, isImpersonating } = await getDashboardContext();
+
+    // Nunca durante una suplantacion: convertiria una sesion de soporte en una
+    // sesion REAL de esa persona dentro de otro navegador.
+    if (isImpersonating) return { url: null };
+
+    const email = user.email;
+    if (!email) return { url: null };
+
+    const admin = createSupabaseAdminClient();
+    const { data, error } = await admin.auth.admin.generateLink({
+      type: "magiclink",
+      email,
+      options: { redirectTo: `${getSiteUrl()}/dashboard/billing` },
+    });
+
+    const link = data?.properties?.action_link;
+    if (error || !link) return { url: null };
+    return { url: link };
+  } catch {
+    // Sin SUPABASE_SERVICE_ROLE_KEY, o Supabase caido: respaldo del cliente.
+    return { url: null };
+  }
 }
 
 export async function startScanForQuiz(formData: FormData) {
