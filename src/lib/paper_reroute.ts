@@ -15,8 +15,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DashboardSchool } from "@/lib/supabase_server";
 import { canonicalRut } from "@/lib/rut";
 import { deleteGradeRecord, upsertGradeRecord } from "@/lib/paper_assign";
+import { fetchSiblingQuizzes, type BatchQuiz } from "@/lib/quiz_batch";
 
 type MinimalClient = Pick<SupabaseClient, "from">;
+type SiblingQuiz = BatchQuiz;
 
 export type MisplacedPaper = {
   paperId: string;
@@ -42,23 +44,24 @@ export async function findMisplacedPapers(
 ): Promise<MisplacedPaper[]> {
   const { data: quiz } = await supabase
     .from("quizzes")
-    .select("id,batch_id,course_id")
+    .select("id,batch_id,course_id,answer_key,num_questions")
     .eq("id", quizId)
     .eq("school_id", schoolId)
     .maybeSingle();
-  const batchId = (quiz?.batch_id as string | null) ?? null;
-  if (!batchId) return [];
+  if (!quiz) return [];
 
-  // Hermanos del lote: a donde puede ir cada hoja.
-  const { data: siblingRows } = await supabase
-    .from("quizzes")
-    .select("id,course_id")
-    .eq("school_id", schoolId)
-    .eq("batch_id", batchId)
-    .is("archived_at", null);
-  const siblings = (siblingRows ?? []) as { id: string; course_id: string | null }[];
-  const quizByCourse = new Map(siblings.filter((s) => s.course_id).map((s) => [s.course_id as string, s.id]));
-  if (quizByCourse.size < 2) return [];
+  // Hermanos: por lote si existe y, si no, por contenido identico -- la misma
+  // prueba impresa para varios cursos. Ver fetchSiblingQuizzes.
+  const siblings = await fetchSiblingQuizzes(
+    supabase,
+    schoolId,
+    quiz as SiblingQuiz,
+    "id,batch_id,course_id,answer_key,num_questions",
+  );
+  const quizByCourse = new Map(
+    siblings.filter((s) => s.course_id).map((s) => [s.course_id as string, s.id]),
+  );
+  if (quizByCourse.size === 0) return [];
 
   const { data: paperRows } = await supabase
     .from("papers")

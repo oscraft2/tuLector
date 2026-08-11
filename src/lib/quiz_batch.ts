@@ -13,7 +13,37 @@
  * lote del cual elegir y la hoja se queda donde se escaneo.
  */
 
-export type BatchQuiz = { id: string; batch_id?: string | null; course_id?: string | null };
+export type BatchQuiz = {
+  id: string;
+  batch_id?: string | null;
+  course_id?: string | null;
+  answer_key?: string | null;
+  num_questions?: number | null;
+};
+
+/** Clave suficientemente larga como para que coincidir por casualidad sea irreal. */
+const MIN_KEY_LEN = 10;
+
+/**
+ * ¿Son la MISMA prueba impresa para dos cursos distintos?
+ *
+ * El `batch_id` es la señal directa, pero no siempre está (ensayos creados antes
+ * de esa columna, o cuyo insert cayó a un fallback). Por eso vale también la
+ * señal de contenido: misma clave de respuestas y mismo número de preguntas es,
+ * en la práctica, el mismo instrumento — que es lo que el profesor quiere decir
+ * con "los creé todos juntos". Dos ensayos genuinamente distintos no comparten
+ * una clave de 39 letras, así que un ensayo independiente nunca entra aquí.
+ */
+export function isSameInstrument(a: BatchQuiz, b: BatchQuiz): boolean {
+  if (a.id === b.id) return false;
+  if (a.batch_id && b.batch_id && a.batch_id === b.batch_id) return true;
+  const key = String(a.answer_key ?? "");
+  return (
+    key.length >= MIN_KEY_LEN &&
+    key === String(b.answer_key ?? "") &&
+    Number(a.num_questions ?? 0) === Number(b.num_questions ?? 0)
+  );
+}
 
 export type RerouteDecision<Q extends BatchQuiz> =
   | { kind: "same"; quiz: Q }
@@ -33,16 +63,58 @@ export function resolveQuizForStudent<Q extends BatchQuiz>(
   studentCourseId: string | null | undefined,
   siblings: readonly Q[],
 ): RerouteDecision<Q> {
-  // Sin lote no hay nada que decidir: el ensayo es el que se escaneo.
-  if (!current.batch_id) return { kind: "same", quiz: current };
   // Alumno sin curso (o sin identificar): no hay criterio para mover la hoja.
   if (!studentCourseId) return { kind: "same", quiz: current };
   // Ya esta en el ensayo de su curso.
   if (current.course_id === studentCourseId) return { kind: "same", quiz: current };
 
-  const target = siblings.find(
-    (q) => q.batch_id === current.batch_id && q.course_id === studentCourseId && q.id !== current.id,
-  );
+  const family = siblings.filter((q) => isSameInstrument(current, q));
+  // Sin hermanos no hay lote: el ensayo es independiente y la hoja se queda.
+  if (family.length === 0) return { kind: "same", quiz: current };
+
+  const target = family.find((q) => q.course_id === studentCourseId);
   if (!target) return { kind: "no_sibling", quiz: current };
   return { kind: "rerouted", quiz: target, from: current };
+}
+
+/**
+ * Ensayos hermanos de este, en el mismo colegio: por lote si lo hay, y si no,
+ * por contenido identico. Devuelve `[]` cuando el ensayo es independiente.
+ */
+/** Builder minimo de PostgREST: lo justo que usa esta consulta. El cast queda
+ *  encapsulado aqui para no arrastrar los genericos del cliente de Supabase. */
+type Filter = {
+  eq: (column: string, value: unknown) => Filter;
+  is: (column: string, value: unknown) => PromiseLike<{ data: unknown }>;
+};
+type QuizTable = { select: (columns: string) => Filter };
+
+export async function fetchSiblingQuizzes<Q extends BatchQuiz>(
+  supabase: { from: (table: string) => unknown },
+  schoolId: string,
+  quiz: Q,
+  columns: string,
+): Promise<Q[]> {
+  const table = () => supabase.from("quizzes") as QuizTable;
+  const others = (data: unknown) => ((data ?? []) as Q[]).filter((q) => q.id !== quiz.id);
+
+  if (quiz.batch_id) {
+    const { data } = await table()
+      .select(columns)
+      .eq("school_id", schoolId)
+      .eq("batch_id", quiz.batch_id)
+      .is("archived_at", null);
+    const rows = others(data);
+    if (rows.length > 0) return rows;
+  }
+
+  const key = String(quiz.answer_key ?? "");
+  if (key.length < MIN_KEY_LEN) return [];
+  const { data } = await table()
+    .select(columns)
+    .eq("school_id", schoolId)
+    .eq("answer_key", key)
+    .eq("num_questions", Number(quiz.num_questions ?? 0))
+    .is("archived_at", null);
+  return others(data);
 }

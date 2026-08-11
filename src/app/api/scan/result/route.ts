@@ -6,7 +6,7 @@ import { isMissingColumnError, isMissingTableError } from "@/lib/supabase_errors
 import { sendPushToSchool } from "@/lib/push_server";
 import { QUIZ_MAX_QUESTIONS } from "@/lib/quiz_constraints";
 import { assembleMultipageResult, type PageScanResult } from "@/lib/multipage";
-import { resolveQuizForStudent } from "@/lib/quiz_batch";
+import { resolveQuizForStudent, fetchSiblingQuizzes } from "@/lib/quiz_batch";
 
 type ScanAnswer = {
   q: number;
@@ -302,14 +302,11 @@ async function finalizeGrading(
       // 2C. Antes se quedaba donde apuntaba la HOJA y el 2E terminaba con
       // alumnos de todo el nivel. Ver src/lib/quiz_batch.ts.
       let rerouted = false;
-      if (quiz.batch_id && courseId && quiz.course_id !== courseId) {
-        const { data: siblings } = await supabase
-          .from("quizzes")
-          .select(SIBLING_SELECT)
-          .eq("school_id", school.id)
-          .eq("batch_id", quiz.batch_id)
-          .is("archived_at", null);
-        const decision = resolveQuizForStudent(quiz, courseId, (siblings ?? []) as QuizRow[]);
+      if (courseId && quiz.course_id !== courseId) {
+        // Hermanos por lote o, si el lote no quedó registrado, por contenido
+        // idéntico (misma clave y nº de preguntas) -- ver fetchSiblingQuizzes.
+        const siblings = await fetchSiblingQuizzes(supabase, school.id, quiz, SIBLING_SELECT);
+        const decision = resolveQuizForStudent(quiz, courseId, siblings);
         if (decision.kind === "rerouted") {
           quiz = decision.quiz;
           rerouted = true;
