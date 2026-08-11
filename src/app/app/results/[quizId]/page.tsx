@@ -4,6 +4,7 @@ import { getDashboardContext } from "@/lib/supabase_server";
 import { calculateGrade } from "@/lib/latam";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 import { buildPaperCourseResolver, groupByCourse } from "@/lib/paper_course";
+import { PaperAssignSheet } from "@/components/native/PaperAssignSheet";
 
 type PageProps = { params: Promise<{ quizId: string }> };
 
@@ -128,6 +129,13 @@ export default async function NativeQuizResultsPage({ params }: PageProps) {
                         <p className="mt-1 text-xs text-[#5b6472]">
                           {paper.score ?? "-"}/{paper.total ?? quiz.num_questions} · {scoreDisplay(paper)}
                         </p>
+                        {/* Identificar o corregir el alumno sin salir de la app
+                            (la APK se basta sola: nada de mandar al dashboard web). */}
+                        <PaperAssignSheet
+                          paperId={paper.id}
+                          currentStudentName={paper.student_name ?? paper.student_id ?? null}
+                          assigned={paper.status !== "manual_review"}
+                        />
                       </div>
                     ))}
                   </div>

@@ -18,6 +18,7 @@ import { safeColumns, allowedColumns, LEGACY_OPEN_BOXES_PER_PAGE } from "@/lib/s
 import { resolveIdReadConfig } from "@/lib/country_id_blocks";
 import { QUIZ_MAX_QUESTIONS, parseOpenQuestions, parseOptionOverrides, parseMultiSelectQuestions } from "@/lib/quiz_constraints";
 import { useSensoryFeedback, loadSensoryPrefs, saveSensoryPrefs, type SensoryStoredPrefs } from "@/lib/hooks/useSensoryFeedback";
+import { StudentPicker, type PickedStudent } from "@/components/StudentPicker";
 
 // "hud" = resultado NO bloqueante (caso feliz o error en modo ráfaga), auto-avanza solo.
 // "review" = modal bloqueante clásico (modo ráfaga apagado).
@@ -163,6 +164,14 @@ export default function ScanPage() {
  // curso rindiendo con la hoja de otro). No bloquea nada -- la nota se guarda
  // igual y queda bajo el curso del ALUMNO.
  const [courseNote, setCourseNote] = useState<string | null>(null);
+ // Asignacion manual del alumno cuando el ID no se leyo (paper en manual_review):
+ // se resuelve SIN salir de la camara, ver drawer "Asignar alumno".
+ const [assignPaperId, setAssignPaperId] = useState<string | null>(null);
+ const [showAssign, setShowAssign] = useState(false);
+ const [assignBusy, setAssignBusy] = useState(false);
+ const [assignError, setAssignError] = useState<string | null>(null);
+ const [assignedNote, setAssignedNote] = useState<string | null>(null);
+ const [assignUndoId, setAssignUndoId] = useState<string | null>(null);
  const [stream, setStream] = useState<MediaStream | null>(null);
  const streamRef = useRef<MediaStream | null>(null);
  const [error, setError] = useState("");
@@ -535,12 +544,89 @@ export default function ScanPage() {
    return `/scan/reverso?${params.toString()}`;
   };
 
+  /** Asigna el escaneo pendiente a un alumno. Si el alumno destino ya tenia
+   *  otra hoja de este mismo ensayo, el servidor responde 409 y se pregunta
+   *  antes de sobrescribir (nunca se decide por el profesor). */
+  const assignStudent = async (student: PickedStudent, overwrite = false) => {
+   if (!assignPaperId) return;
+   setAssignBusy(true);
+   setAssignError(null);
+   try {
+    const res = await fetch("/api/scan/assign-student", {
+     method: "POST",
+     credentials: "include",
+     headers: { "Content-Type": "application/json" },
+     body: JSON.stringify({ paperId: assignPaperId, studentId: student.id, overwrite }),
+    });
+    const payload = await res.json().catch(() => ({}));
+
+    if (res.status === 409 && payload?.conflict) {
+     const c = payload.conflict as { score: number | null; total: number | null; scannedAt: string | null };
+     const fecha = c.scannedAt ? new Date(c.scannedAt).toLocaleString("es-CL") : "otra fecha";
+     const ok = window.confirm(
+      `${student.name} ya tiene una hoja corregida de este ensayo (${c.score ?? "-"}/${c.total ?? "-"}, ${fecha}).\n\n` +
+      "Si continúas, esa hoja queda ANULADA y vale la que acabas de escanear.",
+     );
+     if (!ok) { setAssignBusy(false); return; }
+     setAssignBusy(false);
+     await assignStudent(student, true);
+     return;
+    }
+    if (!res.ok) throw new Error(payload?.error || "No se pudo asignar el alumno.");
+
+    setAssignedNote(`Asignado a ${student.name}${student.course ? ` (${student.course})` : ""}`);
+    setAssignUndoId(assignPaperId);
+    setStudentName(student.name);
+    setAssignPaperId(null);
+    setShowAssign(false);
+    setSyncState("saved");
+    setSyncMessage(`Asignado a ${student.name}${student.course ? ` · ${student.course}` : ""}.`);
+    setPendingReviewCount((c) => Math.max(0, c - 1));
+   } catch (err) {
+    setAssignError(err instanceof Error ? err.message : "No se pudo asignar el alumno.");
+   } finally {
+    setAssignBusy(false);
+   }
+  };
+
+  /** Deshace la ultima asignacion manual (el escaneo vuelve a revision). */
+  const undoAssign = async () => {
+   if (!assignUndoId) return;
+   setAssignBusy(true);
+   try {
+    const res = await fetch("/api/scan/assign-student", {
+     method: "POST",
+     credentials: "include",
+     headers: { "Content-Type": "application/json" },
+     body: JSON.stringify({ paperId: assignUndoId, undo: true }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload?.error || "No se pudo deshacer.");
+    setAssignPaperId(assignUndoId);
+    setAssignUndoId(null);
+    setAssignedNote(null);
+    setStudentName(null);
+    setSyncState("review");
+    setSyncMessage("Asignación deshecha — el escaneo volvió a revisión.");
+    setPendingReviewCount((c) => c + 1);
+   } catch (err) {
+    setAssignError(err instanceof Error ? err.message : "No se pudo deshacer.");
+   } finally {
+    setAssignBusy(false);
+   }
+  };
+
   const syncResult = async ({ rut, answers, photo, warp, source, dvOk, code, nameImg }: { rut: string; answers: BubbleResult[]; photo?: string | null; warp?: string | null; source: "camera" | "upload"; dvOk?: boolean; code?: unknown; nameImg?: string | null }) => {
    // El acceso al reverso siempre apunta a la hoja RECIEN guardada: si esta no
    // llega a guardarse (offline, revision manual, error), el boton no debe
-   // quedar apuntando al alumno anterior. Idem el aviso de curso.
+   // quedar apuntando al alumno anterior. Idem el aviso de curso y la
+   // asignacion manual pendiente.
    setLastPaperId(null);
    setCourseNote(null);
+   setAssignPaperId(null);
+   setAssignUndoId(null);
+   setAssignedNote(null);
+   setAssignError(null);
    // Sin red: se encola de una y NO se intenta el POST. Antes esto caia al
    // early-return de abajo cuando el arranque habia sido offline (activeQuizId
    // quedaba null porque la carga del ensayo fallaba) y la lectura se PERDIA.
@@ -629,6 +715,9 @@ export default function ScanPage() {
      setSyncState("review");
      setSyncMessage(`Guardado para revision (${scoreLabel})${multipageNote}. ${payload.studentCode ? "Alumno sin identificar." : "RUT no detectado."}${quotaNote}`);
      setPendingReviewCount((c) => c + 1);
+     // Se puede resolver AHORA, sin salir de la camara: el escaneo ya esta
+     // guardado, solo le falta dueño (ver drawer "Asignar alumno").
+     if (payload.paperId) setAssignPaperId(String(payload.paperId));
     } else {
      setSyncState("saved");
      setSyncMessage(`Sincronizado en dashboard (${scoreLabel})${multipageNote}.${quotaNote}`);
@@ -1688,6 +1777,21 @@ export default function ScanPage() {
        >
         {labeled ? "✓ Lectura confirmada" : "✓ Confirmar lectura (correcta)"}
        </button>
+       {/* Escaneo sin dueño: se resuelve aquí mismo, sin ir al dashboard. */}
+       {assignPaperId && (
+        <button
+         onClick={() => setShowAssign(true)}
+         className="w-full py-3 mb-2 rounded-2xl bg-amber-500/20 text-amber-200 border border-amber-500/40 font-black text-xs uppercase tracking-widest active:scale-95 transition"
+        >
+         Asignar alumno
+        </button>
+       )}
+       {assignedNote && (
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold text-emerald-300">
+         <span className="min-w-0 truncate">✓ {assignedNote}</span>
+         <button onClick={undoAssign} disabled={assignBusy} className="shrink-0 underline">Deshacer</button>
+        </div>
+       )}
        {/* Reverso: acceso MANUAL (el salto automático está tras la preferencia
            autoReverso, apagada por defecto — ver syncResult). */}
        {lastPaperId && scanCfg.openQuestions.length > 0 && (
@@ -1735,6 +1839,14 @@ export default function ScanPage() {
           {hudKind !== "error" && courseNote && (
            <div className="mt-0.5 text-[9px] font-bold text-amber-300">⚠ {courseNote}</div>
           )}
+          {assignedNote && (
+           <div className="mt-0.5 flex items-center gap-2 text-[9px] font-bold text-emerald-300">
+            <span>✓ {assignedNote}</span>
+            <button onClick={undoAssign} disabled={assignBusy} className="pointer-events-auto underline opacity-80">
+             Deshacer
+            </button>
+           </div>
+          )}
           {hudKind !== "error" && syncState === "queued" && (
            <div className="text-[9px] opacity-80 mt-0.5">Sin conexión — {studentName ? "guardado" : "nombre disponible"} al sincronizar</div>
           )}
@@ -1748,6 +1860,14 @@ export default function ScanPage() {
           </div>
           {/* El HUD entero es pointer-events-none (no debe bloquear el re-encuadre):
               este enlace reactiva los eventos solo en su propia caja. */}
+          {assignPaperId && (
+           <button
+            onClick={() => setShowAssign(true)}
+            className="pointer-events-auto rounded-full border border-white/40 bg-white/15 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest"
+           >
+            Asignar alumno
+           </button>
+          )}
           {hudKind !== "error" && lastPaperId && scanCfg.openQuestions.length > 0 && (
            <Link
             href={reversoHref(lastPaperId)}
@@ -1762,6 +1882,36 @@ export default function ScanPage() {
       </div>
      );
     })()}
+
+    {/* ─── Drawer "Asignar alumno": el escaneo quedó sin dueño (RUT no leído o
+        sin alumno que calce). Buscador liviano sobre la cámara — el escaneo YA
+        está guardado, esto solo le pone nombre. ─── */}
+    {showAssign && assignPaperId && (
+     <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end" onClick={() => setShowAssign(false)}>
+      <div
+       className="w-full bg-zinc-900 border-t border-zinc-800 rounded-t-3xl p-5 pb-8 animate-in slide-in-from-bottom duration-200"
+       onClick={(e) => e.stopPropagation()}
+      >
+       <div className="flex justify-between items-center mb-1">
+        <span className="text-sm font-black">Asignar alumno</span>
+        <button onClick={() => setShowAssign(false)} className="text-xs text-zinc-500 font-bold">CERRAR</button>
+       </div>
+       <p className="mb-3 text-[10px] text-zinc-500">
+        La hoja ya quedó guardada con su puntaje. Elige de quién es.
+       </p>
+       {assignError && <p className="mb-2 text-xs font-bold text-red-400">{assignError}</p>}
+       <StudentPicker
+        tone="dark"
+        autoFocus
+        disabled={assignBusy}
+        onPick={(student) => void assignStudent(student)}
+       />
+       <Link href="/dashboard/papers" className="mt-4 block text-center text-[10px] text-zinc-500 underline">
+        ¿No está en la lista? Créalo desde la cola de revisión
+       </Link>
+      </div>
+     </div>
+    )}
 
     {/* ─── Drawer de configuración: sonido / vibración / modo ráfaga ─── */}
     {showSettings && (
