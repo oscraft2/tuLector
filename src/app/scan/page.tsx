@@ -159,6 +159,10 @@ export default function ScanPage() {
  // Ultimo paper guardado con exito: habilita el acceso MANUAL al reverso desde
  // el HUD (ver sensoryPrefs.autoReverso -- el salto automatico esta apagado).
  const [lastPaperId, setLastPaperId] = useState<string | null>(null);
+ // Aviso SUAVE de curso cruzado: el alumno es de otro curso que el ensayo (un
+ // curso rindiendo con la hoja de otro). No bloquea nada -- la nota se guarda
+ // igual y queda bajo el curso del ALUMNO.
+ const [courseNote, setCourseNote] = useState<string | null>(null);
  const [stream, setStream] = useState<MediaStream | null>(null);
  const streamRef = useRef<MediaStream | null>(null);
  const [error, setError] = useState("");
@@ -534,8 +538,9 @@ export default function ScanPage() {
   const syncResult = async ({ rut, answers, photo, warp, source, dvOk, code, nameImg }: { rut: string; answers: BubbleResult[]; photo?: string | null; warp?: string | null; source: "camera" | "upload"; dvOk?: boolean; code?: unknown; nameImg?: string | null }) => {
    // El acceso al reverso siempre apunta a la hoja RECIEN guardada: si esta no
    // llega a guardarse (offline, revision manual, error), el boton no debe
-   // quedar apuntando al alumno anterior.
+   // quedar apuntando al alumno anterior. Idem el aviso de curso.
    setLastPaperId(null);
+   setCourseNote(null);
    // Sin red: se encola de una y NO se intenta el POST. Antes esto caia al
    // early-return de abajo cuando el arranque habia sido offline (activeQuizId
    // quedaba null porque la carga del ensayo fallaba) y la lectura se PERDIA.
@@ -583,6 +588,10 @@ export default function ScanPage() {
     // Se setea ANTES de los early-return de abajo: la ruta devuelve studentName
     // también en manual_review/multipágina, y el HUD lo quiere mostrar igual.
     setStudentName(payload.studentName ?? null);
+    // Curso cruzado: el alumno pertenece a otro curso que el ensayo. Aviso, no
+    // error -- la nota queda guardada y categorizada por el curso del alumno.
+    const cm = payload.courseMismatch as { studentCourse?: string | null; quizCourse?: string | null } | undefined;
+    setCourseNote(cm ? `${cm.studentCourse ?? "otro curso"} · ensayo de ${cm.quizCourse ?? "otro curso"}` : null);
     const scoreLabel = `${payload.score ?? "-"}/${payload.total ?? config.numQuestions}`;
     const quotaNote = payload.quota?.warning ? ` ⚠ ${payload.quota.warning}` : "";
     const multipage = payload.multipage as { complete: boolean; page?: number; pagesTotal?: number; missingPages?: number[]; reason?: string } | undefined;
@@ -1618,6 +1627,7 @@ export default function ScanPage() {
              RUT: {studentId.join("") || "???"}
             </div>
             {studentName && <div className="text-[10px] font-bold text-zinc-300">{studentName}</div>}
+            {courseNote && <div className="text-[10px] font-bold text-amber-400">⚠ {courseNote}</div>}
             <button onClick={() => setShowDebug(!showDebug)} className="text-[9px] text-zinc-600 underline font-bold">
              {showDebug ? "Ocultar Log" : "Ver Log"}
             </button>
@@ -1722,6 +1732,9 @@ export default function ScanPage() {
            {hudKind !== "error" ? `RUT ${studentId.join("") || "???"}${studentName ? ` · ${studentName}` : ""}` : hudMessage}
           </div>
           {hudKind === "warning" && hudMessage && <div className="text-[9px] opacity-80 mt-0.5">{hudMessage}</div>}
+          {hudKind !== "error" && courseNote && (
+           <div className="mt-0.5 text-[9px] font-bold text-amber-300">⚠ {courseNote}</div>
+          )}
           {hudKind !== "error" && syncState === "queued" && (
            <div className="text-[9px] opacity-80 mt-0.5">Sin conexión — {studentName ? "guardado" : "nombre disponible"} al sincronizar</div>
           )}

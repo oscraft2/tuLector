@@ -31,7 +31,18 @@ type StudentMatch = {
   rut: string | null;
   rut_normalized: string | null;
   name: string | null;
+  // Curso del alumno: la hoja NO manda sobre el curso. Un curso puede rendir
+  // con la hoja de otro (la del 2E para todo el nivel) y el resultado igual
+  // tiene que quedar bajo el curso real del alumno.
+  course_id?: string | null;
+  course?: string | null;
 };
+
+/** Columnas del alumno que se leen al emparejar. `course_id,course` existen
+ *  desde 20260704120000_course_id_links.sql; si la BD no las tiene todavia se
+ *  reintenta sin ellas (misma degradacion silenciosa del resto del archivo). */
+const STUDENT_SELECT = "id,student_id,rut,rut_normalized,name,course_id,course";
+const STUDENT_SELECT_LEGACY = "id,student_id,rut,rut_normalized,name";
 
 type DashboardCtx = Awaited<ReturnType<typeof getDashboardContext>>;
 type SupabaseClient = DashboardCtx["supabase"];
@@ -90,38 +101,56 @@ async function findStudentByCode(
   studentRutNorm: string | null,
   candidateCodes: string[],
 ) {
+  /** Un match por columna exacta, con reintento sin las columnas de curso. */
+  const matchBy = async (column: string, value: string) => {
+    const query = (select: string) =>
+      supabase.from("students").select(select).eq("school_id", schoolId).eq(column, value).maybeSingle();
+
+    let result = await query(STUDENT_SELECT);
+    if (result.error && (isMissingColumnError(result.error, "course_id") || isMissingColumnError(result.error, "course"))) {
+      result = await query(STUDENT_SELECT_LEGACY);
+    }
+    if (result.error) throw result.error;
+    return (result.data as StudentMatch | null) ?? null;
+  };
+
   if (studentRutNorm) {
-    const { data, error } = await supabase
-      .from("students")
-      .select("id,student_id,rut,rut_normalized,name")
-      .eq("school_id", schoolId)
-      .eq("rut_normalized", studentRutNorm)
-      .maybeSingle();
-    if (error) throw error;
-    if (data) return data as StudentMatch;
+    const byRutNorm = await matchBy("rut_normalized", studentRutNorm);
+    if (byRutNorm) return byRutNorm;
   }
 
   for (const code of candidateCodes) {
-    const { data: byStudentId, error: studentIdError } = await supabase
-      .from("students")
-      .select("id,student_id,rut,rut_normalized,name")
-      .eq("school_id", schoolId)
-      .eq("student_id", code)
-      .maybeSingle();
-    if (studentIdError) throw studentIdError;
-    if (byStudentId) return byStudentId as StudentMatch;
+    const byStudentId = await matchBy("student_id", code);
+    if (byStudentId) return byStudentId;
 
-    const { data: byRut, error: rutError } = await supabase
-      .from("students")
-      .select("id,student_id,rut,rut_normalized,name")
-      .eq("school_id", schoolId)
-      .eq("rut", code)
-      .maybeSingle();
-    if (rutError) throw rutError;
-    if (byRut) return byRut as StudentMatch;
+    const byRut = await matchBy("rut", code);
+    if (byRut) return byRut;
   }
 
   return null;
+}
+
+/**
+ * Aviso de curso cruzado: el alumno pertenece a un curso distinto del que tiene
+ * asignado el ensayo (un curso rindiendo con la hoja de otro). Devuelve `null`
+ * cuando no hay nada que avisar.
+ *
+ * Va en consultas aparte, y no como una columna mas en la cascada de selects de
+ * `quizzes`: solo corre cuando el alumno emparejado tiene curso propio, y si la
+ * columna no existe se degrada a "sin aviso" en vez de romper el guardado.
+ */
+async function detectCourseMismatch(
+  supabase: SupabaseClient,
+  quizId: string,
+  studentCourseId: string,
+): Promise<{ studentCourse: string | null; quizCourse: string | null } | null> {
+  const { data, error } = await supabase.from("quizzes").select("course_id").eq("id", quizId).maybeSingle();
+  const quizCourseId = error ? null : ((data?.course_id as string | null) ?? null);
+  if (!quizCourseId || quizCourseId === studentCourseId) return null;
+
+  const { data: rows } = await supabase.from("courses").select("id,name").in("id", [quizCourseId, studentCourseId]);
+  const nameById = new Map(((rows ?? []) as { id: string; name: string }[]).map((c) => [c.id, c.name]));
+  return { studentCourse: nameById.get(studentCourseId) ?? null, quizCourse: nameById.get(quizCourseId) ?? null };
 }
 
 async function findExistingPaper(
@@ -156,6 +185,36 @@ async function findExistingPaper(
   }
 
   return null;
+}
+
+/** Columnas de `papers` que llegaron en migraciones posteriores y pueden faltar
+ *  en una BD sin migrar. Se escriben si existen; si no, se van cayendo una a una. */
+const OPTIONAL_PAPER_COLUMNS = ["sheet_code_read", "course_id"] as const;
+
+/**
+ * Inserta (o actualiza) el paper, reintentando SIN las columnas opcionales que
+ * la BD todavia no tenga. Reemplaza los pares de payload "con y sin columna X"
+ * que habia antes: agregar una columna nueva ya no duplica el bloque de escritura.
+ */
+async function writePaper(
+  supabase: SupabaseClient,
+  payload: Record<string, unknown>,
+  target?: { update: string },
+): Promise<string> {
+  const body = { ...payload };
+  // Un reintento por columna opcional, mas el intento inicial.
+  for (let attempt = 0; attempt <= OPTIONAL_PAPER_COLUMNS.length; attempt++) {
+    const result = target
+      ? await supabase.from("papers").update(body).eq("id", target.update).select("id").single()
+      : await supabase.from("papers").insert(body).select("id").single();
+    if (!result.error) return result.data.id as string;
+
+    const missing = OPTIONAL_PAPER_COLUMNS.find((col) => col in body && isMissingColumnError(result.error, col));
+    if (!missing) throw result.error;
+    console.warn(`[scan/result] papers.${missing} no existe todavia (migracion pendiente); se guarda sin esa columna`);
+    delete body[missing];
+  }
+  throw new Error("No se pudo guardar el paper");
 }
 
 /** Suma 1 a scans_used de forma best-effort (no atomico -- mismo criterio
@@ -221,18 +280,32 @@ async function finalizeGrading(
   const { studentCode, studentRutNorm, legacyStudentCode, candidateCodes } = identity;
   let studentName: string | null = null;
   let matchedStudent = false;
+  // Curso del ALUMNO (no el de la hoja): se congela en el paper al escanear, asi
+  // el historico no se reescribe si despues se traslada de curso.
+  let courseId: string | null = null;
+  let courseMismatch: { studentCourse: string | null; quizCourse: string | null } | undefined;
 
   if (studentCode) {
     const student = await findStudentByCode(supabase, school.id, studentRutNorm, candidateCodes);
     if (student) {
       matchedStudent = true;
       studentName = student.name ?? null;
+      courseId = student.course_id ?? null;
+      // Aviso SUAVE de curso cruzado (un curso rindiendo con la hoja de otro,
+      // caso real: la hoja del 2E para todo el nivel). No bloquea ni cambia el
+      // status -- mismo criterio que el aviso de codigo de hoja.
+      if (courseId) {
+        const mismatch = await detectCourseMismatch(supabase, quiz.id, courseId);
+        // `students.course` (texto libre) como respaldo del nombre del curso del
+        // alumno: filas viejas pueden tener el texto y no el curso normalizado.
+        if (mismatch) courseMismatch = { ...mismatch, studentCourse: mismatch.studentCourse ?? student.course ?? null };
+      }
     }
   }
 
   const status = sheetMismatch || !studentCode || !matchedStudent ? "manual_review" : "corrected";
   const scannedAt = new Date().toISOString();
-  const paperPayloadWithoutSheetCode = {
+  const paperPayload: Record<string, unknown> = {
     school_id: school.id,
     quiz_id: quiz.id,
     user_id: user.id,
@@ -250,10 +323,10 @@ async function finalizeGrading(
     equivalent_score: eqScore,
     scanned_at: scannedAt,
     corrected_answers: [],
-  };
-  const paperPayload = {
-    ...paperPayloadWithoutSheetCode,
+    // Columnas de migraciones posteriores: si la BD todavia no las tiene, se
+    // reintenta sin ellas (ver writePaper). Nunca deben tumbar un escaneo.
     sheet_code_read: extras.sheetIdRead,
+    course_id: courseId,
   };
 
   let paperId: string | null = null;
@@ -261,50 +334,13 @@ async function finalizeGrading(
 
   if (studentCode) {
     const existing = await findExistingPaper(supabase, school.id, quiz.id, studentRutNorm, candidateCodes);
-
     if (existing?.id) {
-      let updateResult = await supabase
-        .from("papers")
-        .update(paperPayload)
-        .eq("id", existing.id)
-        .select("id")
-        .single();
-
-      if (updateResult.error && isMissingColumnError(updateResult.error, "sheet_code_read")) {
-        updateResult = await supabase
-          .from("papers")
-          .update(paperPayloadWithoutSheetCode)
-          .eq("id", existing.id)
-          .select("id")
-          .single();
-      }
-
-      const { data: updated, error: updateError } = updateResult;
-      if (updateError) throw updateError;
-      paperId = updated.id;
+      paperId = await writePaper(supabase, paperPayload, { update: existing.id });
       action = "updated";
     }
   }
 
-  if (!paperId) {
-    let insertResult = await supabase
-      .from("papers")
-      .insert(paperPayload)
-      .select("id")
-      .single();
-
-    if (insertResult.error && isMissingColumnError(insertResult.error, "sheet_code_read")) {
-      insertResult = await supabase
-        .from("papers")
-        .insert(paperPayloadWithoutSheetCode)
-        .select("id")
-        .single();
-    }
-
-    const { data: inserted, error: insertError } = insertResult;
-    if (insertError) throw insertError;
-    paperId = inserted.id;
-  }
+  if (!paperId) paperId = await writePaper(supabase, paperPayload);
 
   const studentRecordCode = studentRutNorm ?? legacyStudentCode;
   // Una hoja de otro ensayo queda en revision y no debe convertirse en nota valida.
@@ -327,6 +363,7 @@ async function finalizeGrading(
     studentCode: studentCode || null, studentRutNorm,
     score, total, grade, equivalentScore: eqScore,
     sheetMismatch: sheetMismatch ? { read: extras.sheetIdRead, expected: expectedSheetCode } : undefined,
+    courseMismatch,
   };
 }
 

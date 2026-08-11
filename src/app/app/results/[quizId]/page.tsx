@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { calculateGrade } from "@/lib/latam";
+import { isMissingColumnError } from "@/lib/supabase_errors";
+import { buildPaperCourseResolver, groupByCourse } from "@/lib/paper_course";
 
 type PageProps = { params: Promise<{ quizId: string }> };
 
@@ -9,6 +11,8 @@ type PaperResult = {
   id: string;
   student_name: string | null;
   student_id: string | null;
+  student_rut_norm: string | null;
+  course_id: string | null;
   score: number | null;
   total: number | null;
   status: string | null;
@@ -17,21 +21,37 @@ type PaperResult = {
   grade: string | number | null;
 };
 
+const PAPER_SELECT = "id,student_name,student_id,student_rut_norm,course_id,score,total,status,scanned_at,equivalent_score,grade";
+const PAPER_SELECT_LEGACY = "id,student_name,student_id,student_rut_norm,score,total,status,scanned_at,equivalent_score,grade";
+
 /**
- * Detalle nativo de resultados por ensayo: tarjetas por alumno (no la tabla
- * de escritorio). Misma fuente de datos que /dashboard/results/[quizId].
+ * Detalle nativo de resultados por ensayo: tarjetas por alumno, AGRUPADAS por
+ * el curso del alumno (no por el curso de la hoja) -- un curso puede rendir con
+ * la hoja de otro, ver src/lib/paper_course.ts. Misma fuente de datos que
+ * /dashboard/results/[quizId].
  */
 export default async function NativeQuizResultsPage({ params }: PageProps) {
   const { quizId } = await params;
   const { supabase, school } = await getDashboardContext();
 
-  const [{ data: quiz }, { data: papers }] = await Promise.all([
+  const papersQuery = (select: string) =>
+    supabase.from("papers").select(select).eq("quiz_id", quizId).neq("status", "void").order("scanned_at", { ascending: false });
+
+  const [{ data: quiz }, papersResult] = await Promise.all([
     supabase.from("quizzes").select("id,title,num_questions,evaluation_type,evaluation_variant,exigencia").eq("id", quizId).eq("school_id", school.id).single(),
-    supabase.from("papers").select("id,student_name,student_id,score,total,status,scanned_at,equivalent_score,grade").eq("quiz_id", quizId).neq("status", "void").order("scanned_at", { ascending: false }),
+    papersQuery(PAPER_SELECT),
   ]);
   if (!quiz) notFound();
 
-  const rows = (papers ?? []) as PaperResult[];
+  // BD sin la migracion de papers.course_id: el curso se resuelve igual, por el
+  // alumno (ver buildPaperCourseResolver).
+  const papers = papersResult.error && isMissingColumnError(papersResult.error, "course_id")
+    ? (await papersQuery(PAPER_SELECT_LEGACY)).data
+    : papersResult.data;
+
+  const rows = ((papers ?? []) as unknown as PaperResult[]).map((p) => ({ ...p, course_id: p.course_id ?? null }));
+  const courseOf = await buildPaperCourseResolver(supabase, school.id, rows);
+  const groups = groupByCourse(rows, courseOf);
   const avg = rows.length
     ? Math.round(rows.reduce((sum, p) => sum + ((p.score ?? 0) / Math.max(1, p.total ?? quiz.num_questions)) * 100, 0) / rows.length)
     : 0;
@@ -74,24 +94,46 @@ export default async function NativeQuizResultsPage({ params }: PageProps) {
             Sin resultados todavia para este ensayo.
           </div>
         ) : (
-          <div className="grid gap-3">
-            {rows.map((paper) => (
-              <div key={paper.id} className="rounded-2xl border border-[#e6e8eb] bg-white p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <p className="min-w-0 truncate text-sm font-bold text-[#111827]">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</p>
-                  {paper.status === "manual_review" ? (
-                    <span className="shrink-0 rounded-full bg-[#fdf3ec] px-2 py-0.5 text-[11px] font-bold text-[#9a3412]">Revisar</span>
-                  ) : (
-                    <span className="shrink-0 rounded-full bg-[#eef4ff] px-2 py-0.5 text-[11px] font-bold text-[#07305f]">
-                      {paper.total ? Math.round(((paper.score ?? 0) / paper.total) * 100) : 0}%
-                    </span>
+          // Un solo curso (el caso normal): lista plana, sin encabezados que no
+          // aportan. Varios cursos con la misma hoja: cada uno con su propio
+          // bloque y su promedio.
+          <div className="space-y-6">
+            {groups.map((group) => {
+              const groupAvg = Math.round(
+                group.rows.reduce((sum, p) => sum + ((p.score ?? 0) / Math.max(1, p.total ?? quiz.num_questions)) * 100, 0) / group.rows.length,
+              );
+              return (
+                <div key={group.key} className="space-y-3">
+                  {groups.length > 1 && (
+                    <div className="flex items-baseline justify-between gap-3 border-b border-[#e6e8eb] pb-1">
+                      <p className="text-sm font-black text-[#111827]">{group.label}</p>
+                      <p className="shrink-0 text-xs font-semibold text-[#5b6472]">
+                        {group.rows.length} {group.rows.length === 1 ? "alumno" : "alumnos"} · {groupAvg}%
+                      </p>
+                    </div>
                   )}
+                  <div className="grid gap-3">
+                    {group.rows.map((paper) => (
+                      <div key={paper.id} className="rounded-2xl border border-[#e6e8eb] bg-white p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="min-w-0 truncate text-sm font-bold text-[#111827]">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</p>
+                          {paper.status === "manual_review" ? (
+                            <span className="shrink-0 rounded-full bg-[#fdf3ec] px-2 py-0.5 text-[11px] font-bold text-[#9a3412]">Revisar</span>
+                          ) : (
+                            <span className="shrink-0 rounded-full bg-[#eef4ff] px-2 py-0.5 text-[11px] font-bold text-[#07305f]">
+                              {paper.total ? Math.round(((paper.score ?? 0) / paper.total) * 100) : 0}%
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs text-[#5b6472]">
+                          {paper.score ?? "-"}/{paper.total ?? quiz.num_questions} · {scoreDisplay(paper)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <p className="mt-1 text-xs text-[#5b6472]">
-                  {paper.score ?? "-"}/{paper.total ?? quiz.num_questions} · {scoreDisplay(paper)}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
