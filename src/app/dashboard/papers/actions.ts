@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { assignPaperToStudent, resolveTargetStudent, undoPaperAssignment } from "@/lib/paper_assign";
+import { findMisplacedPapers, reroutePapers } from "@/lib/paper_reroute";
 
 /**
  * Acciones de la cola de revision. Viven aparte de dashboard/actions.ts a
@@ -56,6 +57,39 @@ export async function assignPaperAction(_prev: AssignActionState, formData: Form
     return { success: `Asignado a ${result.studentName}.` };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "No se pudo asignar el alumno." };
+  }
+}
+
+/**
+ * Mueve al ensayo de su curso las hojas que quedaron en el ensayo equivocado de
+ * un lote multi-curso (la hoja del 2E usada para corregir todo el nivel). Nada
+ * se mueve sin que el profesor lo pida: esto solo corre desde el boton del
+ * detalle del ensayo.
+ */
+export async function reroutePapersAction(_prev: AssignActionState, formData: FormData): Promise<AssignActionState> {
+  const quizId = String(formData.get("quiz_id") ?? "").trim();
+  if (!quizId) return { error: "Falta el ensayo." };
+  try {
+    const { supabase, school } = await getDashboardContext();
+    const misplaced = await findMisplacedPapers(supabase, school.id, quizId);
+    if (misplaced.length === 0) return { success: "No hay hojas que reubicar." };
+
+    const { moved, voided } = await reroutePapers(supabase, school, quizId, misplaced);
+    // Se revalidan los ensayos de origen y destino: las dos listas cambian.
+    revalidatePath(`/dashboard/quizzes/${quizId}`);
+    revalidatePath(`/dashboard/results/${quizId}`);
+    for (const target of new Set(misplaced.map((p) => p.targetQuizId))) {
+      revalidatePath(`/dashboard/quizzes/${target}`);
+      revalidatePath(`/dashboard/results/${target}`);
+    }
+    revalidatePath("/dashboard/quizzes");
+    revalidatePath("/app/results");
+    return {
+      success: `${moved} ${moved === 1 ? "hoja movida" : "hojas movidas"} al ensayo de su curso.` +
+        (voided > 0 ? ` ${voided} ${voided === 1 ? "hoja duplicada quedó anulada" : "hojas duplicadas quedaron anuladas"}.` : ""),
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "No se pudieron reubicar las hojas." };
   }
 }
 

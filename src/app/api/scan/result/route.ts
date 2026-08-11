@@ -6,6 +6,7 @@ import { isMissingColumnError, isMissingTableError } from "@/lib/supabase_errors
 import { sendPushToSchool } from "@/lib/push_server";
 import { QUIZ_MAX_QUESTIONS } from "@/lib/quiz_constraints";
 import { assembleMultipageResult, type PageScanResult } from "@/lib/multipage";
+import { resolveQuizForStudent } from "@/lib/quiz_batch";
 
 type ScanAnswer = {
   q: number;
@@ -58,7 +59,12 @@ type QuizRow = {
   exigencia: number | null;
   sheet_code: number | null;
   batch_id?: string | null;
+  /** Curso al que pertenece ESTE ensayo (cada fila de un lote tiene el suyo). */
+  course_id?: string | null;
 };
+
+/** Columnas de un ensayo hermano: las mismas que necesita el resto del flujo. */
+const SIBLING_SELECT = "id,batch_id,course_id,sheet_code,answer_key,num_questions,open_questions,multi_select_questions,evaluation_type,exigencia";
 
 function normalizeAnswers(value: unknown): ScanAnswer[] {
   if (!Array.isArray(value)) return [];
@@ -262,20 +268,18 @@ async function finalizeGrading(
   if (sheetMismatch && quiz.batch_id) {
     const { data: sibling } = await supabase
       .from("quizzes")
-      .select("id,batch_id,sheet_code,answer_key,num_questions,open_questions,multi_select_questions,evaluation_type,exigencia")
+      .select(SIBLING_SELECT)
       .eq("school_id", school.id)
       .eq("batch_id", quiz.batch_id)
       .eq("sheet_code", extras.sheetIdRead)
       .is("archived_at", null)
       .maybeSingle();
     if (sibling) {
-      quiz = sibling;
+      quiz = sibling as QuizRow;
       expectedSheetCode = typeof quiz.sheet_code === "number" ? quiz.sheet_code : null;
       sheetMismatch = extras.sheetIdRead !== null && expectedSheetCode !== null && extras.sheetIdRead !== expectedSheetCode;
     }
   }
-
-  const { score, total, grade, passing, equivalentScore: eqScore } = computeQuizScore(quiz, answers, school, extras.countryCode);
 
   const { studentCode, studentRutNorm, legacyStudentCode, candidateCodes } = identity;
   let studentName: string | null = null;
@@ -291,10 +295,37 @@ async function finalizeGrading(
       matchedStudent = true;
       studentName = student.name ?? null;
       courseId = student.course_id ?? null;
-      // Aviso SUAVE de curso cruzado (un curso rindiendo con la hoja de otro,
-      // caso real: la hoja del 2E para todo el nivel). No bloquea ni cambia el
-      // status -- mismo criterio que el aviso de codigo de hoja.
-      if (courseId) {
+
+      // ── El resultado sigue al ALUMNO, no a la hoja ──────────────────────
+      // Con un lote multi-curso (misma prueba impresa por curso), la hoja del
+      // 2E usada para corregir a un alumno del 2C debe quedar en el ensayo del
+      // 2C. Antes se quedaba donde apuntaba la HOJA y el 2E terminaba con
+      // alumnos de todo el nivel. Ver src/lib/quiz_batch.ts.
+      let rerouted = false;
+      if (quiz.batch_id && courseId && quiz.course_id !== courseId) {
+        const { data: siblings } = await supabase
+          .from("quizzes")
+          .select(SIBLING_SELECT)
+          .eq("school_id", school.id)
+          .eq("batch_id", quiz.batch_id)
+          .is("archived_at", null);
+        const decision = resolveQuizForStudent(quiz, courseId, (siblings ?? []) as QuizRow[]);
+        if (decision.kind === "rerouted") {
+          quiz = decision.quiz;
+          rerouted = true;
+          // La hoja es de otro ensayo DEL MISMO LOTE: contenido identico, no es
+          // "hoja equivocada". El aviso de hoja incorrecta se apaga aqui a
+          // proposito -- si no, todo el nivel corregido con una sola hoja
+          // caeria en revision manual.
+          expectedSheetCode = typeof quiz.sheet_code === "number" ? quiz.sheet_code : null;
+          sheetMismatch = false;
+        }
+      }
+
+      // Aviso SUAVE de curso cruzado: solo si NO se pudo re-enrutar (ensayo
+      // independiente, alumno de un curso sin ensayo en el lote). Si la hoja ya
+      // quedo en el ensayo de su curso no hay nada que avisar.
+      if (courseId && !rerouted) {
         const mismatch = await detectCourseMismatch(supabase, quiz.id, courseId);
         // `students.course` (texto libre) como respaldo del nombre del curso del
         // alumno: filas viejas pueden tener el texto y no el curso normalizado.
@@ -302,6 +333,11 @@ async function finalizeGrading(
       }
     }
   }
+
+  // El puntaje se calcula con el ensayo FINAL (tras el re-enrutado): los
+  // hermanos comparten clave y formato, pero la nota debe salir del ensayo en el
+  // que la hoja realmente queda guardada.
+  const { score, total, grade, passing, equivalentScore: eqScore } = computeQuizScore(quiz, answers, school, extras.countryCode);
 
   const status = sheetMismatch || !studentCode || !matchedStudent ? "manual_review" : "corrected";
   const scannedAt = new Date().toISOString();
@@ -418,16 +454,16 @@ export async function POST(request: Request) {
 
     let quizResult = await supabase
       .from("quizzes")
-      .select("id,school_id,title,answer_key,num_questions,open_questions,multi_select_questions,evaluation_type,evaluation_variant,sheet_code,exigencia,batch_id")
+      .select("id,school_id,title,answer_key,num_questions,open_questions,multi_select_questions,evaluation_type,evaluation_variant,sheet_code,exigencia,batch_id,course_id")
       .eq("id", quizId)
       .eq("school_id", school.id)
       .is("archived_at", null)
       .single();
 
-    if (quizResult.error && isMissingColumnError(quizResult.error, "batch_id")) {
-      // BD sin migrar (batch_id): degradacion silenciosa -- sin esta columna
-      // no hay como reconocer hojas "hermanas" de un lote multi-curso, cae al
-      // manual_review de siempre ante un sheetMismatch (comportamiento previo).
+    if (quizResult.error && (isMissingColumnError(quizResult.error, "batch_id") || isMissingColumnError(quizResult.error, "course_id"))) {
+      // BD sin migrar (batch_id/course_id): degradacion silenciosa -- sin estas
+      // columnas no hay lote que reconocer, asi que ni se re-enruta por curso ni
+      // se auto-resuelve una hoja hermana (comportamiento previo).
       quizResult = await supabase
         .from("quizzes")
         .select("id,school_id,title,answer_key,num_questions,open_questions,multi_select_questions,evaluation_type,evaluation_variant,sheet_code,exigencia")
@@ -505,6 +541,12 @@ export async function POST(request: Request) {
       const globalAnswers = answers
         .map((a) => ({ ...a, q: (codeR.page - 1) * QUIZ_MAX_QUESTIONS + a.q }))
         .filter((a) => a.q <= total);
+
+      // Nota: las paginas parciales se acumulan bajo el ensayo ESCANEADO. El
+      // re-enrutado por curso ocurre dentro de finalizeGrading, al cerrar el
+      // ensayo, asi que el paper final si queda en el ensayo del curso del
+      // alumno. Solo aplica a ensayos multipagina (>100 preguntas) dentro de un
+      // lote multi-curso, combinacion que hoy no existe en produccion.
 
       const { data: existingPage, error: existingPageError } = await supabase
         .from("paper_pages")

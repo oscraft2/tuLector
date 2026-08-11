@@ -249,7 +249,7 @@ async function updatePaperTolerant(
   throw new Error("No se pudo actualizar el escaneo.");
 }
 
-async function deleteGradeRecord(supabase: MinimalClient, schoolId: string, quizId: string, studentCode: string | null) {
+export async function deleteGradeRecord(supabase: MinimalClient, schoolId: string, quizId: string, studentCode: string | null) {
   if (!studentCode) return;
   await supabase
     .from("grade_records")
@@ -259,7 +259,7 @@ async function deleteGradeRecord(supabase: MinimalClient, schoolId: string, quiz
     .eq("student_code", studentCode);
 }
 
-async function upsertGradeRecord(
+export async function upsertGradeRecord(
   supabase: MinimalClient,
   school: DashboardSchool,
   args: { quizId: string; paperId: string; studentCode: string | null; score: number; total: number },

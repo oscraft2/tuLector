@@ -14,6 +14,9 @@ import { parseOpenQuestions, countMissingKeySlots } from "@/lib/quiz_constraints
 import { parseSheetMode, compactModeIssue } from "@/lib/sheet_mode";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 import { buildPaperCourseResolver } from "@/lib/paper_course";
+import { findMisplacedPapers } from "@/lib/paper_reroute";
+import { reroutePapersAction } from "@/app/dashboard/papers/actions";
+import { ReroutePapersCard } from "@/components/dashboard/ReroutePapersCard";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +60,8 @@ export default async function QuizDetailPage({ params }: PageProps) {
   // Curso REAL del alumno (la hoja no manda: un curso puede rendir con la hoja
   // de otro -- ver src/lib/paper_course.ts).
   const courseOf = await buildPaperCourseResolver(supabase, school.id, quizPapers);
+  // Hojas que deberian estar en otro ensayo del mismo lote (ver el aviso abajo).
+  const misplaced = await findMisplacedPapers(supabase, school.id, id);
   const avg = quizPapers.length ? Math.round(quizPapers.reduce((s, p) => s + ((p.score ?? 0) / Math.max(1, p.total ?? quiz.num_questions)) * 100, 0) / quizPapers.length) : 0;
   // Preguntas de desarrollo: su slot de clave es "-" fijo — no cuentan como
   // "clave incompleta" ni tienen letra en la grilla.
@@ -157,6 +162,16 @@ export default async function QuizDetailPage({ params }: PageProps) {
     <>
       <PageHeader title={quiz.title} description={`Evaluación: ${getVariantLabel()}. Detalle del ensayo, clave, lecturas sincronizadas y analisis por item.`} />
       <div className="space-y-6">
+        {/* Lote multi-curso: hojas corregidas con ESTA hoja pero de alumnos de
+            otro curso del lote. Se ofrecen para mover al ensayo que les
+            corresponde (ver src/lib/paper_reroute.ts). */}
+        {misplaced.length > 0 && (
+          <ReroutePapersCard
+            quizId={quiz.id}
+            rows={misplaced.map((m) => ({ paperId: m.paperId, studentName: m.studentName, targetCourseName: m.targetCourseName }))}
+            action={reroutePapersAction}
+          />
+        )}
         <section className="grid gap-4 md:grid-cols-5">
           <Info label="Preguntas" value={openQuestions.length > 0 ? `${quiz.num_questions} (${Number(quiz.num_questions) - openQuestions.length} alt. + ${openQuestions.length} desarrollo)` : quiz.num_questions} />
           <Info label="Opciones" value={quiz.options_per_question ?? 5} />
