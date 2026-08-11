@@ -13,7 +13,15 @@ const config = {
   webDir: "capacitor-www",
   // Token en el User-Agent → la web detecta que corre en el APK de forma fiable
   // (window.Capacitor puede no inyectarse a tiempo con server.url remota).
-  appendUserAgent: "TuLectorApp",
+  // El sufijo /2 es la VERSION del contenedor y la lee la web
+  // (nativeAppVersion en src/lib/native/capacitor.ts) para saber a que ruta
+  // mandar el callback de OAuth. Imprescindible porque el APK carga la web
+  // remota: un APK ya instalado siempre ejecuta el JS mas nuevo, asi que sin
+  // este marcador un cambio de ruta romperia el login de los v1 (su manifiesto
+  // solo declara /auth/callback). Subir a /3, /4... si vuelve a cambiar algo
+  // que dependa del manifiesto. La deteccion de "es nativo" sigue funcionando
+  // igual: busca el substring "TuLectorApp".
+  appendUserAgent: "TuLectorApp/2",
   server: {
     // El APK abre DIRECTO en /auth (login), sin la landing de marketing.
     url: "https://tulector.vercel.app/auth",

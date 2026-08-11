@@ -8,7 +8,7 @@ import {
   closeExternalBrowser,
   initGoogleSignIn,
   initRevenueCat,
-  OAUTH_DEEP_LINK,
+  oauthDeepLink,
 } from "@/lib/native/capacitor";
 import { createClient } from "@/lib/supabase";
 import { setupOnlineListener, syncOfflineQueue } from "@/lib/offline_sync";
@@ -48,7 +48,7 @@ export function NativeBootstrap() {
     if (!isNativeApp()) return;
 
     return onAppUrlOpen(async (url) => {
-      if (!url.startsWith(OAUTH_DEEP_LINK)) return;
+      if (!url.startsWith(oauthDeepLink())) return;
       closeExternalBrowser();
 
       let code: string | null = null;
