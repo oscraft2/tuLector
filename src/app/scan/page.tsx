@@ -6,7 +6,10 @@ import { useRouter } from "next/navigation";
 import { findCorners, gradeBubbles, readRut, readSheetCode, warpSheet, cropNameBox, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
 import { isNativeApp, captureNativePhoto, toggleTorch } from "@/lib/native/capacitor";
 import { enqueueScan, getQueueSize } from "@/lib/offline_queue";
-import { saveQuizPack, loadQuizPack } from "@/lib/quiz_cache";
+import {
+  saveQuizPack, loadQuizPack, saveQuizLibrary, loadQuizLibrary, normalizeQuizPack,
+  type CachedQuiz, type RawQuizPack,
+} from "@/lib/quiz_cache";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H, rutColX, rutRowY, RUT_COLS, RUT_ROWS, RUT_R, questionLayout } from "@/lib/sheet_layout";
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
@@ -195,6 +198,11 @@ export default function ScanPage() {
  // profesor sepa que tiene trabajo sin subir antes de cerrar la app.
  const [queuedCount, setQueuedCount] = useState(0);
  const [isOnline, setIsOnline] = useState(true);
+ // Ensayos descargados para poder cambiar de uno a otro SIN RED (la pantalla
+ // que normalmente los lista, /app/scan, es de servidor y offline no responde).
+ const [library, setLibrary] = useState<CachedQuiz[]>([]);
+ const [showLibrary, setShowLibrary] = useState(false);
+ const [activeQuizTitle, setActiveQuizTitle] = useState<string | null>(null);
  const [native, setNative] = useState(false);
  // Config de lectura sincronizada con el generador (/sheet la guarda en localStorage).
  const [scanCfg, setScanCfg] = useState({
@@ -328,6 +336,7 @@ export default function ScanPage() {
    setActiveCountryCode(pack.countryCode || "CL");
    if (pack.answerKey.length > 0) setAnswerKey(pack.answerKey);
    setScanCfg(pack.cfg);
+   setActiveQuizTitle(pack.title ?? null);
    return true;
   };
 
@@ -347,6 +356,7 @@ export default function ScanPage() {
     }
     const data = await res.json() as { id?: string; answer_key?: string; title?: string; num_questions?: number; options_per_question?: number; option_labels?: string; num_columns?: number; sheet_code?: number | null; open_questions?: string | null; option_overrides?: string | null; multi_select_questions?: string | null; open_boxes_per_page?: number | null; country_code?: string };
     if (data.id) setActiveQuizId(String(data.id));
+    if (data.title) setActiveQuizTitle(String(data.title));
     setActiveSheetCode(typeof data.sheet_code === "number" ? data.sheet_code : null);
     if (data.country_code) setActiveCountryCode(data.country_code);
     if (data.answer_key) {
@@ -406,6 +416,42 @@ export default function ScanPage() {
    }
   })();
  }, []);
+
+ // Biblioteca de ensayos: se muestra al instante lo ya descargado y, si hay
+ // red, se refresca en segundo plano. Nunca bloquea el escaneo.
+ useEffect(() => {
+  (async () => {
+   // Lo ya descargado primero (dentro del async: setState sincrono en el cuerpo
+   // del efecto encadena renders de mas).
+   setLibrary(loadQuizLibrary());
+   if (typeof navigator !== "undefined" && !navigator.onLine) return;
+   try {
+    const res = await fetch("/api/scan/quiz-packs", { credentials: "include", cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json() as { country_code?: string; quizzes?: RawQuizPack[] };
+    const packs = (data.quizzes ?? []).map((q) => normalizeQuizPack(q, data.country_code ?? "CL"));
+    if (packs.length === 0) return;
+    saveQuizLibrary(packs);
+    setLibrary(packs);
+   } catch {
+    // Sin red o error: queda la biblioteca previa, que es justamente el punto.
+   }
+  })();
+ }, []);
+
+ /** Cambia el ensayo activo usando SOLO datos locales (sirve sin conexion). */
+ const selectCachedQuiz = (pack: CachedQuiz) => {
+  setActiveQuizId(pack.quizId);
+  setActiveSheetCode(pack.sheetCode);
+  setActiveCountryCode(pack.countryCode || "CL");
+  setAnswerKey(pack.answerKey);
+  setScanCfg(pack.cfg);
+  setActiveQuizTitle(pack.title ?? null);
+  saveQuizPack(QUIZ_PACK_KEY, pack);
+  try { localStorage.setItem("tulector_scan_config", JSON.stringify(pack.cfg)); } catch { /* sin storage */ }
+  setShowLibrary(false);
+  setError(pack.answerKey.length > 0 ? "" : "Este ensayo no tiene pauta cargada: no se calculara puntaje.");
+ };
 
  // Estado de red + cola pendiente. La cola tambien la vacia NativeBootstrap al
  // volver la conexion, asi que se relee al reconectar para reflejarlo.
@@ -1323,6 +1369,33 @@ export default function ScanPage() {
      {!hasAnswerKey && (
       <div className="px-3 py-1 rounded-full backdrop-blur-lg border bg-amber-600/20 border-amber-500/50">
        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-200">Sin pauta — no se calcula puntaje</span>
+      </div>
+     )}
+     {/* Cambiar de ensayo sin salir de la camara: es la unica via cuando no hay
+         red, porque la pantalla que los lista es de servidor. */}
+     {library.length > 0 && (
+      <button
+       onClick={() => setShowLibrary((v) => !v)}
+       className="pointer-events-auto px-3 py-1 rounded-full backdrop-blur-lg border bg-black/40 border-zinc-700/60 text-[10px] font-bold uppercase tracking-wider text-zinc-200 active:bg-black/60"
+      >
+       {activeQuizTitle ?? "Elegir ensayo"} · {library.length} descargados ▾
+      </button>
+     )}
+     {showLibrary && (
+      <div className="pointer-events-auto max-h-64 w-[88%] max-w-sm overflow-y-auto rounded-2xl border border-zinc-700/60 bg-zinc-900/95 backdrop-blur-lg p-1.5 shadow-2xl">
+       {library.map((q) => (
+        <button
+         key={q.quizId}
+         onClick={() => selectCachedQuiz(q)}
+         className={`block w-full rounded-xl px-3 py-2 text-left active:bg-zinc-800 ${q.quizId === activeQuizId ? "bg-zinc-800/80" : ""}`}
+        >
+         <span className="block truncate text-xs font-bold text-zinc-100">{q.title ?? "Ensayo"}</span>
+         <span className="text-[10px] font-bold text-zinc-500">
+          {q.cfg.numQuestions}p/{q.cfg.numOptions}o
+          {q.answerKey.length === 0 && " · sin pauta"}
+         </span>
+        </button>
+       ))}
       </div>
      )}
      <div className={`px-4 py-1.5 rounded-full backdrop-blur-lg border transition-all flex items-center gap-2 ${phase === "scanning" ? "bg-green-600/20 border-green-500/50" : "bg-black/40 border-zinc-800/50"}`}>
