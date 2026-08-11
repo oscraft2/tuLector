@@ -20,6 +20,12 @@ import { QUIZ_MAX_QUESTIONS, parseOpenQuestions, parseOptionOverrides, parseMult
 import { useSensoryFeedback, loadSensoryPrefs, saveSensoryPrefs, type SensoryStoredPrefs } from "@/lib/hooks/useSensoryFeedback";
 import { StudentPicker, type PickedStudent } from "@/components/StudentPicker";
 
+/** Todo lo que se manda al servidor por una hoja leída. */
+type SyncArgs = {
+ rut: string; answers: BubbleResult[]; photo?: string | null; warp?: string | null;
+ source: "camera" | "upload"; dvOk?: boolean; code?: unknown; nameImg?: string | null;
+};
+
 // "hud" = resultado NO bloqueante (caso feliz o error en modo ráfaga), auto-avanza solo.
 // "review" = modal bloqueante clásico (modo ráfaga apagado).
 // "clearing" = tras el HUD, esperando que la hoja salga de cuadro antes de rearmar el disparo automático.
@@ -180,6 +186,16 @@ export default function ScanPage() {
   questions: { question: number; flag?: string }[];
  } | null>(null);
  const [blankSaving, setBlankSaving] = useState(false);
+ // Confirmacion de guardado, visible mientras dure el escaneo siguiente: el HUD
+ // se cerraba a 1,5s -- antes de que el servidor contestara -- asi que un fallo
+ // o una sobrescritura pasaban inadvertidos.
+ const [savedCount, setSavedCount] = useState(0);
+ /** RUT ya guardados en ESTA sesion de escaneo -> nombre, para avisar de repetidas. */
+ const savedRutsRef = useRef<Map<string, string>>(new Map());
+ // Hoja de un alumno YA escaneado en esta sesion: no se re-envia sola (haria un
+ // UPDATE silencioso del paper anterior), se pregunta. Causa real de "escanee
+ // 48 hojas y subieron 29": el disparo automatico repetia la misma hoja.
+ const [dupPending, setDupPending] = useState<{ rut: string; name: string; args: SyncArgs } | null>(null);
  const [stream, setStream] = useState<MediaStream | null>(null);
  const streamRef = useRef<MediaStream | null>(null);
  const [error, setError] = useState("");
@@ -205,10 +221,26 @@ export default function ScanPage() {
  // tenerlos en su dependencia (evita remount del loop en cada transición de fase).
  const phaseRef = useRef<ScanPhase>("detecting");
  const lastScanRef = useRef(0);
+ // Sello del escaneo en pantalla. `syncResult` corre sin await, asi que la
+ // respuesta de una hoja puede llegar cuando el profesor ya capturo la
+ // siguiente: sin este sello, ese payload tardio pintaba el nombre (o el curso,
+ // o el boton "Reverso") del alumno ANTERIOR sobre el RUT del nuevo.
+ const scanSeqRef = useRef(0);
+ /** Marca el inicio de una captura: invalida lo que este por llegar del escaneo previo. */
+ const beginScan = () => {
+  scanSeqRef.current += 1;
+  setStudentName(null);
+  setCourseNote(null);
+  return scanSeqRef.current;
+ };
  // Esquinas al momento del HUD, para detectar en "clearing" que la hoja salió
  // de cuadro (distinto de lastCornersRef, que se muta cada frame para estabilidad).
  const capturedCornersRef = useRef<[number, number][] | null>(null);
  const clearingStartRef = useRef(0);
+ /** Evita repetir el aviso "retira la hoja" en cada frame del bucle. */
+ const clearingHintRef = useRef(false);
+ /** La hoja lleva rato sin moverse tras un escaneo: se refuerza el aviso. */
+ const [clearingStuck, setClearingStuck] = useState(false);
  const wasDetectedRef = useRef(false);
  const [debugLog, setDebugLog] = useState<string[]>([]);
  const [showDebug, setShowDebug] = useState(false);
@@ -216,8 +248,10 @@ export default function ScanPage() {
  const [warpedThumb, setWarpedThumb] = useState<string | null>(null);
  const [capturing, setCapturing] = useState(false);
  const [answerKey, setAnswerKey] = useState<string[]>(NO_ANSWER_KEY);
- // Sin pauta real no se muestra puntaje (ver NO_ANSWER_KEY).
- const hasAnswerKey = answerKey.length > 0;
+ // Sin pauta real no se muestra puntaje (ver NO_ANSWER_KEY). La clave conserva
+ // un "-" por pregunta de desarrollo, asi que "tener pauta" es tener al menos
+ // una respuesta cerrada, no simplemente longitud > 0.
+ const hasAnswerKey = answerKey.some((c) => c !== "-");
  // Lecturas esperando red. Se muestra siempre que haya alguna, para que el
  // profesor sepa que tiene trabajo sin subir antes de cerrar la app.
  const [queuedCount, setQueuedCount] = useState(0);
@@ -285,13 +319,13 @@ export default function ScanPage() {
  // hoja salga de cuadro antes de rearmar el disparo automático).
  useEffect(() => {
   if (phase !== "hud" || !sensoryPrefs.burstMode) return;
-  // Hoja en blanco: el HUD NO se cierra solo -- lleva la decision de guardarla
-  // como prueba sin respuestas, y esa la toma el profesor, no un temporizador.
-  if (blankPending) return;
+  // Hoja en blanco o repetida: el HUD NO se cierra solo -- lleva una decision
+  // del profesor (guardar en blanco / reemplazar), no de un temporizador.
+  if (blankPending || dupPending) return;
   const duration = hudKind === "error" ? 3000 : hudKind === "warning" ? 2200 : 1500;
   const t = setTimeout(() => setPhase("clearing"), duration);
   return () => clearTimeout(t);
- }, [phase, hudKind, sensoryPrefs.burstMode, blankPending]);
+ }, [phase, hudKind, sensoryPrefs.burstMode, blankPending, dupPending]);
 
  // FASE 3 (dataset): el profe confirma que la lectura es correcta → guarda un
  // ejemplo ETIQUETADO (ground truth) para entrenar el clasificador. NO toca la captura.
@@ -342,6 +376,7 @@ export default function ScanPage() {
   setLastScan(Date.now());
   capturedCornersRef.current = corners;
   clearingStartRef.current = Date.now();
+  clearingHintRef.current = false;
   setHudKind(kind);
   setHudMessage(message);
   setPhase("hud");
@@ -349,7 +384,19 @@ export default function ScanPage() {
 
  // Cargar la clave y formato desde una sesion autenticada de escaneo.
  useEffect(() => {
-  const parseKey = (raw: string) => raw.toUpperCase().split("").filter((c) => "ABCDE".includes(c));
+  /**
+   * Clave del ensayo → un slot POR PREGUNTA, conservando "-" donde no hay
+   * respuesta correcta (preguntas de desarrollo).
+   *
+   * Antes filtraba `c => "ABCDE".includes(c)`, que BORRABA los "-" y corria
+   * toda la clave: en un ensayo con abiertas en 27/29/33, la pregunta 27 se
+   * comparaba contra la clave de la 28 y de ahi en adelante todo quedaba
+   * desplazado -- el "X/36" del HUD y los verdes/rojos de la grilla mentian
+   * desde la primera abierta (la nota guardada, que calcula el servidor,
+   * siempre estuvo bien). Tampoco reconocia etiquetas fuera de A-E.
+   */
+  const parseKey = (raw: string) =>
+   String(raw).toUpperCase().split("").map((c) => (/[A-Z]/.test(c) ? c : "-"));
   const parseLabels = (raw?: string) => {
    const labels = String(raw || "ABCDE").toUpperCase().replace(/[^A-Z]/g, "");
    return labels || "ABCDE";
@@ -388,7 +435,10 @@ export default function ScanPage() {
     if (data.country_code) setActiveCountryCode(data.country_code);
     if (data.answer_key) {
      const arr = parseKey(String(data.answer_key));
-     if (arr.length > 0) setAnswerKey(arr);
+     // "Hay pauta" = al menos una respuesta cerrada. Una clave que son puros
+     // "-" (ensayo sin clave todavia) NO cuenta: si no, el HUD mostraria un
+     // 0/N inventado en vez de "Leída · sin pauta".
+     if (arr.some((c) => c !== "-")) setAnswerKey(arr);
     }
     // Multipagina (Fase 1): el grid de lectura es SIEMPRE de 1 pagina (max
     // MAX_QUESTIONS_PER_PAGE) -- /scan usa una config estatica para todo el
@@ -555,6 +605,48 @@ export default function ScanPage() {
    return `/scan/reverso?${params.toString()}`;
   };
 
+  /**
+   * Envía una lectura, salvo que sea una hoja del MISMO alumno ya escaneado en
+   * esta sesión: ahí se pregunta antes, porque re-enviar hace un UPDATE que
+   * reemplaza la hoja anterior sin que nadie se entere (48 escaneos → 29 filas).
+   */
+  const submitScan = (args: SyncArgs) => {
+   const already = args.rut ? savedRutsRef.current.get(args.rut) : undefined;
+   if (already !== undefined) {
+    setDupPending({ rut: args.rut, name: already, args });
+    return;
+   }
+   void syncResult(args);
+  };
+
+  /** Anota una hoja efectivamente guardada: alimenta el cuadre de la sesión y
+   *  el aviso de "ya escaneaste a este alumno". `inserted` false = reemplazó a
+   *  una hoja anterior, así que el total de alumnos guardados no cambia. */
+  const recordSaved = (rut: string, name: string | null, inserted: boolean) => {
+   if (rut) savedRutsRef.current.set(rut, name ?? rut);
+   if (inserted) setSavedCount((c) => c + 1);
+  };
+
+  /** Confirma reemplazar la hoja anterior del mismo alumno. */
+  const replaceDuplicate = () => {
+   const pending = dupPending;
+   if (!pending) return;
+   setDupPending(null);
+   void syncResult(pending.args);
+  };
+
+  /** Descarta la lectura repetida y sigue con la hoja siguiente.
+   *  Pasa por "clearing" y NO por "detecting": la hoja sigue frente a la
+   *  camara, asi que volver a armar el disparo la leeria otra vez y el aviso
+   *  de repetida entraria en bucle. */
+  const dismissAndWaitForNextSheet = () => {
+   setDupPending(null);
+   setBlankPending(null);
+   clearingStartRef.current = Date.now();
+   clearingHintRef.current = false;
+   setPhase("clearing");
+  };
+
   /** Guarda una hoja EN BLANCO como prueba sin respuestas: todas las preguntas
    *  van con "-" (las de desarrollo conservan su flag "abierta", que el servidor
    *  ya excluye del puntaje). Queda con su puntaje real 0 y, sobre todo, con el
@@ -658,7 +750,13 @@ export default function ScanPage() {
    }
   };
 
-  const syncResult = async ({ rut, answers, photo, warp, source, dvOk, code, nameImg }: { rut: string; answers: BubbleResult[]; photo?: string | null; warp?: string | null; source: "camera" | "upload"; dvOk?: boolean; code?: unknown; nameImg?: string | null }) => {
+  const syncResult = async ({ rut, answers, photo, warp, source, dvOk, code, nameImg }: SyncArgs) => {
+   // Sello del escaneo al que pertenece esta sincronizacion. Si para cuando
+   // responde el servidor ya se capturo otra hoja, `isCurrent()` es false y NO
+   // se pinta nada de esta: los contadores acumulados si se aplican, porque
+   // describen el trabajo pendiente total y no la hoja en pantalla.
+   const seq = scanSeqRef.current;
+   const isCurrent = () => scanSeqRef.current === seq;
    // El acceso al reverso siempre apunta a la hoja RECIEN guardada: si esta no
    // llega a guardarse (offline, revision manual, error), el boton no debe
    // quedar apuntando al alumno anterior. Idem el aviso de curso y la
@@ -683,9 +781,11 @@ export default function ScanPage() {
      dvOk,
      code,
     });
-    setQueuedCount(await getQueueSize());
-    setSyncState("queued");
-    setSyncMessage("Sin conexion. Guardado localmente. Se sincronizara al recuperar red.");
+    setQueuedCount(await getQueueSize()); // acumulado: se aplica siempre
+    if (isCurrent()) {
+     setSyncState("queued");
+     setSyncMessage("Sin conexion. Guardado localmente. Se sincronizara al recuperar red.");
+    }
     return;
    }
    if (!activeQuizId) {
@@ -714,6 +814,18 @@ export default function ScanPage() {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload?.error || "No se pudo guardar");
+    // Todo lo que sigue describe LA HOJA EN PANTALLA. Si la respuesta llego
+    // tarde (el profesor ya capturo la siguiente), se descarta entera: pintarla
+    // ponia el nombre del alumno anterior sobre el RUT del nuevo.
+    if (!isCurrent()) {
+     // No se pinta nada de esta hoja, pero el CUADRE de la sesión sí la cuenta:
+     // si no, una respuesta lenta que se guardó bien haría aparecer menos
+     // "guardadas" de las que realmente hay, que es justo lo que se quiere
+     // detectar con el contador.
+     if (payload.status === "manual_review") setPendingReviewCount((c) => c + 1);
+     else recordSaved(rut, payload.studentName ?? null, payload.action !== "updated");
+     return;
+    }
     // Se setea ANTES de los early-return de abajo: la ruta devuelve studentName
     // también en manual_review/multipágina, y el HUD lo quiere mostrar igual.
     setStudentName(payload.studentName ?? null);
@@ -763,7 +875,16 @@ export default function ScanPage() {
      if (payload.paperId) setAssignPaperId(String(payload.paperId));
     } else {
      setSyncState("saved");
-     setSyncMessage(`Sincronizado en dashboard (${scoreLabel})${multipageNote}.${quotaNote}`);
+     // `action` lo devuelve el servidor desde siempre y la app lo ignoraba: es
+     // lo que distingue una hoja NUEVA de una que piso a otra del mismo alumno.
+     const replaced = payload.action === "updated";
+     const who = payload.studentName ?? rut ?? "";
+     setSyncMessage(
+      replaced
+       ? `↻ Reemplazó la hoja anterior de ${who || "este alumno"} (${scoreLabel})${multipageNote}.${quotaNote}`
+       : `✓ Guardado${who ? ` · ${who}` : ""} (${scoreLabel})${multipageNote}.${quotaNote}`,
+     );
+     recordSaved(rut, payload.studentName ?? null, !replaced);
      // Fase 1 de correccion IA (docs/plan-correccion-ia-abiertas.md): con
      // preguntas de desarrollo, el reverso de ESTE alumno se puede escanear sin
      // ambiguedad de identidad (el paper_id ya es conocido -- "pairing por
@@ -831,6 +952,7 @@ export default function ScanPage() {
 
  // Process scan (warp + grade)
  const processScan = async (frame: ImageData, corners: [number, number][], source: "camera" | "upload" = "camera") => {
+  beginScan(); // sella este escaneo: lo que llegue del anterior ya no pinta
   const canvas = hiddenCanvas.current;
   if (!canvas) return;
 
@@ -958,7 +1080,7 @@ export default function ScanPage() {
    const saved = await save("scan", SCAN_CODES.GRADED, true);
    addLog(saved ? "Diagnostico guardado OK" : "No se pudo guardar diagnostico (ver consola)");
    setDebugLog([...logs]);
-   void syncResult({ rut: rutR.rut, answers: bubbleResults, photo: photoThumb, warp: warpThumb, source, dvOk: rutR.dvOk, code: codeR, nameImg });
+   submitScan({ rut: rutR.rut, answers: bubbleResults, photo: photoThumb, warp: warpThumb, source, dvOk: rutR.dvOk, code: codeR, nameImg });
 
    const isHappy = idRows[0]?.length === expectedRutLength && rutR.dvOk === true && warn === null;
    enterResult(isHappy ? "success" : "warning", warn, corners);
@@ -976,6 +1098,7 @@ export default function ScanPage() {
   const canvas = hiddenCanvas.current;
   if (!video || !canvas) return;
 
+  beginScan(); // sella este escaneo: lo que llegue del anterior ya no pinta
   setPhase("scanning");
   setCapturing(true);
   setError("");
@@ -1086,7 +1209,7 @@ export default function ScanPage() {
    answers: bubbleResults.map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
    id: votedRut ? [votedRut] : [], rut: votedRut, dvOk: votedDvOk, photo: photoThumb, warp: warpThumb, nameImg: nameImgV,
   });
-  void syncResult({ rut: votedRut, answers: bubbleResults, photo: photoThumb, warp: warpThumb, source: "camera", dvOk: votedDvOk, code: codeR, nameImg: nameImgV });
+  submitScan({ rut: votedRut, answers: bubbleResults, photo: photoThumb, warp: warpThumb, source: "camera", dvOk: votedDvOk, code: codeR, nameImg: nameImgV });
 
   const isHappy = votedRut.length === expectedRutLength && votedDvOk === true && warn === null;
   enterResult(isHappy ? "success" : "warning", warn, lastCorners);
@@ -1306,6 +1429,8 @@ export default function ScanPage() {
  // compilador de React lo trate como una dependencia estable, no un forward-ref.
  const resetForNextScan = () => {
   setPhase("detecting");
+  clearingHintRef.current = false;
+  setClearingStuck(false);
   setLastScan(Date.now());
   setLastDiag(null);
   setDebugLog([]);
@@ -1475,8 +1600,20 @@ export default function ScanPage() {
     const currentArea = corners ? quadArea(corners) : 0;
     const areaChanged = capturedArea > 0 && Math.abs(currentArea - capturedArea) / capturedArea > 0.4;
     const sheetGone = !corners || areaChanged;
+    // El timeout YA NO rearma el disparo: antes, si el profesor no alcanzaba a
+    // retirar la hoja en 6s, se volvia a escanear LA MISMA y el segundo envio
+    // reemplazaba (UPDATE) al primero sin aviso -- el origen medido de los
+    // re-escaneos (48 lecturas -> 29 alumnos). Ahora la unica salida de
+    // "clearing" es que la hoja salga de cuadro; el timeout solo cambia el
+    // texto para que se entienda que la camara espera al profesor.
     const timedOut = Date.now() - clearingStartRef.current > 6000;
-    if (sheetGone || timedOut) resetForNextScan();
+    if (sheetGone) resetForNextScan();
+    else if (timedOut && !clearingHintRef.current) {
+     // Refuerza el aviso que el HUD ya muestra ("Retira la hoja"), sin usar el
+     // banner de error: no es un fallo, la cámara solo está esperando.
+     clearingHintRef.current = true;
+     setClearingStuck(true);
+    }
    }
 
    animId = requestAnimationFrame(loop);
@@ -1848,6 +1985,30 @@ export default function ScanPage() {
        >
         {labeled ? "✓ Lectura confirmada" : "✓ Confirmar lectura (correcta)"}
        </button>
+       {/* Hoja de un alumno ya escaneado en esta sesión: reemplazar es una
+           decisión explícita, no un efecto secundario de volver a apuntar. */}
+       {dupPending && (
+        <div className="mb-2 rounded-2xl border border-sky-500/40 bg-sky-500/10 p-3">
+         <p className="text-[11px] font-bold text-sky-200">↻ Ya escaneaste a {dupPending.name}</p>
+         <p className="mt-0.5 text-[10px] text-sky-200/80">
+          Si continúas, esta lectura reemplaza la anterior de {dupPending.rut}.
+         </p>
+         <div className="mt-2 flex gap-2">
+          <button
+           onClick={replaceDuplicate}
+           className="flex-1 rounded-xl bg-sky-500 py-2.5 text-xs font-black uppercase tracking-widest text-black active:scale-95 transition"
+          >
+           Reemplazar
+          </button>
+          <button
+           onClick={dismissAndWaitForNextSheet}
+           className="flex-1 rounded-xl border border-zinc-600 py-2.5 text-xs font-black uppercase tracking-widest text-zinc-300 active:scale-95 transition"
+          >
+           Omitir
+          </button>
+         </div>
+        </div>
+       )}
        {/* Hoja reconocida sin ninguna marca: se puede dejar registrada como
            prueba sin respuestas (antes el escaneo se perdía). */}
        {blankPending && (
@@ -1914,7 +2075,9 @@ export default function ScanPage() {
        <div className={`rounded-2xl border backdrop-blur-md px-4 py-3 shadow-2xl ${tone}`}>
         <div className="flex items-center justify-between gap-3">
          <div className="min-w-0">
-          {blankPending ? (
+          {dupPending ? (
+           <div className="text-sm font-black uppercase leading-tight tracking-wide">Hoja repetida</div>
+          ) : blankPending ? (
            <div className="text-sm font-black uppercase leading-tight tracking-wide">Hoja en blanco</div>
           ) : hudKind !== "error" && hasAnswerKey ? (
            <div className="text-lg font-black leading-tight">
@@ -1926,8 +2089,26 @@ export default function ScanPage() {
            <div className="text-xs font-black uppercase tracking-wide">Hoja no leída</div>
           )}
           <div className="text-[10px] font-bold truncate opacity-90">
-           {hudKind !== "error" ? `RUT ${studentId.join("") || "???"}${studentName ? ` · ${studentName}` : ""}` : hudMessage}
+           {dupPending
+            ? `Ya escaneaste a ${dupPending.name} en esta sesión`
+            : hudKind !== "error"
+            ? `RUT ${studentId.join("") || "???"}${studentName ? ` · ${studentName}` : ""}`
+            : hudMessage}
           </div>
+          {/* Estado REAL del guardado (llega después del HUD) + cuadre de la
+              sesión: es lo que hace visible al instante un "escaneé 20 y
+              subieron 12". */}
+          {!dupPending && !blankPending && syncState !== "idle" && (
+           <div className={`mt-0.5 text-[9px] font-bold ${
+            syncState === "saved" ? "text-emerald-300"
+            : syncState === "queued" ? "text-orange-300"
+            : syncState === "review" || syncState === "partial" ? "text-amber-300"
+            : syncState === "saving" ? "opacity-70"
+            : "text-red-300"}`}
+           >
+            {syncState === "saving" ? "Guardando…" : syncMessage}
+           </div>
+          )}
           {hudKind === "warning" && hudMessage && <div className="text-[9px] opacity-80 mt-0.5">{hudMessage}</div>}
           {hudKind !== "error" && courseNote && (
            <div className="mt-0.5 text-[9px] font-bold text-amber-300">⚠ {courseNote}</div>
@@ -1948,11 +2129,31 @@ export default function ScanPage() {
           )}
          </div>
          <div className="flex flex-col items-end gap-1 shrink-0">
-          <div className="text-[9px] font-bold uppercase tracking-widest opacity-70">
-           {phase === "clearing" ? "Retira la hoja" : "Escaneo " + scanCount}
+          <div className={`text-[9px] font-bold uppercase tracking-widest ${phase === "clearing" && clearingStuck ? "text-amber-300" : "opacity-70"}`}>
+           {phase === "clearing" ? (clearingStuck ? "↑ Retira la hoja para seguir" : "Retira la hoja") : "Escaneo " + scanCount}
+          </div>
+          {/* Cuadre de la sesión, siempre a la vista. */}
+          <div className="text-[9px] font-bold tracking-wide opacity-70">
+           {scanCount} leídas · {savedCount} guardadas{queuedCount > 0 ? ` · ${queuedCount} en cola` : ""}
           </div>
           {/* El HUD entero es pointer-events-none (no debe bloquear el re-encuadre):
               este enlace reactiva los eventos solo en su propia caja. */}
+          {dupPending && (
+           <div className="pointer-events-auto flex flex-col items-end gap-1">
+            <button
+             onClick={replaceDuplicate}
+             className="rounded-full border border-white/40 bg-white/15 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest"
+            >
+             Reemplazar
+            </button>
+            <button
+             onClick={dismissAndWaitForNextSheet}
+             className="text-[9px] font-bold uppercase tracking-widest underline opacity-70"
+            >
+             Omitir
+            </button>
+           </div>
+          )}
           {blankPending && (
            <div className="pointer-events-auto flex flex-col items-end gap-1">
             <button
@@ -1963,7 +2164,7 @@ export default function ScanPage() {
              {blankSaving ? "Guardando…" : "Guardar en blanco"}
             </button>
             <button
-             onClick={() => { setBlankPending(null); nextScan(); }}
+             onClick={dismissAndWaitForNextSheet}
              className="text-[9px] font-bold uppercase tracking-widest underline opacity-70"
             >
              Descartar

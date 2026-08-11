@@ -10,7 +10,7 @@ import { QuizStats } from "@/components/dashboard/QuizStats";
 import { canonicalRut } from "@/lib/rut";
 import { PrintButton } from "@/components/dashboard/PrintButton";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
-import { parseOpenQuestions } from "@/lib/quiz_constraints";
+import { parseOpenQuestions, countMissingKeySlots } from "@/lib/quiz_constraints";
 import { parseSheetMode, compactModeIssue } from "@/lib/sheet_mode";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 import { buildPaperCourseResolver } from "@/lib/paper_course";
@@ -62,9 +62,9 @@ export default async function QuizDetailPage({ params }: PageProps) {
   // "clave incompleta" ni tienen letra en la grilla.
   const openQuestions = parseOpenQuestions(quiz.open_questions ?? "", Number(quiz.num_questions ?? 0));
   const openSet0 = new Set(openQuestions.map((q) => q - 1));
-  const keySlots = String(quiz.answer_key ?? "");
-  const missingClosed = Array.from({ length: Number(quiz.num_questions ?? 0) }, (_, i) => i)
-    .filter((i) => !openSet0.has(i) && (keySlots[i] ?? "-") === "-").length;
+  // Mismo criterio que el listado de ensayos (quiz_constraints): una pregunta
+  // de desarrollo lleva "-" en la clave y eso NO es un hueco.
+  const missingClosed = countMissingKeySlots(quiz);
   const keyIncomplete = missingClosed > 0;
   // Formato de la hoja (migracion sheet_mode): decide si "Generar" ofrece la
   // hoja completa o el bloque pegable. `compactIssue` es el mismo criterio que

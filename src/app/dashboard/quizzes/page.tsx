@@ -9,6 +9,7 @@ import { ActionButton } from "@/components/dashboard/ActionButton";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 import { resolveCountryProfile } from "@/lib/country_profiles";
 import { parseSheetMode } from "@/lib/sheet_mode";
+import { isAnswerKeyIncomplete } from "@/lib/quiz_constraints";
 import { applyTeacherScope, fetchTeacherOptions, parseTeacherScope, resolveScope } from "@/lib/teacher_scope";
 import { TeacherScopeFilter } from "@/components/dashboard/TeacherScopeFilter";
 
@@ -41,15 +42,18 @@ type QuizRow = {
   num_questions: number | null;
   options_per_question: number | null;
   answer_key: string | null;
+  /** CSV de preguntas de desarrollo ("27,29,33"); su "-" en la clave NO es un
+   *  hueco (ver isAnswerKeyIncomplete). Ausente en una BD sin esa migracion. */
+  open_questions?: string | null;
   created_at: string;
   /** 'full' | 'compact'; ausente en una BD sin la migracion sheet_mode. */
   sheet_mode?: string | null;
 };
 
-function isKeyIncomplete(quiz: Pick<QuizRow, "answer_key" | "num_questions">) {
-  const key = String(quiz.answer_key ?? "");
-  return key.includes("-") || key.length < Number(quiz.num_questions ?? 0);
-}
+// El criterio vive en quiz_constraints (unico para listado y detalle): una
+// pregunta de desarrollo lleva "-" en la clave por definicion, asi que buscar
+// "-" a secas marcaba "Clave incompleta" en todo ensayo con abiertas.
+const isKeyIncomplete = isAnswerKeyIncomplete;
 
 /** Un ensayo de bloque compacto se genera en /bloque, no en /sheet. */
 function isCompactQuiz(quiz: Pick<QuizRow, "sheet_mode">) {
@@ -78,24 +82,28 @@ export default async function QuizzesPage({ searchParams }: { searchParams?: Pro
       scope,
     );
 
-  const [quizzesResult, { data: courses }] = await Promise.all([
-    quizzesQuery("id,title,subject,grade,course_id,num_questions,options_per_question,answer_key,created_at,archived_at,sheet_mode"),
+  // Columnas que llegaron en migraciones posteriores: se piden todas y, si la BD
+  // no tiene alguna, se suelta esa y se reintenta. Antes era una cascada de
+  // fallbacks escrita a mano, que habia que ampliar con cada columna nueva.
+  const BASE_COLUMNS = "id,title,subject,grade,num_questions,options_per_question,answer_key,created_at,archived_at";
+  const OPTIONAL_COLUMNS = ["sheet_mode", "course_id", "open_questions"];
+
+  const loadQuizzes = async () => {
+    const optional = [...OPTIONAL_COLUMNS];
+    for (let attempt = 0; attempt <= OPTIONAL_COLUMNS.length; attempt++) {
+      const result = await quizzesQuery([BASE_COLUMNS, ...optional].join(","));
+      if (!result.error) return result.data;
+      const missing = optional.find((col) => isMissingColumnError(result.error, col));
+      if (!missing) return null;
+      optional.splice(optional.indexOf(missing), 1);
+    }
+    return null;
+  };
+
+  const [quizzesData, { data: courses }] = await Promise.all([
+    loadQuizzes(),
     supabase.from("courses").select("id,name,grade").is("archived_at", null).order("name"),
   ]);
-
-  let quizzesData: unknown = quizzesResult.data;
-  let quizzesError = quizzesResult.error;
-  if (quizzesError && isMissingColumnError(quizzesError, "sheet_mode")) {
-    // BD sin migrar: sin la columna no hay ensayos compactos, la lista queda
-    // exactamente como antes (todo 'full' por el default de parseSheetMode).
-    const fallbackResult = await quizzesQuery("id,title,subject,grade,course_id,num_questions,options_per_question,answer_key,created_at,archived_at");
-    quizzesData = fallbackResult.data;
-    quizzesError = fallbackResult.error;
-  }
-  if (quizzesError && isMissingColumnError(quizzesError, "course_id")) {
-    const fallbackResult = await quizzesQuery("id,title,subject,grade,num_questions,options_per_question,answer_key,created_at,archived_at");
-    quizzesData = fallbackResult.data;
-  }
 
   const courseList = (courses ?? []) as CourseRow[];
   const quizzes = (quizzesData ?? []) as unknown as QuizRow[];

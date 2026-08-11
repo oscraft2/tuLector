@@ -90,6 +90,42 @@ export function serializeOpenQuestions(open: number[]): string | null {
 }
 
 /**
+ * Cuantas preguntas CERRADAS quedaron sin respuesta en la clave.
+ *
+ * Una pregunta de desarrollo lleva "-" en la clave por definicion (no tiene
+ * alternativa correcta), asi que buscar "-" a secas marcaba como "clave
+ * incompleta" a todo ensayo con abiertas aunque estuviera completo -- bug real
+ * en el listado de ensayos con los instrumentos DIA. Este es el unico criterio:
+ * lo usan el listado y el detalle del ensayo.
+ */
+export function countMissingKeySlots(quiz: {
+  answer_key?: string | null;
+  num_questions?: number | null;
+  open_questions?: string | null;
+}): number {
+  const total = Number(quiz.num_questions ?? 0);
+  if (total <= 0) return 0;
+  const open = new Set(parseOpenQuestions(quiz.open_questions ?? "", total));
+  const key = String(quiz.answer_key ?? "");
+  let missing = 0;
+  for (let q = 1; q <= total; q++) {
+    if (open.has(q)) continue;
+    const slot = key[q - 1] ?? "-";
+    if (slot === "-" || slot.trim() === "") missing++;
+  }
+  return missing;
+}
+
+/** true si a la clave le falta al menos una respuesta CERRADA. */
+export function isAnswerKeyIncomplete(quiz: {
+  answer_key?: string | null;
+  num_questions?: number | null;
+  open_questions?: string | null;
+}): boolean {
+  return countMissingKeySlots(quiz) > 0;
+}
+
+/**
  * Preguntas de seleccion MULTIPLE ("marca todas las correctas": varias
  * burbujas marcadas son una respuesta valida, a diferencia de seleccion
  * unica). Mismo formato/semantica que openQuestions (lista de nº de pregunta
