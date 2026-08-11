@@ -49,7 +49,7 @@ function isKeyIncomplete(quiz: Pick<QuizRow, "answer_key" | "num_questions">) {
 type CourseRow = { id: string; name: string; grade: string | null };
 
 export default async function QuizzesPage() {
-  const { supabase, locale, school } = await getDashboardContext();
+  const { supabase, locale, school, isAdmin } = await getDashboardContext();
   const t = getDashboardMessages(locale);
 
   const [quizzesResult, { data: courses }] = await Promise.all([
@@ -97,7 +97,7 @@ export default async function QuizzesPage() {
             Un ensayo define las preguntas, la clave de respuestas y el tipo de evaluacion ({evaluationHint}). Al crearlo podras generar su hoja imprimible y escanearla desde la app movil.
           </p>
         )}
-        <QuizCreateForm courses={courseList} countryCode={school.country_code ?? "CL"} />
+        <QuizCreateForm courses={courseList} countryCode={school.country_code ?? "CL"} isAdmin={isAdmin} />
 
         {/* Right Column: Quiz Datatable */}
         <DataTable

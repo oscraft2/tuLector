@@ -50,6 +50,20 @@ export function AnswerKeyEditor({
 
   const [value, setValue] = useState(defaultValue.toUpperCase());
   const [questionCount, setQuestionCount] = useState(questions);
+  // Texto EN EDICION del campo "Preguntas". null = mostrar el valor normalizado
+  // (questionCount), que es lo habitual; un string = lo que el profesor esta
+  // tecleando ahora mismo, incluido el vacio.
+  //
+  // Sin esta separacion el input era controlado directamente por el numero ya
+  // normalizado: al borrar el digito, `Number("") || 1` devolvia 1 y el campo
+  // repintaba "1" al instante, asi que era imposible vaciarlo para escribir
+  // otro numero. Los presets (PAES/SIMCE/DIA) siguen llamando solo a
+  // setQuestionCount y el campo los refleja solo, porque fuera de edicion este
+  // estado vale null.
+  const [questionsText, setQuestionsText] = useState<string | null>(null);
+  // Mismo problema y misma solucion para el "Máx. pts" de cada rubrica, por
+  // pregunta: la entrada existe solo mientras ese campo se esta editando.
+  const [rubricPointsText, setRubricPointsText] = useState<Record<number, string>>({});
   const [optionCount, setOptionCount] = useState(defaultOptions);
   const [openText, setOpenText] = useState(defaultOpenQuestions);
   const [overridesText, setOverridesText] = useState(defaultOptionOverrides);
@@ -153,6 +167,28 @@ export function AnswerKeyEditor({
   // Preguntas de desarrollo (abiertas): 1-indexadas para el server action y la
   // hoja; 0-indexadas (openSet0) para la grilla y los slots. Su slot de clave
   // queda "-" bloqueado (una abierta nunca tiene letra correcta).
+  /** Lo que se pinta en el campo: el texto en edicion, o el valor normalizado. */
+  const questionsValue = questionsText ?? String(questionCount);
+
+  /** Acepta vacio y digitos; solo propaga al numero cuando ya es valido. */
+  const handleQuestionsChange = (raw: string, max: number) => {
+    if (raw !== "" && !/^\d+$/.test(raw)) return; // ignora letras, signos y decimales
+    setQuestionsText(raw);
+    const parsed = Number(raw);
+    if (raw !== "" && Number.isInteger(parsed) && parsed >= 1 && parsed <= max) {
+      setQuestionCount(parsed);
+    }
+  };
+
+  /** Al salir del campo se normaliza: vacio o fuera de rango vuelve a un valor valido. */
+  const handleQuestionsBlur = (max: number) => {
+    const parsed = Number(questionsText);
+    if (questionsText !== null && questionsText !== "" && Number.isFinite(parsed)) {
+      setQuestionCount(Math.max(1, Math.min(max, Math.round(parsed))));
+    }
+    setQuestionsText(null); // vuelve a mostrar el valor normalizado
+  };
+
   const openQuestions = useMemo(() => parseOpenQuestions(openText, questionCount), [openText, questionCount]);
   const openSet0 = useMemo(() => new Set(openQuestions.map((q) => q - 1)), [openQuestions]);
   const optionOverrides = useMemo(() => parseOptionOverrides(overridesText, questionCount), [overridesText, questionCount]);
@@ -329,10 +365,12 @@ export function AnswerKeyEditor({
             <input
               name="num_questions"
               type="number"
+              inputMode="numeric"
               min="1"
               max={QUIZ_MAX_QUESTIONS_MULTIPAGE}
-              value={questionCount}
-              onChange={(event) => setQuestionCount(Math.max(1, Math.min(QUIZ_MAX_QUESTIONS_MULTIPAGE, Number(event.target.value) || 1)))}
+              value={questionsValue}
+              onChange={(event) => handleQuestionsChange(event.target.value, QUIZ_MAX_QUESTIONS_MULTIPAGE)}
+              onBlur={() => handleQuestionsBlur(QUIZ_MAX_QUESTIONS_MULTIPAGE)}
               className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal"
             />
             {questionCount > QUIZ_MAX_QUESTIONS && (
@@ -367,10 +405,12 @@ export function AnswerKeyEditor({
               <input
                 name="num_questions"
                 type="number"
+                inputMode="numeric"
                 min="1"
                 max={QUIZ_MAX_QUESTIONS}
-                value={questionCount}
-                onChange={(event) => setQuestionCount(Math.max(1, Math.min(QUIZ_MAX_QUESTIONS, Number(event.target.value) || 1)))}
+                value={questionsValue}
+                onChange={(event) => handleQuestionsChange(event.target.value, QUIZ_MAX_QUESTIONS)}
+                onBlur={() => handleQuestionsBlur(QUIZ_MAX_QUESTIONS)}
                 className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal"
               />
             </label>
@@ -455,9 +495,32 @@ export function AnswerKeyEditor({
                         </select>
                         <label className="ml-auto flex items-center gap-1.5 text-xs font-medium text-[#6b7280]">
                           Máx.
+                          {/* Mismo criterio que el campo "Preguntas": mientras se
+                              edita manda el texto (puede quedar vacio), y al salir
+                              se normaliza. Antes `Number("") || 0` lo devolvia a 0
+                              en cuanto se borraba, y no habia forma de reescribirlo. */}
                           <input
-                            type="number" min={0} step={0.5} value={r.max_points}
-                            onChange={(e) => update({ max_points: Math.max(0, Number(e.target.value) || 0) })}
+                            type="number" min={0} step={0.5} inputMode="decimal"
+                            value={rubricPointsText[q] ?? String(r.max_points)}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              if (raw !== "" && !/^\d*[.,]?\d*$/.test(raw)) return;
+                              setRubricPointsText((prev) => ({ ...prev, [q]: raw }));
+                              const parsed = Number(raw.replace(",", "."));
+                              if (raw !== "" && Number.isFinite(parsed) && parsed >= 0) update({ max_points: parsed });
+                            }}
+                            onBlur={() => {
+                              const raw = rubricPointsText[q];
+                              if (raw !== undefined && raw !== "") {
+                                const parsed = Number(raw.replace(",", "."));
+                                if (Number.isFinite(parsed)) update({ max_points: Math.max(0, parsed) });
+                              }
+                              setRubricPointsText((prev) => {
+                                const next = { ...prev };
+                                delete next[q];
+                                return next;
+                              });
+                            }}
                             className="w-14 rounded-md border border-[#cfd6df] bg-white px-2 py-1 text-xs text-[#111827]"
                           />
                           <span className="text-[#9ca3af]">pts</span>

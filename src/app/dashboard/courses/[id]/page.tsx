@@ -5,6 +5,9 @@ import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { CourseResultsFilter } from "@/components/dashboard/CourseResultsFilter";
+import { CourseRoster } from "@/components/dashboard/CourseRoster";
+import { ActionButton } from "@/components/dashboard/ActionButton";
+import { updateStudentCourse } from "@/app/dashboard/actions";
 import { canonicalRut } from "@/lib/rut";
 import { isNotaType, evaluationLabel } from "@/lib/evaluation_types";
 import { buildCourseReportData, latestEquivalentByStudent } from "@/lib/course_report";
@@ -139,6 +142,16 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
       <PageHeader title={course.name} description={`Detalle del curso. ${studentList.length} alumno${studentList.length === 1 ? "" : "s"}, ${filteredPapers.length} hoja${filteredPapers.length === 1 ? "" : "s"} escaneada${filteredPapers.length === 1 ? "" : "s"}.`} />
 
       <div className="space-y-6">
+        {/* Gestion del roster: vivia en /dashboard/students, que para armarlo
+            tenia que traerse todos los alumnos del colegio. Ahora vive donde
+            corresponde y busca bajo demanda. */}
+        <CourseRoster
+          courseName={course.name}
+          studentCount={studentList.length}
+          isAdmin={isAdmin}
+          action={updateStudentCourse}
+        />
+
         <CourseResultsFilter quizzes={quizOptions} />
 
         <KPIGrid>
@@ -234,7 +247,21 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
                 <td className="px-5 py-4 text-[#5b6472] text-xs">{s.lastQuiz ?? "-"}</td>
                 <td className="px-5 py-4"><span className="text-sm">{s.trend}</span></td>
                 <td className="px-5 py-4">
-                  <Link href={`/dashboard/students/${s.id}`} className="text-xs font-semibold text-[#07305f] underline">Perfil</Link>
+                  <div className="flex flex-wrap gap-3">
+                    <Link href={`/dashboard/students/${s.id}`} className="text-xs font-semibold text-[#07305f] underline">Perfil</Link>
+                    {isAdmin && (
+                      <ActionButton
+                        action={updateStudentCourse}
+                        fields={{ student_id: s.id, course: "" }}
+                        label="Quitar del curso"
+                        pendingLabel="Quitando…"
+                        className="text-xs font-semibold text-amber-700 hover:underline disabled:opacity-50"
+                        confirm={`¿Quitar a ${s.name} de ${course.name}?`}
+                        confirmTitle="¿Quitar del curso?"
+                        confirmLabel="Quitar"
+                      />
+                    )}
+                  </div>
                 </td>
               </tr>
             )}
@@ -249,6 +276,20 @@ export default async function CourseDetailPage({ params, searchParams }: PagePro
                   <p>{s.count} lectura{s.count === 1 ? "" : "s"} · {s.trend}</p>
                   {s.lastQuiz && <p className="text-xs truncate">Ultimo: {s.lastQuiz}</p>}
                 </div>
+                {isAdmin && (
+                  <div className="mt-3">
+                    <ActionButton
+                      action={updateStudentCourse}
+                      fields={{ student_id: s.id, course: "" }}
+                      label="Quitar del curso"
+                      pendingLabel="Quitando…"
+                      className="text-xs font-semibold text-amber-700 underline disabled:opacity-50"
+                      confirm={`¿Quitar a ${s.name} de ${course.name}?`}
+                      confirmTitle="¿Quitar del curso?"
+                      confirmLabel="Quitar"
+                    />
+                  </div>
+                )}
               </article>
             )}
           />

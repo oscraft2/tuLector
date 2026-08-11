@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDashboardContext } from "@/lib/supabase_server";
-import { resolveNationalId } from "@/lib/national_id";
 import { isMissingColumnError } from "@/lib/supabase_errors";
+import { buildStudentSearchFilters, sanitizeQuery } from "@/lib/student_search";
 
 export const dynamic = "force-dynamic";
 
@@ -19,20 +19,16 @@ type StudentSearchRow = {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const raw = (searchParams.get("q") ?? "").trim();
-  // Sanea caracteres que rompen el filtro .or()/.ilike de PostgREST.
-  const q = raw.replace(/[,%()*]/g, " ").trim();
+  const q = sanitizeQuery(raw);
   if (q.length < 2) return NextResponse.json({ students: [], quizzes: [] });
 
   try {
     const { supabase, school } = await getDashboardContext();
     const like = `%${q}%`;
-    // Exacto por ID nacional canonico: antes solo Chile (canonicalRut), ahora
-    // usa el pais del colegio (resolveNationalId, ver national_id.ts) — ilike
-    // sobre rut/student_id ya buscaba por coincidencia parcial en cualquier
-    // pais (esas columnas guardan el ID normalizado sin importar el formato).
-    const rutNorm = resolveNationalId(raw, school.country_code ?? "CL").canonical;
-    const studentFilters = [`name.ilike.${like}`, `rut.ilike.${like}`, `student_id.ilike.${like}`];
-    if (rutNorm) studentFilters.push(`rut_normalized.eq.${rutNorm}`);
+    // Saneado + match exacto por ID nacional canonico viven en student_search.ts,
+    // compartidos con el listado del modulo de alumnos (una sola implementacion
+    // de "como se busca un alumno").
+    const studentFilters = buildStudentSearchFilters(raw, school.country_code ?? "CL");
 
     const [studentsResWithCourseId, quizzesRes, coursesRes] = await Promise.all([
       supabase

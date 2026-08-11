@@ -21,7 +21,7 @@ type QuizRow = {
  * APK. El motor OMR y /scan no cambian — esto solo decide QUE ensayo escanear.
  */
 export default async function NativeScanPage() {
-  const { supabase, school } = await getDashboardContext();
+  const { supabase, school, isAdmin } = await getDashboardContext();
   const activeQuizId = (await cookies()).get("tulector_active_quiz")?.value;
 
   const [{ data: quizzes }, { data: courses }] = await Promise.all([
@@ -87,7 +87,7 @@ export default async function NativeScanPage() {
 
       </section>
 
-      <CreateQuizFab courses={(courses ?? []) as { id: string; name: string; grade: string | null }[]} />
+      <CreateQuizFab courses={(courses ?? []) as { id: string; name: string; grade: string | null }[]} isAdmin={isAdmin} />
     </main>
   );
 }

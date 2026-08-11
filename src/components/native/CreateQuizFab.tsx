@@ -11,7 +11,7 @@ type CourseOption = { id: string; name: string; grade: string | null };
  * detras de este FAB en vez de un formulario largo siempre visible al final
  * de la pagina.
  */
-export function CreateQuizFab({ courses }: { courses: CourseOption[] }) {
+export function CreateQuizFab({ courses, isAdmin = false }: { courses: CourseOption[]; isAdmin?: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -47,7 +47,7 @@ export function CreateQuizFab({ courses }: { courses: CourseOption[] }) {
                 </svg>
               </button>
             </div>
-            <QuizCreateForm courses={courses} />
+            <QuizCreateForm courses={courses} isAdmin={isAdmin} />
           </div>
         </div>
       ) : null}

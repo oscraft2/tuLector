@@ -1,10 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
 import type { DashboardActionState } from "@/app/dashboard/actions";
-import { createQuiz, updateQuiz } from "@/app/dashboard/actions";
+import { createQuiz, updateQuiz, createCourse } from "@/app/dashboard/actions";
 import { AnswerKeyEditor } from "@/components/dashboard/AnswerKeyEditor";
+import { CourseForm } from "@/components/dashboard/CourseForm";
+import { SCHOOL_GRADES } from "@/lib/grades";
 import { ActionFeedbackDialog } from "@/components/dashboard/ActionFeedbackDialog";
 import { ConfirmDialog } from "@/components/dashboard/ConfirmDialog";
 import { SubmitButton } from "@/components/dashboard/SubmitButton";
@@ -55,12 +56,16 @@ export function QuizCreateForm({
   mode = "create",
   quiz,
   papersCount = 0,
+  isAdmin = false,
 }: {
   courses: CourseOption[];
   countryCode?: string;
   mode?: "create" | "edit";
   quiz?: ExistingQuiz;
   papersCount?: number;
+  /** Decide si al no haber cursos se ofrece crearlos aqui mismo: createCourse
+   *  solo lo permite a un administrador del colegio. */
+  isAdmin?: boolean;
 }) {
   const isEdit = mode === "edit" && Boolean(quiz);
   const [state, formAction] = useActionState(isEdit ? updateQuiz : createQuiz, initialState);
@@ -106,6 +111,35 @@ export function QuizCreateForm({
 
   return (
     <>
+      {/* Sin cursos no se puede crear un ensayo, asi que el atajo va ARRIBA y
+          FUERA del <form> (anidar formularios es HTML invalido).
+          Antes esto era un enlace a /dashboard/students, con dos problemas:
+          (a) este formulario tambien se monta DENTRO de la APK
+          (CreateQuizFab en /app/scan), asi que el enlace sacaba al usuario a la
+          version web -- la APK tiene que bastarse sola; y (b) tras mover la
+          gestion de cursos el destino quedo obsoleto. Ahora se resuelve aqui.
+          createCourse exige ser admin del colegio: a un docente no-admin se le
+          dice a quien pedirselo en vez de ofrecerle un formulario que fallaria. */}
+      {noCourses && (
+        <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-amber-900">
+            Todavía no hay cursos en el establecimiento
+          </p>
+          {isAdmin ? (
+            <>
+              <p className="mt-1 text-xs text-amber-800">
+                Crea el primero aquí mismo y sigue con el ensayo sin salir de esta pantalla.
+              </p>
+              <CourseForm action={createCourse} grades={SCHOOL_GRADES} />
+            </>
+          ) : (
+            <p className="mt-1 text-xs text-amber-800">
+              Pídele a un administrador del colegio que cree al menos un curso para poder crear ensayos.
+            </p>
+          )}
+        </div>
+      )}
+
       <form ref={formRef} action={formAction} onSubmit={handleSubmit} className="rounded-md border border-[#e1e5ea] bg-white p-5 space-y-4">
         <h2 className="text-xl font-semibold">{isEdit ? "Editar ensayo" : "Nuevo ensayo"}</h2>
         {isEdit && quiz && <input type="hidden" name="id" value={quiz.id} />}
@@ -149,12 +183,6 @@ export function QuizCreateForm({
                     <option key={c.id} value={c.name}>{c.name}</option>
                   ))}
                 </select>
-                {noCourses && (
-                  <span className="mt-1 block text-[10px] text-amber-700">
-                    * Primero crea un curso en{" "}
-                    <Link href="/dashboard/students" className="underline font-bold">Alumnos</Link>
-                  </span>
-                )}
               </label>
             ) : (
               <div className="text-sm font-semibold">
@@ -177,12 +205,6 @@ export function QuizCreateForm({
                   ))}
                 </div>
                 {courseError && <span className="mt-1 block text-[10px] text-red-600">Selecciona al menos un curso.</span>}
-                {noCourses && (
-                  <span className="mt-1 block text-[10px] text-amber-700">
-                    * Primero crea un curso en{" "}
-                    <Link href="/dashboard/students" className="underline font-bold">Alumnos</Link>
-                  </span>
-                )}
               </div>
             )}
           </div>

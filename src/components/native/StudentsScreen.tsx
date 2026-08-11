@@ -1,27 +1,58 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { StudentsFab } from "./StudentsFab";
 import { PullToRefresh } from "./PullToRefresh";
 
 type StudentRow = { id: string; rut: string | null; student_id: string | null; name: string; course: string | null };
 type CourseOption = { id: string; name: string; grade: string | null };
 
+type StudentsScreenProps = {
+  students: StudentRow[];
+  courses: CourseOption[];
+  /** Total de coincidencias en el servidor (no solo las de esta pagina). */
+  total: number;
+  /** true si hay mas resultados que los mostrados. */
+  hasMore: boolean;
+  /** Termino ya aplicado, para rehidratar el input tras navegar. */
+  query: string;
+};
+
 /**
  * Pantalla completa de Alumnos: header + buscador quedan pegados arriba
  * (sticky) mientras solo la lista hace scroll debajo. Tocar una tarjeta lleva
  * al perfil del alumno (/app/students/[id]: resultados, KPIs, historial) —
  * editar/eliminar vive ahi, en el boton del header de esa pantalla.
+ *
+ * La busqueda es DEL SERVIDOR. Antes esta pantalla recibia todos los alumnos
+ * del colegio y filtraba con useMemo: en un celular con datos moviles eso era
+ * la peor version del problema.
  */
-export function StudentsScreen({ students, courses }: { students: StudentRow[]; courses: CourseOption[] }) {
-  const [query, setQuery] = useState("");
+export function StudentsScreen({ students, courses, total, hasMore, query }: StudentsScreenProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+  const [term, setTerm] = useState(query);
+  const typing = useRef(false);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return students;
-    return students.filter((s) => s.name.toLowerCase().includes(q) || (s.rut ?? "").toLowerCase().includes(q));
-  }, [students, query]);
+  useEffect(() => {
+    if (!typing.current) setTerm(query);
+  }, [query]);
+
+  useEffect(() => {
+    if (!typing.current) return;
+    const id = setTimeout(() => {
+      typing.current = false;
+      const params = new URLSearchParams(searchParams.toString());
+      if (term.trim()) params.set("q", term.trim());
+      else params.delete("q");
+      startTransition(() => router.replace(`/app/students${params.toString() ? `?${params}` : ""}`));
+    }, 350);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [term]);
 
   return (
     <main className="min-h-dvh bg-[#f5f6f8] text-[#0b1220]">
@@ -37,24 +68,27 @@ export function StudentsScreen({ students, courses }: { students: StudentRow[]; 
           <div className="relative">
             <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
             <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar por nombre o RUT"
+              value={term}
+              onChange={(e) => { typing.current = true; setTerm(e.target.value); }}
+              placeholder="Buscar por nombre, RUT o ID"
               className="w-full rounded-xl border border-[#cfd6df] bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#111827]"
             />
           </div>
+          <p className="mt-1.5 px-1 text-[11px] text-[#8b93a1]" aria-live="polite">
+            {isPending ? "Buscando…" : `${total} alumno${total === 1 ? "" : "s"}`}
+          </p>
         </div>
       </div>
 
       <PullToRefresh>
         <section className="space-y-5 px-5 pb-24 pt-1">
-          {filtered.length === 0 ? (
+          {students.length === 0 ? (
             <p className="rounded-2xl border border-dashed border-[#dfe3e8] bg-white/50 p-5 text-center text-sm text-[#5b6472]">
-              {students.length === 0 ? "Todavia no hay alumnos registrados." : "Sin resultados para esa busqueda."}
+              {query ? "Sin resultados para esa busqueda." : "Todavia no hay alumnos registrados."}
             </p>
           ) : (
             <div className="divide-y divide-[#e6e8eb] overflow-hidden rounded-2xl border border-[#e6e8eb] bg-white">
-              {filtered.map((student) => (
+              {students.map((student) => (
                 <Link
                   key={student.id}
                   href={`/app/students/${student.id}`}
@@ -72,6 +106,12 @@ export function StudentsScreen({ students, courses }: { students: StudentRow[]; 
                 </Link>
               ))}
             </div>
+          )}
+
+          {hasMore && (
+            <p className="rounded-2xl border border-dashed border-[#dfe3e8] bg-white/50 p-4 text-center text-xs text-[#5b6472]">
+              Mostrando los primeros {students.length} de {total}. Afina la busqueda para encontrar un alumno puntual.
+            </p>
           )}
         </section>
       </PullToRefresh>

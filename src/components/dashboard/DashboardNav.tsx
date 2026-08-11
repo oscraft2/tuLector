@@ -30,6 +30,10 @@ export function DashboardShell({
   const nav = [
     { href: "/dashboard", label: t.dashboard, active: title === t.dashboard },
     { href: "/dashboard/quizzes", label: t.quizzes, active: title === t.quizzes },
+    // "Cursos" no estaba en el menu: el modulo existia pero solo se llegaba por
+    // enlaces sueltos. Ahora es el hogar de los cursos (crear, editar, importar),
+    // asi que va antes de Alumnos, que es su consumidor natural.
+    { href: "/dashboard/courses", label: "Cursos", active: title === "Cursos" },
     { href: "/dashboard/students", label: t.students, active: title === t.students },
     { href: "/dashboard/papers", label: t.papers, active: title === t.papers },
     { href: "/dashboard/billing", label: t.billing, active: title === t.billing },

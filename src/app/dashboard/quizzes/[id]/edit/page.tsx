@@ -10,7 +10,7 @@ type PageProps = { params: Promise<{ id: string }> };
 
 export default async function QuizEditPage({ params }: PageProps) {
   const { id } = await params;
-  const { supabase, school } = await getDashboardContext();
+  const { supabase, school, isAdmin } = await getDashboardContext();
 
   const [{ data: quiz }, { data: courses }, { count: papersCount }] = await Promise.all([
     supabase.from("quizzes").select("*").eq("id", id).eq("school_id", school.id).single(),
@@ -33,6 +33,7 @@ export default async function QuizEditPage({ params }: PageProps) {
       <div className="max-w-2xl">
         <QuizCreateForm
           mode="edit"
+          isAdmin={isAdmin}
           quiz={{
             id: quiz.id,
             title: quiz.title,

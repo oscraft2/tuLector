@@ -4,17 +4,9 @@ import { useState } from "react";
 import { StudentForm } from "@/components/dashboard/StudentForm";
 import { CourseForm } from "@/components/dashboard/CourseForm";
 import { createStudent, createCourse } from "@/app/dashboard/actions";
+import { SCHOOL_GRADES } from "@/lib/grades";
 
 type CourseOption = { id: string; name: string; grade: string | null };
-
-// Mismos niveles que src/app/dashboard/students/page.tsx (CHILEAN_GRADES) —
-// duplicado a proposito: es una lista estatica corta, no vale la pena
-// compartir un archivo solo por esto.
-const CHILEAN_GRADES = [
-  "1° Básico", "2° Básico", "3° Básico", "4° Básico", "5° Básico", "6° Básico",
-  "7° Básico", "8° Básico", "I Medio", "II Medio", "III Medio", "IV Medio",
-  "Educación Superior", "Otro",
-];
 
 /**
  * Boton flotante "+" en /app/students: antes el formulario "Agregar alumno"
@@ -89,7 +81,7 @@ export function StudentsFab({ courses }: { courses: CourseOption[] }) {
               )
             ) : (
               <div className="rounded-2xl border border-[#e6e8eb] bg-white p-4">
-                <CourseForm action={createCourse} grades={CHILEAN_GRADES} />
+                <CourseForm action={createCourse} grades={SCHOOL_GRADES} />
               </div>
             )}
           </div>

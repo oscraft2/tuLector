@@ -11,11 +11,12 @@ type Course = { id: string; name: string; grade: string | null };
 
 type CourseEditRowProps = {
   course: Course;
-  selected: boolean;
   isAdmin: boolean;
   updateAction: (state: DashboardActionState, formData: FormData) => Promise<DashboardActionState>;
   archiveAction: (state: DashboardActionState, formData: FormData) => Promise<DashboardActionState>;
   grades: readonly string[];
+  /** Alumnos del curso. `null` si la BD aun no tiene course_student_counts. */
+  studentCount?: number | null;
 };
 
 const initialState: DashboardActionState = { status: "idle" };
@@ -24,7 +25,7 @@ const initialState: DashboardActionState = { status: "idle" };
  * tipeo (ej. "IIMC" en vez de "II C") quedaba pegado para siempre. Este
  * componente agrega edicion inline: boton "Editar" muestra un mini-form con
  * Guardar/Cancelar en el lugar del link+nivel de siempre. */
-export function CourseEditRow({ course, selected, isAdmin, updateAction, archiveAction, grades }: CourseEditRowProps) {
+export function CourseEditRow({ course, isAdmin, updateAction, archiveAction, grades, studentCount = null }: CourseEditRowProps) {
   const [editing, setEditing] = useState(false);
   const [state, formAction] = useActionState(updateAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
@@ -79,14 +80,22 @@ export function CourseEditRow({ course, selected, isAdmin, updateAction, archive
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 py-2 text-sm">
-      <Link
-        href={`/dashboard/students?course=${course.id}`}
-        className={selected ? "min-w-0 rounded-md bg-[#eef4ff] px-2 py-1 text-[#07305f]" : "min-w-0 rounded-md px-2 py-1 hover:bg-[#f4f6f8] hover:text-[#07305f]"}
-      >
+    <div className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+      <Link href={`/dashboard/courses/${course.id}`} className="min-w-0 flex-1 rounded-md px-2 py-1 hover:bg-[#f4f6f8] hover:text-[#07305f]">
         <span className="block truncate font-semibold">{course.name}</span>
         <span className="text-xs text-[#6b7280]">{course.grade}</span>
       </Link>
+
+      <div className="flex shrink-0 items-center gap-3">
+        {studentCount !== null && (
+          <Link
+            href={`/dashboard/students?course=${course.id}`}
+            className="rounded bg-[#f4f6f8] px-2 py-0.5 text-xs font-semibold text-[#1e293b] hover:bg-[#eef4ff] hover:text-[#07305f]"
+            title="Ver estos alumnos en Gestion de alumnos"
+          >
+            {studentCount} alumno{studentCount === 1 ? "" : "s"}
+          </Link>
+        )}
       {isAdmin && (
         <div className="flex shrink-0 gap-2">
           <button type="button" onClick={() => setEditing(true)} className="text-xs font-semibold text-[#07305f] hover:underline">
@@ -105,6 +114,7 @@ export function CourseEditRow({ course, selected, isAdmin, updateAction, archive
           />
         </div>
       )}
+      </div>
     </div>
   );
 }

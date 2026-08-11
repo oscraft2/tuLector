@@ -47,12 +47,28 @@ export async function updateLocale(formData: FormData) {
   revalidatePath("/app/configuracion");
 }
 
+/** Reintentos ante choque de sheet_code. Generoso a proposito: en el modo
+ *  degradado (sin la funcion next_sheet_code) el correlativo se descubre
+ *  avanzando de a uno desde un maximo que RLS puede dejar corto. */
+const MAX_SHEET_CODE_RETRIES = 25;
+
 /** Siguiente sheet_code correlativo del colegio (1,2,3…). Cabe en los 20 bits del
- * codigo de hoja del motor; el indice unico (school_id, sheet_code) evita choques. */
+ * codigo de hoja del motor; el indice unico (school_id, sheet_code) evita choques.
+ *
+ * Va por RPC y no por SELECT directo porque el SELECT pasa por RLS: desde
+ * 20260808000000_teacher_isolation.sql un docente no-admin solo ve SUS ensayos,
+ * asi que el maximo le salia recortado y pedia un codigo que otro usuario del
+ * colegio ya tenia (ver 20260810100000_next_sheet_code.sql). */
 async function nextSheetCode(
   supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"],
   schoolId: string,
 ): Promise<number> {
+  const rpc = await supabase.rpc("next_sheet_code", { p_school: schoolId });
+  if (!rpc.error && typeof rpc.data === "number") return rpc.data;
+
+  // BD sin la migracion aplicada: se cae al calculo anterior. Para un docente
+  // no-admin puede quedar corto, y por eso los bucles de reintento avanzan de
+  // forma monotona en vez de volver a este valor.
   const { data } = await supabase
     .from("quizzes")
     .select("sheet_code")
@@ -208,21 +224,27 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
           error = (await supabase.from("quizzes").insert(withoutOpenQuestions(insertPayload))).error;
         }
         if (!error) { sheetOffset++; break; }
-        if (error.code === "23505" && retries < 6) {
-          // unique_violation en sheet_code -- puede pasar si dos personas
-          // crean un ensayo casi al mismo tiempo (nextSheetCode lee el
-          // maximo y sigue siendo una carrera). El primer reintento solo
-          // suma 1 (barato, cubre el choque simple); si vuelve a chocar,
-          // se relee el maximo real en vez de seguir sumando a ciegas sobre
-          // un baseCode que ya quedo desactualizado por la otra insercion.
+        if (error.code === "23505" && retries < MAX_SHEET_CODE_RETRIES) {
+          // unique_violation en sheet_code. El candidato SIEMPRE avanza: nunca
+          // se reintenta un numero ya probado.
+          //
+          // Antes, al segundo choque se releia el maximo y se reseteaba el
+          // offset a 0. Con RLS recortando ese maximo a los ensayos del propio
+          // docente (teacher_isolation), releer devolvia el MISMO valor
+          // insuficiente una y otra vez: el bucle reintentaba eternamente el
+          // mismo codigo y terminaba culpando a "otros usuarios". Ahora la
+          // relectura solo se acepta si APUNTA MAS ARRIBA.
           sheetOffset++;
           if (retries >= 1) {
-            baseCode = await nextSheetCode(supabase, school.id);
-            sheetOffset = 0;
+            const reread = await nextSheetCode(supabase, school.id);
+            if (reread > baseCode + sheetOffset) {
+              baseCode = reread;
+              sheetOffset = 0;
+            }
           }
           continue;
         }
-        if (error.code === "23505") throw new Error("Hubo mucha actividad creando ensayos al mismo tiempo. Intenta de nuevo.");
+        if (error.code === "23505") throw new Error("No se pudo asignar un codigo de hoja libre para este ensayo. Si el problema persiste, aplica la migracion 20260810100000_next_sheet_code.sql.");
         throw new Error(error.message);
       }
     }
@@ -438,11 +460,11 @@ export async function duplicateQuiz(_prevState: DashboardActionState, formData: 
       duplicated_from: data.id,
     };
     let error: { message: string; code?: string } | null = null;
+    // Mismo criterio que createQuiz: el candidato avanza de forma monotona.
+    // Releer el maximo en cada vuelta (lo que hacia antes) reintentaba el mismo
+    // numero para siempre cuando RLS se lo recortaba al docente no-admin.
+    let sheetCode = await nextSheetCode(supabase, school.id);
     for (let retries = 0; ; retries++) {
-      // Mismo choque posible que en createQuiz si dos personas duplican/crean
-      // un ensayo casi al mismo tiempo -- se relee el maximo real en cada
-      // reintento (aca no hay lote, asi que no hace falta el offset barato).
-      const sheetCode = await nextSheetCode(supabase, school.id);
       const payload = { ...basePayload, sheet_code: sheetCode };
       const result = await supabase.from("quizzes").insert(payload);
       error = result.error;
@@ -451,10 +473,14 @@ export async function duplicateQuiz(_prevState: DashboardActionState, formData: 
         error = retryResult.error;
       }
       if (!error) break;
-      if (error.code === "23505" && retries < 5) continue;
+      if (error.code === "23505" && retries < MAX_SHEET_CODE_RETRIES) {
+        const reread = await nextSheetCode(supabase, school.id);
+        sheetCode = Math.max(sheetCode + 1, reread);
+        continue;
+      }
       break;
     }
-    if (error) throw new Error(error.code === "23505" ? "Hubo mucha actividad creando ensayos al mismo tiempo. Intenta de nuevo." : error.message);
+    if (error) throw new Error(error.code === "23505" ? "No se pudo asignar un codigo de hoja libre para la copia. Si el problema persiste, aplica la migracion 20260810100000_next_sheet_code.sql." : error.message);
     revalidatePath("/dashboard/quizzes");
     return actionSuccess("Ensayo duplicado", `Se creo "${data.title} copia".`, "⧉");
   } catch (error) {
@@ -715,6 +741,7 @@ async function persistStudentRows(
   }
 
   revalidatePath("/dashboard/students");
+  revalidatePath("/dashboard/courses");
   revalidatePath("/dashboard/quizzes");
   const cursoMsg = cursos.length ? ` en ${cursos.length} curso${cursos.length === 1 ? "" : "s"}` : "";
   return actionSuccess("Importacion lista", `${payload.length} alumno${payload.length === 1 ? "" : "s"} importado${payload.length === 1 ? "" : "s"} o actualizado${payload.length === 1 ? "" : "s"}${cursoMsg}.`);
@@ -1004,8 +1031,12 @@ export async function createCourse(_prevState: DashboardActionState, formData: F
     if (error) throw new Error(error.message);
 
     revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/courses");
     revalidatePath("/dashboard/quizzes");
     revalidatePath("/app/students");
+    // /app/scan monta el formulario de ensayo (CreateQuizFab): sin esto, el
+    // curso recien creado desde ahi mismo no aparecia en su propia lista.
+    revalidatePath("/app/scan");
     return actionSuccess("Curso creado", `${name} quedo disponible para asociar alumnos.`, "✓");
   } catch (error) {
     return actionError(error, "No se pudo crear el curso");
@@ -1046,6 +1077,7 @@ export async function updateCourse(_prevState: DashboardActionState, formData: F
     }
 
     revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/courses");
     revalidatePath("/dashboard/quizzes");
     return actionSuccess("Curso actualizado", `Ahora se llama "${name}".`, "✓");
   } catch (error) {
@@ -1077,6 +1109,7 @@ export async function archiveCourse(_prevState: DashboardActionState, formData: 
     if (error) throw new Error(error.message);
 
     revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/courses");
     revalidatePath("/dashboard/quizzes");
     return actionSuccess("Curso archivado", `${course?.name ?? "El curso"} se movio a archivados. Puedes restaurarlo cuando quieras.`, "🗃");
   } catch (error) {
@@ -1103,6 +1136,7 @@ export async function restoreCourse(_prevState: DashboardActionState, formData: 
     if (error) throw new Error(error.message);
 
     revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/courses");
     revalidatePath("/dashboard/quizzes");
     return actionSuccess("Curso restaurado", `${course?.name ?? "El curso"} volvio a estar disponible.`, "✓");
   } catch (error) {
@@ -1129,6 +1163,7 @@ export async function deleteStudent(_prevState: DashboardActionState, formData: 
     if (error) throw new Error(error.message);
 
     revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/courses");
     revalidatePath("/app/students");
     return actionSuccess("Alumno eliminado", `${student?.name ?? "El alumno"} fue eliminado del establecimiento.`, "🗑");
   } catch (error) {
@@ -1175,6 +1210,7 @@ export async function updateStudentCourse(_prevState: DashboardActionState, form
     if (updateResult.error) throw new Error(updateResult.error.message);
 
     revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/courses");
     revalidatePath("/dashboard/quizzes");
     return course
       ? actionSuccess("Alumno agregado al curso", `${student.name} quedo en ${course}.`, "✓")
@@ -1213,6 +1249,7 @@ export async function createStudent(_prevState: DashboardActionState, formData: 
     });
 
     revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/courses");
     revalidatePath("/dashboard/quizzes");
     revalidatePath("/app/students");
     return actionSuccess("Alumno agregado", `${name} quedo registrado en ${course}.`, "✓");
@@ -1271,6 +1308,7 @@ export async function updateStudent(_prevState: DashboardActionState, formData: 
     if (updateResult.error) throw new Error(updateResult.error.message);
 
     revalidatePath("/dashboard/students");
+    revalidatePath("/dashboard/courses");
     revalidatePath("/dashboard/quizzes");
     revalidatePath("/app/students");
     return actionSuccess("Alumno actualizado", `${name} quedo guardado.`, "✓");
@@ -1403,6 +1441,7 @@ export async function createStudentAndAssignPaper(formData: FormData) {
   const quizId = await assignPaperToStudent(supabase, school, paperId, resolved.normalized, name, resolved.canonical);
 
   revalidatePath("/dashboard/students");
+  revalidatePath("/dashboard/courses");
   revalidatePath("/dashboard/papers");
   revalidatePath(`/dashboard/papers/${paperId}`);
   revalidatePath(`/dashboard/results/${quizId}`);
