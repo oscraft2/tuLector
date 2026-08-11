@@ -24,6 +24,7 @@ type Props = {
 type LookupResponse = {
   students?: PickedStudent[];
   courses?: { id: string; name: string }[];
+  total?: number;
   error?: string;
 };
 
@@ -32,6 +33,7 @@ export function StudentPicker({ onPick, tone = "light", autoFocus = false, initi
   const [courseId, setCourseId] = useState<string | null>(null);
   const [students, setStudents] = useState<PickedStudent[]>([]);
   const [courses, setCourses] = useState<{ id: string; name: string }[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Descarta respuestas de busquedas que ya quedaron obsoletas (el usuario
@@ -50,6 +52,7 @@ export function StudentPicker({ onPick, tone = "light", autoFocus = false, initi
       if (id !== requestId.current) return;
       if (!res.ok) throw new Error(payload.error || "No se pudo buscar alumnos.");
       setStudents(payload.students ?? []);
+      setTotal(payload.total ?? (payload.students ?? []).length);
       if (payload.courses) setCourses(payload.courses);
     } catch (err) {
       if (id !== requestId.current) return;
@@ -81,7 +84,7 @@ export function StudentPicker({ onPick, tone = "light", autoFocus = false, initi
         autoFocus={autoFocus}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Buscar por nombre o RUT…"
+        placeholder="Nombre, apellido o RUT (en cualquier orden)"
         className={inputClass}
         disabled={disabled}
       />
@@ -117,6 +120,16 @@ export function StudentPicker({ onPick, tone = "light", autoFocus = false, initi
       )}
 
       {error && <p className={`text-xs font-semibold ${dark ? "text-red-400" : "text-red-600"}`}>{error}</p>}
+
+      {/* Cuántos hay en total: sin esto, ver 40 filas hacía pensar que el resto
+          no existe cuando en realidad solo faltaba afinar la búsqueda. */}
+      {students.length > 0 && (
+        <p className={`text-[11px] ${dark ? "text-zinc-500" : "text-[#5b6472]"}`}>
+          {total > students.length
+            ? `Mostrando ${students.length} de ${total} — escribe más para afinar`
+            : `${students.length} ${students.length === 1 ? "alumno" : "alumnos"}`}
+        </p>
+      )}
 
       <div className="max-h-64 space-y-1.5 overflow-y-auto">
         {loading && students.length === 0 && (

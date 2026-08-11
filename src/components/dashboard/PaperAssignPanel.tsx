@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { StudentPicker, type PickedStudent } from "@/components/StudentPicker";
 import type { AssignActionState } from "@/app/dashboard/papers/actions";
@@ -28,9 +29,11 @@ type Props = {
   undoAction: (state: AssignActionState, formData: FormData) => Promise<AssignActionState>;
   /** Descarta el escaneo (hoja que no corresponde a nadie). */
   voidAction: (state: AssignActionState, formData: FormData) => Promise<AssignActionState>;
+  /** Ensayo del que vino la hoja, para poder volver a él al terminar. */
+  quizId: string;
 };
 
-export function PaperAssignPanel({ paperId, currentStudentName, assigned, canUndo, assignAction, undoAction, voidAction }: Props) {
+export function PaperAssignPanel({ paperId, currentStudentName, assigned, canUndo, assignAction, undoAction, voidAction, quizId }: Props) {
   const [state, setState] = useState<AssignActionState>({});
   const [pending, startTransition] = useTransition();
 
@@ -91,7 +94,20 @@ export function PaperAssignPanel({ paperId, currentStudentName, assigned, canUnd
   return (
     <div className="space-y-4">
       {state.error && <p className="text-sm font-semibold text-red-600">{state.error}</p>}
-      {state.success && <p className="text-sm font-semibold text-emerald-700">{state.success}</p>}
+      {/* Al terminar, la salida natural es volver al ensayo y seguir con la
+          siguiente hoja pendiente — no quedarse en la pantalla de una hoja ya
+          resuelta. */}
+      {state.success && (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+          <p className="text-sm font-semibold text-emerald-800">{state.success}</p>
+          <Link
+            href={`/dashboard/quizzes/${quizId}`}
+            className="mt-2 inline-block rounded-md bg-[#07305f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#062447]"
+          >
+            ← Volver al ensayo
+          </Link>
+        </div>
+      )}
 
       <StudentPicker onPick={submitPick} disabled={pending} />
       {pending && <p className="text-xs text-[#5b6472]">Guardando…</p>}

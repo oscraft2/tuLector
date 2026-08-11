@@ -43,6 +43,11 @@ export default async function PaperIdentifyPage({ params }: PageProps) {
 
   return (
     <>
+      {/* Salida siempre a la vista: se llega aquí desde el ensayo y lo normal es
+          volver a él para seguir con la próxima hoja. */}
+      <Link href={`/dashboard/quizzes/${paper.quiz_id}`} className="mb-3 inline-block text-sm font-semibold text-[#07305f] hover:underline">
+        ← Volver al ensayo
+      </Link>
       <PageHeader
         title={assigned ? "Revisar identificación" : "Identificar alumno"}
         description={assigned
@@ -91,6 +96,7 @@ export default async function PaperIdentifyPage({ params }: PageProps) {
               assignAction={assignPaperAction}
               undoAction={undoAssignAction}
               voidAction={voidPaperAction}
+              quizId={paper.quiz_id}
             />
             <Link href={`/dashboard/results/${paper.quiz_id}`} className="block text-sm font-semibold text-[#07305f] underline">
               Ver resultados del ensayo
