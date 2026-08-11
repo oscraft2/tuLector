@@ -156,6 +156,9 @@ export default function ScanPage() {
  const [results, setResults] = useState<BubbleResult[]>([]);
  const [studentId, setStudentId] = useState<string[]>([]);
  const [studentName, setStudentName] = useState<string | null>(null);
+ // Ultimo paper guardado con exito: habilita el acceso MANUAL al reverso desde
+ // el HUD (ver sensoryPrefs.autoReverso -- el salto automatico esta apagado).
+ const [lastPaperId, setLastPaperId] = useState<string | null>(null);
  const [stream, setStream] = useState<MediaStream | null>(null);
  const streamRef = useRef<MediaStream | null>(null);
  const [error, setError] = useState("");
@@ -164,7 +167,7 @@ export default function ScanPage() {
  const [lastScan, setLastScan] = useState(0);
  const [scanCount, setScanCount] = useState(0);
  // Modo ráfaga (docs/plan-mejora-scan-zipgrade.md): HUD no bloqueante + auto-avance.
- const [sensoryPrefs, setSensoryPrefs] = useState<SensoryStoredPrefs>({ sound: true, vibration: true, burstMode: true });
+ const [sensoryPrefs, setSensoryPrefs] = useState<SensoryStoredPrefs>({ sound: true, vibration: true, burstMode: true, autoReverso: false });
  useEffect(() => {
   let alive = true;
   Promise.resolve().then(() => { if (alive) setSensoryPrefs(loadSensoryPrefs()); });
@@ -515,7 +518,24 @@ export default function ScanPage() {
   try { localStorage.setItem("tulector_scan_config", JSON.stringify(next)); } catch { /* sin storage */ }
  };
 
+  /** URL del reverso de un paper ya guardado. Los parametros deben calzar con
+   *  la hoja IMPRESA: `obpp` es la regla de reparto del ensayo (no la constante
+   *  vigente), ver LEGACY_OPEN_BOXES_PER_PAGE en sheet_generator.ts. */
+  const reversoHref = (paperId: string) => {
+   const params = new URLSearchParams({
+    paper: paperId,
+    open: scanCfg.openQuestions.join(","),
+    nq: String(scanCfg.numQuestions),
+    obpp: String(scanCfg.openBoxesPerPage),
+   });
+   return `/scan/reverso?${params.toString()}`;
+  };
+
   const syncResult = async ({ rut, answers, photo, warp, source, dvOk, code, nameImg }: { rut: string; answers: BubbleResult[]; photo?: string | null; warp?: string | null; source: "camera" | "upload"; dvOk?: boolean; code?: unknown; nameImg?: string | null }) => {
+   // El acceso al reverso siempre apunta a la hoja RECIEN guardada: si esta no
+   // llega a guardarse (offline, revision manual, error), el boton no debe
+   // quedar apuntando al alumno anterior.
+   setLastPaperId(null);
    // Sin red: se encola de una y NO se intenta el POST. Antes esto caia al
    // early-return de abajo cuando el arranque habia sido offline (activeQuizId
    // quedaba null porque la carga del ensayo fallaba) y la lectura se PERDIA.
@@ -603,20 +623,21 @@ export default function ScanPage() {
     } else {
      setSyncState("saved");
      setSyncMessage(`Sincronizado en dashboard (${scoreLabel})${multipageNote}.${quotaNote}`);
-     // Fase 1 de correccion IA (docs/plan-correccion-ia-abiertas.md): si el
-     // ensayo tiene preguntas de desarrollo Y el alumno quedo identificado con
-     // certeza (no manual_review), la camara pasa sola a "escanear el reverso
-     // de este alumno" -- el paper_id ya es conocido, cero ambiguedad de
-     // identidad (ver decision de diseno "pairing por flujo de escaneo").
+     // Fase 1 de correccion IA (docs/plan-correccion-ia-abiertas.md): con
+     // preguntas de desarrollo, el reverso de ESTE alumno se puede escanear sin
+     // ambiguedad de identidad (el paper_id ya es conocido -- "pairing por
+     // flujo de escaneo"). Se guarda el id para el boton "Reverso" del HUD.
+     //
+     // El salto AUTOMATICO quedo detras de la preferencia `autoReverso`, apagada
+     // por defecto: sacaba de la camara entre hoja y hoja (rompe la rafaga) y
+     // hoy la deteccion del reverso no es confiable. Escanear corrido el frente
+     // de todo el curso es el flujo que se usa en terreno.
      if (payload.paperId && scanCfg.openQuestions.length > 0) {
-      const params = new URLSearchParams({
-       paper: String(payload.paperId),
-       open: scanCfg.openQuestions.join(","),
-       nq: String(scanCfg.numQuestions),
-       obpp: String(scanCfg.openBoxesPerPage),
-      });
-      router.push(`/scan/reverso?${params.toString()}`);
-      return;
+      setLastPaperId(String(payload.paperId));
+      if (sensoryPrefs.autoReverso) {
+       router.push(reversoHref(String(payload.paperId)));
+       return;
+      }
      }
     }
    } catch (err) {
@@ -1657,6 +1678,16 @@ export default function ScanPage() {
        >
         {labeled ? "✓ Lectura confirmada" : "✓ Confirmar lectura (correcta)"}
        </button>
+       {/* Reverso: acceso MANUAL (el salto automático está tras la preferencia
+           autoReverso, apagada por defecto — ver syncResult). */}
+       {lastPaperId && scanCfg.openQuestions.length > 0 && (
+        <Link
+         href={reversoHref(lastPaperId)}
+         className="block w-full py-3 mb-2 rounded-2xl bg-sky-600/20 text-sky-300 border border-sky-500/40 text-center font-black text-xs uppercase tracking-widest active:scale-95 transition"
+        >
+         ✎ Escanear reverso de este alumno
+        </Link>
+       )}
        <button onClick={nextScan} className="w-full py-4 bg-white text-black rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition">
         Siguiente
        </button>
@@ -1698,8 +1729,20 @@ export default function ScanPage() {
            <div className="text-[9px] opacity-80 mt-0.5">⚠ No se pudo sincronizar con el dashboard</div>
           )}
          </div>
-         <div className="text-[9px] font-bold uppercase tracking-widest opacity-70 shrink-0">
-          {phase === "clearing" ? "Retira la hoja" : "Escaneo " + scanCount}
+         <div className="flex flex-col items-end gap-1 shrink-0">
+          <div className="text-[9px] font-bold uppercase tracking-widest opacity-70">
+           {phase === "clearing" ? "Retira la hoja" : "Escaneo " + scanCount}
+          </div>
+          {/* El HUD entero es pointer-events-none (no debe bloquear el re-encuadre):
+              este enlace reactiva los eventos solo en su propia caja. */}
+          {hudKind !== "error" && lastPaperId && scanCfg.openQuestions.length > 0 && (
+           <Link
+            href={reversoHref(lastPaperId)}
+            className="pointer-events-auto rounded-full border border-white/30 bg-white/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest opacity-90"
+           >
+            Reverso →
+           </Link>
+          )}
          </div>
         </div>
        </div>
@@ -1720,6 +1763,7 @@ export default function ScanPage() {
        </div>
        {([
         { key: "burstMode" as const, label: "Modo ráfaga", hint: "Auto-avanza sin tocar la pantalla entre hojas" },
+        { key: "autoReverso" as const, label: "Ir al reverso automáticamente", hint: "Apagado: escaneas los frentes de corrido y el reverso cuando quieras" },
         { key: "sound" as const, label: "Sonido", hint: "Tono al detectar, capturar y al terminar" },
         { key: "vibration" as const, label: "Vibración", hint: "No disponible en iOS (limitación del sistema)" },
        ]).map(({ key, label, hint }) => (
@@ -1740,6 +1784,11 @@ export default function ScanPage() {
          </button>
         </div>
        ))}
+       {lastPaperId && scanCfg.openQuestions.length > 0 && (
+        <Link href={reversoHref(lastPaperId)} className="mt-4 block rounded-2xl border border-sky-500/40 bg-sky-600/15 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-sky-300">
+         ✎ Reverso del último alumno
+        </Link>
+       )}
        <Link href="/dashboard/papers" className="block text-center text-[10px] text-zinc-500 underline mt-4">
         Ver cola de revisión
        </Link>

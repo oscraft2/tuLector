@@ -86,9 +86,14 @@ const SENSORY_PREFS_KEY = "tulector_sensory_prefs";
 
 export interface SensoryStoredPrefs extends SensoryPrefs {
  burstMode: boolean;
+ /** Saltar solo a /scan/reverso tras guardar un frente con preguntas de
+  *  desarrollo. APAGADO por defecto: el salto automático corta la ráfaga (te
+  *  saca de la cámara entre hoja y hoja) y hoy el reverso no se detecta de
+  *  forma confiable. Se enciende desde el drawer de configuración de /scan. */
+ autoReverso: boolean;
 }
 
-const DEFAULT_SENSORY_PREFS: SensoryStoredPrefs = { sound: true, vibration: true, burstMode: true };
+const DEFAULT_SENSORY_PREFS: SensoryStoredPrefs = { sound: true, vibration: true, burstMode: true, autoReverso: false };
 
 export function loadSensoryPrefs(): SensoryStoredPrefs {
  if (typeof window === "undefined") return DEFAULT_SENSORY_PREFS;
@@ -100,6 +105,7 @@ export function loadSensoryPrefs(): SensoryStoredPrefs {
    sound: typeof parsed.sound === "boolean" ? parsed.sound : DEFAULT_SENSORY_PREFS.sound,
    vibration: typeof parsed.vibration === "boolean" ? parsed.vibration : DEFAULT_SENSORY_PREFS.vibration,
    burstMode: typeof parsed.burstMode === "boolean" ? parsed.burstMode : DEFAULT_SENSORY_PREFS.burstMode,
+   autoReverso: typeof parsed.autoReverso === "boolean" ? parsed.autoReverso : DEFAULT_SENSORY_PREFS.autoReverso,
   };
  } catch {
   return DEFAULT_SENSORY_PREFS;
