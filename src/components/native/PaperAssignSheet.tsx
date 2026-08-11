@@ -17,13 +17,19 @@ type Props = {
   /** true si el escaneo ya tiene alumno (reasignacion, no primera asignacion). */
   assigned: boolean;
   label?: string;
+  /** Recorte de la caja del NOMBRE de la hoja: es lo que permite reconocer al
+   *  alumno cuando el ID no se leyo, sin ir a buscar la hoja de papel. */
+  nameImgUrl?: string | null;
+  /** Foto completa de la hoja, por si el recorte no basta. */
+  photoUrl?: string | null;
 };
 
-export function PaperAssignSheet({ paperId, currentStudentName, assigned, label }: Props) {
+export function PaperAssignSheet({ paperId, currentStudentName, assigned, label, nameImgUrl, photoUrl }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPhoto, setShowPhoto] = useState(false);
 
   const assign = async (student: PickedStudent, overwrite = false) => {
     if (assigned && !overwrite) {
@@ -100,6 +106,32 @@ export function PaperAssignSheet({ paperId, currentStudentName, assigned, label 
                 ? `Asignado a ${currentStudentName ?? "-"}. Elige el alumno correcto.`
                 : "La hoja ya está guardada con su puntaje. Elige de quién es."}
             </p>
+            {/* El nombre escrito a mano: con esto se identifica al alumno sin
+                tener que ir a buscar la hoja física. */}
+            {nameImgUrl && (
+              <div className="mb-3">
+                <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#6b7280]">Nombre escrito en la hoja</p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={nameImgUrl} alt="Nombre escrito en la hoja" className="w-full rounded-xl border border-[#e6e8eb] bg-white" />
+              </div>
+            )}
+            {!nameImgUrl && photoUrl && (
+              <div className="mb-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={photoUrl} alt="Hoja escaneada" className="max-h-52 w-full rounded-xl border border-[#e6e8eb] object-contain" />
+              </div>
+            )}
+            {showPhoto && photoUrl && nameImgUrl && (
+              <div className="mb-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={photoUrl} alt="Hoja completa" className="max-h-72 w-full rounded-xl border border-[#e6e8eb] object-contain" />
+              </div>
+            )}
+            {photoUrl && nameImgUrl && (
+              <button type="button" onClick={() => setShowPhoto((v) => !v)} className="mb-3 text-xs font-semibold text-[#07305f] underline">
+                {showPhoto ? "Ocultar hoja completa" : "Ver hoja completa"}
+              </button>
+            )}
             {error && <p className="mb-2 text-sm font-semibold text-red-600">{error}</p>}
             <StudentPicker onPick={(s) => void assign(s)} disabled={busy} autoFocus />
           </div>

@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { assignPaperToStudent, resolveTargetStudent, undoPaperAssignment } from "@/lib/paper_assign";
 import { findMisplacedPapers, reroutePapers } from "@/lib/paper_reroute";
+import { deleteGradeRecord } from "@/lib/paper_assign";
+import { normalizeRut } from "@/lib/rut";
 
 /**
  * Acciones de la cola de revision. Viven aparte de dashboard/actions.ts a
@@ -90,6 +92,37 @@ export async function reroutePapersAction(_prev: AssignActionState, formData: Fo
     };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "No se pudieron reubicar las hojas." };
+  }
+}
+
+/**
+ * Descarta una hoja: queda anulada (`status: "void"`, el estado que todos los
+ * listados ya excluyen) y se borra su nota. Para el escaneo de una hoja que no
+ * corresponde -- una prueba en blanco de nadie, una foto repetida, una hoja de
+ * otro ensayo -- que hoy solo se podia dejar ahi ocupando la cola de revision.
+ */
+export async function voidPaperAction(_prev: AssignActionState, formData: FormData): Promise<AssignActionState> {
+  const paperId = String(formData.get("paper_id") ?? "").trim();
+  if (!paperId) return { error: "Falta el escaneo." };
+  try {
+    const { supabase, school } = await getDashboardContext();
+    const { data: paper } = await supabase
+      .from("papers")
+      .select("id,quiz_id,student_rut_norm,student_id")
+      .eq("id", paperId)
+      .eq("school_id", school.id)
+      .maybeSingle();
+    if (!paper) return { error: "No se encontró el escaneo." };
+
+    await supabase.from("papers").update({ status: "void" }).eq("id", paperId).eq("school_id", school.id);
+    // La nota se va con la hoja: si no, queda una nota sin escaneo detrás.
+    const code = (paper.student_rut_norm as string | null) ?? (paper.student_id ? normalizeRut(paper.student_id as string) : null);
+    if (code) await deleteGradeRecord(supabase, school.id, paper.quiz_id as string, code);
+
+    revalidatePaper(paperId, paper.quiz_id as string);
+    return { success: "Hoja descartada." };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "No se pudo descartar la hoja." };
   }
 }
 

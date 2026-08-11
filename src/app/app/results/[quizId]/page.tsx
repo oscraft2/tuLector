@@ -20,10 +20,12 @@ type PaperResult = {
   scanned_at: string;
   equivalent_score: number | null;
   grade: string | number | null;
+  name_img_url: string | null;
+  image_url: string | null;
 };
 
-const PAPER_SELECT = "id,student_name,student_id,student_rut_norm,course_id,score,total,status,scanned_at,equivalent_score,grade";
-const PAPER_SELECT_LEGACY = "id,student_name,student_id,student_rut_norm,score,total,status,scanned_at,equivalent_score,grade";
+const PAPER_SELECT = "id,student_name,student_id,student_rut_norm,course_id,score,total,status,scanned_at,equivalent_score,grade,name_img_url,image_url";
+const PAPER_SELECT_LEGACY = "id,student_name,student_id,student_rut_norm,score,total,status,scanned_at,equivalent_score,grade,name_img_url,image_url";
 
 /**
  * Detalle nativo de resultados por ensayo: tarjetas por alumno, AGRUPADAS por
@@ -135,6 +137,8 @@ export default async function NativeQuizResultsPage({ params }: PageProps) {
                           paperId={paper.id}
                           currentStudentName={paper.student_name ?? paper.student_id ?? null}
                           assigned={paper.status !== "manual_review"}
+                          nameImgUrl={paper.name_img_url}
+                          photoUrl={paper.image_url}
                         />
                       </div>
                     ))}

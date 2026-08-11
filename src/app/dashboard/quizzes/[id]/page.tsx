@@ -318,10 +318,19 @@ export default async function QuizDetailPage({ params }: PageProps) {
             const studentLabel = paper.student_name ?? paper.student_id ?? "Sin identificar";
             const studentHref = studentHrefForPaper(paper);
             const course = courseOf(paper);
+            // Hoja sin dueño: se entra a identificarla (foto del nombre, buscador
+            // de alumnos y descarte) en vez de quedar como un texto muerto.
+            const needsId = paper.status === "manual_review";
             return (
               <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0">
                 <td className="px-5 py-4 font-semibold">
-                  {studentHref ? <Link href={studentHref} className="text-[#07305f] hover:underline">{studentLabel}</Link> : studentLabel}
+                  {needsId ? (
+                    <Link href={`/dashboard/papers/${paper.id}`} className="text-[#9a3412] underline decoration-dotted hover:text-[#7c2d12]">
+                      {studentLabel} · identificar
+                    </Link>
+                  ) : studentHref ? (
+                    <Link href={studentHref} className="text-[#07305f] hover:underline">{studentLabel}</Link>
+                  ) : studentLabel}
                 </td>
                 <td className="px-5 py-4 text-[#5b6472]">{course?.name ?? "-"}</td>
                 <td className="px-5 py-4">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</td>
@@ -337,7 +346,11 @@ export default async function QuizDetailPage({ params }: PageProps) {
             return (
               <article key={paper.id} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
-                  {studentHref ? (
+                  {paper.status === "manual_review" ? (
+                    <Link href={`/dashboard/papers/${paper.id}`} className="min-w-0 truncate text-base font-semibold text-[#9a3412] underline decoration-dotted">
+                      {studentLabel} · identificar
+                    </Link>
+                  ) : studentHref ? (
                     <Link href={studentHref} className="min-w-0 truncate text-base font-semibold text-[#07305f] hover:underline">{studentLabel}</Link>
                   ) : (
                     <p className="min-w-0 truncate text-base font-semibold text-[#111827]">{studentLabel}</p>

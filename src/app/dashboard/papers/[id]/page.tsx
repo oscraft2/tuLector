@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { createStudentAndAssignPaper } from "@/app/dashboard/actions";
-import { assignPaperAction, undoAssignAction } from "@/app/dashboard/papers/actions";
+import { assignPaperAction, undoAssignAction, voidPaperAction } from "@/app/dashboard/papers/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { PaperAssignPanel } from "@/components/dashboard/PaperAssignPanel";
 import { isMissingColumnError } from "@/lib/supabase_errors";
@@ -90,6 +90,7 @@ export default async function PaperIdentifyPage({ params }: PageProps) {
               canUndo={Boolean(paper.prev_assignment)}
               assignAction={assignPaperAction}
               undoAction={undoAssignAction}
+              voidAction={voidPaperAction}
             />
             <Link href={`/dashboard/results/${paper.quiz_id}`} className="block text-sm font-semibold text-[#07305f] underline">
               Ver resultados del ensayo

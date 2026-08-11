@@ -26,9 +26,11 @@ type Props = {
   canUndo: boolean;
   assignAction: (state: AssignActionState, formData: FormData) => Promise<AssignActionState>;
   undoAction: (state: AssignActionState, formData: FormData) => Promise<AssignActionState>;
+  /** Descarta el escaneo (hoja que no corresponde a nadie). */
+  voidAction: (state: AssignActionState, formData: FormData) => Promise<AssignActionState>;
 };
 
-export function PaperAssignPanel({ paperId, currentStudentName, assigned, canUndo, assignAction, undoAction }: Props) {
+export function PaperAssignPanel({ paperId, currentStudentName, assigned, canUndo, assignAction, undoAction, voidAction }: Props) {
   const [state, setState] = useState<AssignActionState>({});
   const [pending, startTransition] = useTransition();
 
@@ -76,6 +78,16 @@ export function PaperAssignPanel({ paperId, currentStudentName, assigned, canUnd
     startTransition(async () => setState(await undoAction({}, fd)));
   };
 
+  const discard = () => {
+    const ok = window.confirm(
+      "¿Descartar esta hoja?\n\nQueda anulada y deja de contar en el ensayo. Si tenía nota, se elimina.",
+    );
+    if (!ok) return;
+    const fd = new FormData();
+    fd.set("paper_id", paperId);
+    startTransition(async () => setState(await voidAction({}, fd)));
+  };
+
   return (
     <div className="space-y-4">
       {state.error && <p className="text-sm font-semibold text-red-600">{state.error}</p>}
@@ -94,6 +106,17 @@ export function PaperAssignPanel({ paperId, currentStudentName, assigned, canUnd
           Deshacer la última asignación
         </button>
       )}
+
+      {/* La hoja no es de nadie (foto repetida, hoja en blanco ajena, prueba que
+          no corresponde): se descarta en vez de quedar ocupando la revisión. */}
+      <button
+        type="button"
+        onClick={discard}
+        disabled={pending}
+        className="w-full rounded-md border border-red-200 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+      >
+        Descartar esta hoja
+      </button>
     </div>
   );
 }

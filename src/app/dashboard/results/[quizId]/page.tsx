@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { getDashboardContext } from "@/lib/supabase_server";
@@ -22,6 +23,7 @@ type PaperResult = {
   scanned_at: string;
   equivalent_score: number | null;
   grade: string | number | null;
+  status: string | null;
 };
 
 type GradePassing = { passing: boolean | null };
@@ -33,7 +35,7 @@ export default async function ResultsPage({ params, searchParams }: PageProps) {
   const to = sp.to ?? null;
   const { supabase, isAdmin, school } = await getDashboardContext();
 
-  let papersQuery = supabase.from("papers").select("id,student_name,student_id,score,total,answers,scanned_at,equivalent_score,grade").eq("quiz_id", quizId);
+  let papersQuery = supabase.from("papers").select("id,student_name,student_id,score,total,answers,scanned_at,equivalent_score,grade,status").eq("quiz_id", quizId);
   if (from) papersQuery = papersQuery.gte("scanned_at", from);
   if (to) papersQuery = papersQuery.lte("scanned_at", `${to}T23:59:59`);
   papersQuery = papersQuery.order("score", { ascending: false });
@@ -108,7 +110,14 @@ export default async function ResultsPage({ params, searchParams }: PageProps) {
           empty="Sin resultados para este ensayo."
           renderRow={(paper) => (
             <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0">
-              <td className="px-5 py-4 font-semibold">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</td>
+              <td className="px-5 py-4 font-semibold">
+                {/* Sin dueño: se entra a identificar (foto del nombre + buscador). */}
+                {paper.status === "manual_review" ? (
+                  <Link href={`/dashboard/papers/${paper.id}`} className="text-[#9a3412] underline decoration-dotted hover:text-[#7c2d12]">
+                    {paper.student_name ?? paper.student_id ?? "Sin identificar"} · identificar
+                  </Link>
+                ) : (paper.student_name ?? paper.student_id ?? "Sin identificar")}
+              </td>
               <td className="px-5 py-4">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</td>
               <td className="px-5 py-4 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
               <td className="px-5 py-4">{paper.total ? Math.round(((paper.score ?? 0) / paper.total) * 100) : 0}%</td>
@@ -118,7 +127,13 @@ export default async function ResultsPage({ params, searchParams }: PageProps) {
           renderMobileRow={(paper) => (
             <article key={paper.id} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
-                <p className="min-w-0 truncate text-base font-semibold text-[#111827]">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</p>
+                {paper.status === "manual_review" ? (
+                  <Link href={`/dashboard/papers/${paper.id}`} className="min-w-0 truncate text-base font-semibold text-[#9a3412] underline decoration-dotted">
+                    {paper.student_name ?? paper.student_id ?? "Sin identificar"} · identificar
+                  </Link>
+                ) : (
+                  <p className="min-w-0 truncate text-base font-semibold text-[#111827]">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</p>
+                )}
                 <span className="shrink-0 rounded bg-[#eef4ff] px-2 py-1 text-xs font-bold text-[#07305f]">{paper.total ? Math.round(((paper.score ?? 0) / paper.total) * 100) : 0}%</span>
               </div>
               <div className="mt-3 grid gap-1 text-sm text-[#5b6472]">
