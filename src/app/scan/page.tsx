@@ -190,6 +190,8 @@ export default function ScanPage() {
  // se cerraba a 1,5s -- antes de que el servidor contestara -- asi que un fallo
  // o una sobrescritura pasaban inadvertidos.
  const [savedCount, setSavedCount] = useState(0);
+ /** De las guardadas, cuantas reemplazaron una hoja anterior del mismo alumno. */
+ const [replacedCount, setReplacedCount] = useState(0);
  /** RUT ya guardados en ESTA sesion de escaneo -> nombre, para avisar de repetidas. */
  const savedRutsRef = useRef<Map<string, string>>(new Map());
  // Hoja de un alumno YA escaneado en esta sesion: no se re-envia sola (haria un
@@ -619,12 +621,27 @@ export default function ScanPage() {
    void syncResult(args);
   };
 
-  /** Anota una hoja efectivamente guardada: alimenta el cuadre de la sesión y
-   *  el aviso de "ya escaneaste a este alumno". `inserted` false = reemplazó a
-   *  una hoja anterior, así que el total de alumnos guardados no cambia. */
-  const recordSaved = (rut: string, name: string | null, inserted: boolean) => {
+  /**
+   * Anota una hoja que el servidor confirmó: alimenta el cuadre de la sesión y
+   * el aviso de "ya escaneaste a este alumno".
+   *
+   * "Guardada" es toda hoja que quedó registrada, sin distinguir si se insertó,
+   * si reemplazó a una anterior del mismo alumno o si quedó en revisión por
+   * falta de ID — en los tres casos el paper existe. Contar solo las
+   * inserciones nuevas mostraba "2 leídas · 0 guardadas" al re-escanear un curso
+   * ya subido, que es exactamente lo contrario de lo que el contador debe
+   * transmitir. Los reemplazos se cuentan aparte porque sí cambian el sentido
+   * del cuadre: cinco lecturas que reemplazan a la misma hoja no son cinco
+   * alumnos.
+   *
+   * NO se llama para una página suelta de un ensayo multipágina (rama
+   * "partial"): ahí el mismo alumno se escanea varias veces a propósito, y
+   * registrar su ID haría que la página 2 se tomara por una hoja repetida.
+   */
+  const recordSaved = (rut: string, name: string | null, replaced: boolean) => {
    if (rut) savedRutsRef.current.set(rut, name ?? rut);
-   if (inserted) setSavedCount((c) => c + 1);
+   setSavedCount((c) => c + 1);
+   if (replaced) setReplacedCount((c) => c + 1);
   };
 
   /** Confirma reemplazar la hoja anterior del mismo alumno. */
@@ -823,7 +840,7 @@ export default function ScanPage() {
      // "guardadas" de las que realmente hay, que es justo lo que se quiere
      // detectar con el contador.
      if (payload.status === "manual_review") setPendingReviewCount((c) => c + 1);
-     else recordSaved(rut, payload.studentName ?? null, payload.action !== "updated");
+     recordSaved(rut, payload.studentName ?? null, payload.action === "updated");
      return;
     }
     // Se setea ANTES de los early-return de abajo: la ruta devuelve studentName
@@ -864,12 +881,14 @@ export default function ScanPage() {
      setSyncState("review");
      setSyncMessage(`Hoja de otro ensayo (codigo ${sheetMismatch.read}, esperado ${sheetMismatch.expected}) -> guardado para revision (${scoreLabel}).${quotaNote}`);
      setPendingReviewCount((c) => c + 1);
+     recordSaved(rut, payload.studentName ?? null, payload.action === "updated");
      return;
     }
     if (payload.status === "manual_review") {
      setSyncState("review");
-     setSyncMessage(`Guardado para revision (${scoreLabel})${multipageNote}. ${payload.studentCode ? "Alumno sin identificar." : "RUT no detectado."}${quotaNote}`);
+     setSyncMessage(`⚠ Guardado, falta identificar al alumno (${scoreLabel})${multipageNote}.${quotaNote}`);
      setPendingReviewCount((c) => c + 1);
+     recordSaved(rut, payload.studentName ?? null, payload.action === "updated");
      // Se puede resolver AHORA, sin salir de la camara: el escaneo ya esta
      // guardado, solo le falta dueño (ver drawer "Asignar alumno").
      if (payload.paperId) setAssignPaperId(String(payload.paperId));
@@ -884,7 +903,7 @@ export default function ScanPage() {
        ? `↻ Reemplazó la hoja anterior de ${who || "este alumno"} (${scoreLabel})${multipageNote}.${quotaNote}`
        : `✓ Guardado${who ? ` · ${who}` : ""} (${scoreLabel})${multipageNote}.${quotaNote}`,
      );
-     recordSaved(rut, payload.studentName ?? null, !replaced);
+     recordSaved(rut, payload.studentName ?? null, replaced);
      // Fase 1 de correccion IA (docs/plan-correccion-ia-abiertas.md): con
      // preguntas de desarrollo, el reverso de ESTE alumno se puede escanear sin
      // ambiguedad de identidad (el paper_id ya es conocido -- "pairing por
@@ -2134,7 +2153,9 @@ export default function ScanPage() {
           </div>
           {/* Cuadre de la sesión, siempre a la vista. */}
           <div className="text-[9px] font-bold tracking-wide opacity-70">
-           {scanCount} leídas · {savedCount} guardadas{queuedCount > 0 ? ` · ${queuedCount} en cola` : ""}
+           {scanCount} leídas · {savedCount} guardadas
+           {replacedCount > 0 ? ` · ${replacedCount} reemplazadas` : ""}
+           {queuedCount > 0 ? ` · ${queuedCount} en cola` : ""}
           </div>
           {/* El HUD entero es pointer-events-none (no debe bloquear el re-encuadre):
               este enlace reactiva los eventos solo en su propia caja. */}
