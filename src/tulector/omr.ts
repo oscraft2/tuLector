@@ -561,6 +561,15 @@ export const CALIB = {
   absThresh: 0.15,    // score minimo absoluto para considerar una opcion marcada
   minPick: 0.05,      // score minimo para elegir el maximo (calibrado con fotos reales)
   dominance: 0.02,    // el ganador debe superar al 2do por este margen (anti falso positivo)
+  // Tinta MINIMA (en grises) para que una burbuja pueda considerarse marcada por
+  // el score RELATIVO al papel de su pregunta. Sin este piso, una fila entera en
+  // blanco igual produce un "ganador": el score relativo divide por paperQ*0.30,
+  // asi que sobre papel ~185 bastaban ~8 grises de diferencia -- puro ruido de
+  // foto o una sombra suave -- para superar absThresh y dar una respuesta
+  // INVENTADA (bug real: hoja sin ninguna respuesta correcta reportada con 3).
+  // Calibrado entre el ruido medido (<=20) y la marca a mano mas debil de las
+  // guardias (marca ~150 sobre papel ~185 = 35, marca ~120 sobre ~162 = 42).
+  inkMinDelta: 25,
   gridSearchDx: 6,    // rango +-px de busqueda horizontal de la grilla
   gridSearchDy: 8,    // rango +-px de busqueda vertical de la grilla
   gridSearchStep: 2,  // paso de la busqueda de offset
@@ -939,8 +948,16 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
     // esta en TODAS las opciones por igual → se cancela. Rescata marcas a mano
     // leves (gris ~120 sobre "blanco con letra" ~162) que el score absoluto de
     // classifyBubble (tope <70) no pescaba. max() → nunca baja el caso limpio.
+    // El rescate relativo SOLO aplica si hay tinta de verdad (CALIB.inkMinDelta):
+    // en una fila en blanco, la diferencia entre la burbuja mas oscura y la mas
+    // clara es ruido/sombra, y sin este piso se convertia en una respuesta
+    // inventada. Con marca real (delta >= 25 grises) el score es el de siempre.
     const paperQ = Math.max(...avgs);
-    const scores = clScores.map((s, i) => Math.max(s, Math.max(0, Math.min(1, (paperQ - avgs[i]) / (paperQ * 0.30)))));
+    const inkDelta = avgs.map((a) => paperQ - a);
+    const scores = clScores.map((s, i) => Math.max(
+      s,
+      inkDelta[i] >= CALIB.inkMinDelta ? Math.max(0, Math.min(1, inkDelta[i] / (paperQ * 0.30))) : 0,
+    ));
 
     // Umbral adaptativo + deteccion de marcas multiples
     const maxS = Math.max(...scores);
@@ -977,7 +994,11 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
       const dominates = sorted[0] - sorted[1] > CALIB.dominance;
       if (winnerGlare) {
         answer = "?"; // marca probable bajo reflejo
-      } else if (marked.length === 0 && maxS > CALIB.minPick && dominates) {
+      } else if (marked.length === 0 && maxS > CALIB.minPick && dominates && inkDelta[maxIdx] >= CALIB.inkMinDelta) {
+        // Rescate de marca MUY debil: ninguna opcion pasa el umbral, pero una
+        // domina y ademas tiene tinta real. El chequeo de inkDelta es lo que
+        // separa "marca floja" de "pregunta en blanco con una sombra encima":
+        // sin el, esta rama adivinaba una letra en preguntas sin responder.
         answer = rowLabels[maxIdx];
       } else if (marked.length > 0 && marked.length <= 3) {
         // Soporte combinado: hasta 3 letras

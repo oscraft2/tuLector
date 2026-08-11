@@ -660,6 +660,60 @@ async function main() {
   }
 
   console.log(`Multi-select row guard passed: 19/19 cerradas OK, q${multiQ} leyo "${msRow.answer}" (marcas) y "-" (blanco)`);
+
+  // ─── Guardia ANTI-INVENCION (bug real 2026-08-11: una alumna sin ninguna
+  // respuesta correcta aparecia con 3 correctas). Una hoja EN BLANCO fotografiada
+  // -- con ruido de sensor, sombra lateral y contraste lavado -- no puede producir
+  // ni una sola letra: sin CALIB.inkMinDelta, el score relativo por pregunta
+  // convertia la burbuja mas oscura por ruido en "la marcada" (hasta 8/20
+  // inventadas), y con 5 opciones ~1 de cada 5 invenciones coincide con la clave.
+  // El contrapeso, en la misma guardia: una hoja marcada (y una a medio
+  // responder) tiene que seguir leyendose completa en esas MISMAS condiciones. ───
+  const noisy = (marks: Parameters<typeof drawSheet>[1], noise: number, shade: number, wash: boolean) => {
+    const c = createCanvas(SHEET_W, SHEET_H);
+    drawSheet(c.getContext("2d") as unknown as Ctx2D, marks);
+    const img = c.getContext("2d").getImageData(0, 0, SHEET_W, SHEET_H) as unknown as globalThis.ImageData;
+    const d = img.data;
+    let seed = 42; // ruido determinista: la guardia no puede ser intermitente
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff - 0.5; };
+    for (let y = 0; y < SHEET_H; y++) {
+      for (let x = 0; x < SHEET_W; x++) {
+        const i = (y * SHEET_W + x) * 4;
+        let v = d[i];
+        if (wash) v = 90 + v * (185 - 90) / 255;     // foto lavada
+        v = v * (1 - shade * (x / SHEET_W));          // sombra lateral progresiva
+        v = Math.max(0, Math.min(255, v + rnd() * noise * 2));
+        d[i] = d[i + 1] = d[i + 2] = v;
+      }
+    }
+    return img;
+  };
+
+  const conditions: [number, number, boolean][] = [[6, 0, false], [10, 0.12, false], [10, 0.12, true], [16, 0.20, true]];
+  for (const [noise, shade, wash] of conditions) {
+    const blank = gradeBubbles(noisy({}, noise, shade, wash));
+    const invented = blank.results.filter((r) => r.answer !== "-" && r.answer !== "?");
+    if (invented.length > 0) {
+      fail(`anti-invencion: hoja EN BLANCO (ruido=${noise} sombra=${shade} lavado=${wash}) devolvio ${invented.length} respuestas inventadas [${blank.results.map((r) => r.answer).join("")}]`);
+    }
+  }
+
+  const ansInv = Array.from({ length: 20 }, (_, i) => i % 5);
+  const expInv = ansInv.map((a) => "ABCDE"[a]);
+  for (const [noise, shade, wash] of conditions) {
+    const full = gradeBubbles(noisy({ answers: ansInv, filled: true }, noise, shade, wash));
+    const missInv = full.results.filter((r, i) => r.answer !== expInv[i]).length;
+    if (missInv > 0) fail(`anti-invencion: hoja MARCADA (ruido=${noise} lavado=${wash}) perdio ${missInv}/20 lecturas`);
+  }
+
+  // Media hoja respondida: el caso que mas se parece a una prueba real.
+  const halfMarks = ansInv.map((a, i) => (i < 10 ? a : -1));
+  const expHalf = halfMarks.map((a) => (a < 0 ? "-" : "ABCDE"[a]));
+  const half = gradeBubbles(noisy({ answers: halfMarks, filled: true }, 16, 0.20, true));
+  const missHalf = half.results.filter((r, i) => r.answer !== expHalf[i]).length;
+  if (missHalf > 0) fail(`anti-invencion: hoja a medio responder devolvio ${missHalf}/20 celdas erradas [${half.results.map((r) => r.answer).join("")}]`);
+
+  console.log(`Anti-invention guard passed: hoja en blanco → 0 inventadas en 4 condiciones de foto; marcada 20/20; mitad respondida exacta`);
 }
 
 main().catch((error) => {
