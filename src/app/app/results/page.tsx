@@ -1,5 +1,6 @@
 import { getDashboardContext } from "@/lib/supabase_server";
 import { ResultsScreen } from "@/components/native/ResultsScreen";
+import { applyTeacherScope, parseTeacherScope } from "@/lib/teacher_scope";
 
 type QuizRow = { id: string; title: string; subject: string | null; grade: string | null; num_questions: number | null };
 type PaperCount = { quiz_id: string; status: string | null };
@@ -11,16 +12,27 @@ type PaperCount = { quiz_id: string; status: string | null };
  * detalle en /app/results/[quizId]. El render vive en ResultsScreen (header +
  * filtros sticky, ver ese archivo).
  */
-export default async function NativeResultsPage() {
-  const { supabase, school } = await getDashboardContext();
+export default async function NativeResultsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  const { supabase, user, school, isAdmin } = await getDashboardContext();
+  const sp = (await searchParams) ?? {};
+
+  // Mismo foco por docente que el dashboard web: un admin de plan school ve por
+  // defecto SUS ensayos. Un docente no-admin ya viene aislado por RLS.
+  const scope = parseTeacherScope(sp, { userId: user.id, isAdmin, plan: school.plan });
 
   const [{ data: quizzes }, { data: papers }] = await Promise.all([
-    supabase.from("quizzes").select("id,title,subject,grade,num_questions").eq("school_id", school.id).is("archived_at", null).order("created_at", { ascending: false }),
+    applyTeacherScope(
+      supabase.from("quizzes").select("id,title,subject,grade,num_questions").eq("school_id", school.id).is("archived_at", null).order("created_at", { ascending: false }),
+      scope,
+    ),
     supabase.from("papers").select("quiz_id,status").eq("school_id", school.id).neq("status", "void"),
   ]);
 
   const quizList = (quizzes ?? []) as QuizRow[];
-  const paperRows = (papers ?? []) as PaperCount[];
+  // Las hojas se cuentan SOLO sobre los ensayos visibles: si no, el contador de
+  // "por revisar" sumaria hojas de ensayos de otros docentes que ni se listan.
+  const visibleQuizIds = new Set(quizList.map((q) => q.id));
+  const paperRows = ((papers ?? []) as PaperCount[]).filter((p) => p.quiz_id && visibleQuizIds.has(p.quiz_id));
   const countByQuiz = new Map<string, { total: number; pending: number }>();
   for (const p of paperRows) {
     if (!p.quiz_id) continue;

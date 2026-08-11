@@ -9,6 +9,8 @@ import { ActionButton } from "@/components/dashboard/ActionButton";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 import { resolveCountryProfile } from "@/lib/country_profiles";
 import { parseSheetMode } from "@/lib/sheet_mode";
+import { applyTeacherScope, fetchTeacherOptions, parseTeacherScope, resolveScope } from "@/lib/teacher_scope";
+import { TeacherScopeFilter } from "@/components/dashboard/TeacherScopeFilter";
 
 export const dynamic = "force-dynamic";
 
@@ -58,12 +60,26 @@ const sheetLabel = (quiz: QuizRow) => (isCompactQuiz(quiz) ? "Bloque" : "Hoja");
 
 type CourseRow = { id: string; name: string; grade: string | null };
 
-export default async function QuizzesPage() {
-  const { supabase, locale, school, isAdmin } = await getDashboardContext();
+export default async function QuizzesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  const { supabase, user, locale, school, isAdmin } = await getDashboardContext();
   const t = getDashboardMessages(locale);
+  const sp = (await searchParams) ?? {};
+
+  // De quien son los ensayos que se listan. Un admin de plan school ve SOLO los
+  // suyos por defecto (antes veia mezclados los de todos los docentes) y cambia
+  // el foco con el selector; un docente no-admin ya esta aislado por RLS.
+  const requested = parseTeacherScope(sp, { userId: user.id, isAdmin, plan: school.plan });
+  const teachers = requested.canSwitch ? await fetchTeacherOptions(supabase, school.id, user.id) : [];
+  const scope = resolveScope(requested, teachers.length);
+
+  const quizzesQuery = (columns: string) =>
+    applyTeacherScope(
+      supabase.from("quizzes").select(columns).is("archived_at", null).order("created_at", { ascending: false }),
+      scope,
+    );
 
   const [quizzesResult, { data: courses }] = await Promise.all([
-    supabase.from("quizzes").select("id,title,subject,grade,course_id,num_questions,options_per_question,answer_key,created_at,archived_at,sheet_mode").is("archived_at", null).order("created_at", { ascending: false }),
+    quizzesQuery("id,title,subject,grade,course_id,num_questions,options_per_question,answer_key,created_at,archived_at,sheet_mode"),
     supabase.from("courses").select("id,name,grade").is("archived_at", null).order("name"),
   ]);
 
@@ -72,12 +88,12 @@ export default async function QuizzesPage() {
   if (quizzesError && isMissingColumnError(quizzesError, "sheet_mode")) {
     // BD sin migrar: sin la columna no hay ensayos compactos, la lista queda
     // exactamente como antes (todo 'full' por el default de parseSheetMode).
-    const fallbackResult = await supabase.from("quizzes").select("id,title,subject,grade,course_id,num_questions,options_per_question,answer_key,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false });
+    const fallbackResult = await quizzesQuery("id,title,subject,grade,course_id,num_questions,options_per_question,answer_key,created_at,archived_at");
     quizzesData = fallbackResult.data;
     quizzesError = fallbackResult.error;
   }
   if (quizzesError && isMissingColumnError(quizzesError, "course_id")) {
-    const fallbackResult = await supabase.from("quizzes").select("id,title,subject,grade,num_questions,options_per_question,answer_key,created_at,archived_at").is("archived_at", null).order("created_at", { ascending: false });
+    const fallbackResult = await quizzesQuery("id,title,subject,grade,num_questions,options_per_question,answer_key,created_at,archived_at");
     quizzesData = fallbackResult.data;
   }
 
@@ -106,6 +122,8 @@ export default async function QuizzesPage() {
   return (
     <>
       <PageHeader title={t.quizzes} description="Crea ensayos, define claves, duplica instrumentos y genera hojas v2 imprimibles para leerlas luego desde la app movil." />
+
+      <TeacherScopeFilter scope={scope} teachers={teachers} basePath="/dashboard/quizzes" searchParams={sp} />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,450px)_minmax(0,1fr)] xl:gap-6">
 

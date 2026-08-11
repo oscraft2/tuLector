@@ -6,6 +6,8 @@ import { StatusPill } from "@/components/AppShell";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { isMissingColumnError } from "@/lib/supabase_errors";
+import { fetchTeacherOptions, parseTeacherScope, quizIdsInScope, resolveScope } from "@/lib/teacher_scope";
+import { TeacherScopeFilter } from "@/components/dashboard/TeacherScopeFilter";
 
 export const dynamic = "force-dynamic";
 
@@ -24,19 +26,38 @@ type PaperRow = {
   quizzes?: { sheet_code: number | null } | Array<{ sheet_code: number | null }> | null;
 };
 
-export default async function PapersPage() {
-  const { supabase, locale } = await getDashboardContext();
+export default async function PapersPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  const { supabase, user, school, locale, isAdmin } = await getDashboardContext();
   const t = getDashboardMessages(locale);
-  const papersResult = await supabase.from("papers").select("id,quiz_id,student_name,student_id,score,total,status,image_url,storage_path,scanned_at,sheet_code_read,quizzes(sheet_code)").neq("status", "void").order("scanned_at", { ascending: false }).limit(100);
+  const sp = (await searchParams) ?? {};
+
+  // Una hoja pertenece al docente dueño de su ensayo (mismo criterio que la RLS
+  // de papers): el scope se traduce a los ensayos de ese docente.
+  const requested = parseTeacherScope(sp, { userId: user.id, isAdmin, plan: school.plan });
+  const teachers = requested.canSwitch ? await fetchTeacherOptions(supabase, school.id, user.id) : [];
+  const scope = resolveScope(requested, teachers.length);
+  const quizIds = await quizIdsInScope(supabase, school.id, scope);
+
+  const papersQuery = (columns: string) => {
+    const q = supabase.from("papers").select(columns).neq("status", "void").order("scanned_at", { ascending: false }).limit(100);
+    return quizIds === null ? q : q.in("quiz_id", quizIds);
+  };
+
+  // Sin ensayos propios no hay hojas que mostrar: `.in("quiz_id", [])` seria una
+  // consulta invalida en PostgREST, asi que se corta antes.
+  const papersResult = quizIds !== null && quizIds.length === 0
+    ? { data: [], error: null }
+    : await papersQuery("id,quiz_id,student_name,student_id,score,total,status,image_url,storage_path,scanned_at,sheet_code_read,quizzes(sheet_code)");
   let papersData: unknown = papersResult.data;
   if (papersResult.error && isMissingColumnError(papersResult.error, "sheet_code_read")) {
-    const fallbackResult = await supabase.from("papers").select("id,quiz_id,student_name,student_id,score,total,status,image_url,storage_path,scanned_at,quizzes(sheet_code)").neq("status", "void").order("scanned_at", { ascending: false }).limit(100);
+    const fallbackResult = await papersQuery("id,quiz_id,student_name,student_id,score,total,status,image_url,storage_path,scanned_at,quizzes(sheet_code)");
     papersData = fallbackResult.data;
   }
   const papers = (papersData ?? []) as unknown as PaperRow[];
   return (
     <>
       <PageHeader title={t.papers} description="Lecturas sincronizadas desde la app movil. Desde aqui se auditan, anulan, corrigen manualmente y alimentan ground truth para entrenamiento." />
+      <TeacherScopeFilter scope={scope} teachers={teachers} basePath="/dashboard/papers" searchParams={sp} />
       {papers.length === 0 ? (
         <EmptyState
           icon="📄"

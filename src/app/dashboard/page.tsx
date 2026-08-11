@@ -8,6 +8,8 @@ import { DateRangeFilter } from "@/components/dashboard/DateRangeFilter";
 import { checkAndTriggerQuotaAlerts } from "@/lib/quota_alerts";
 import { levelOf } from "@/lib/item_analysis";
 import { QuizStats } from "@/components/dashboard/QuizStats";
+import { applyTeacherScope, fetchTeacherOptions, parseTeacherScope, quizIdsInScope, resolveScope } from "@/lib/teacher_scope";
+import { TeacherScopeFilter } from "@/components/dashboard/TeacherScopeFilter";
 
 export const dynamic = "force-dynamic";
 
@@ -48,14 +50,26 @@ type SimceRow = {
   nivel_adecuado_pct: number | null;
 };
 
-type PageProps = { searchParams?: Promise<{ from?: string; to?: string }> };
+type PageProps = { searchParams?: Promise<Record<string, string | string[] | undefined>> };
 
 export default async function DashboardPage({ searchParams }: PageProps) {
-  const { supabase, school, countryProfile, locale, isAdmin } = await getDashboardContext();
+  const { supabase, user, school, countryProfile, locale, isAdmin } = await getDashboardContext();
   const t = getDashboardMessages(locale);
-  const sp = ((await searchParams) ?? {}) as { from?: string; to?: string };
-  const from = sp.from ?? null;
-  const to = sp.to ?? null;
+  const sp = (await searchParams) ?? {};
+  const from = (typeof sp.from === "string" ? sp.from : null) || null;
+  const to = (typeof sp.to === "string" ? sp.to : null) || null;
+
+  // Mismo foco por docente que Ensayos y Hojas: un admin de plan school ve por
+  // defecto SUS numeros, no los del establecimiento entero.
+  const requested = parseTeacherScope(sp, { userId: user.id, isAdmin, plan: school.plan });
+  const teachers = requested.canSwitch ? await fetchTeacherOptions(supabase, school.id, user.id) : [];
+  const scope = resolveScope(requested, teachers.length);
+  const scopedQuizIds = await quizIdsInScope(supabase, school.id, scope);
+  const scopeDetail = scope.mode === "all" ? "hojas sincronizadas" : "hojas de estos ensayos";
+  // Sin ensayos propios: `.in("quiz_id", [])` es invalido en PostgREST, se usa
+  // un id imposible para que las consultas devuelvan vacio sin romperse.
+  const quizIdFilter = scopedQuizIds === null ? null : (scopedQuizIds.length > 0 ? scopedQuizIds : ["00000000-0000-0000-0000-000000000000"]);
+  const scopePapers = <T extends { in: (c: string, v: string[]) => T }>(q: T): T => (quizIdFilter ? q.in("quiz_id", quizIdFilter) : q);
 
   let allSchoolPapersQuery = supabase
     .from("papers")
@@ -64,12 +78,13 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     .in("status", ["corrected", "active"]);
   if (from) allSchoolPapersQuery = allSchoolPapersQuery.gte("scanned_at", from);
   if (to) allSchoolPapersQuery = allSchoolPapersQuery.lte("scanned_at", `${to}T23:59:59`);
+  allSchoolPapersQuery = scopePapers(allSchoolPapersQuery);
 
   const [{ count: quizzesCount }, { count: studentsCount }, { data: papers }, { data: quizzes }, simceResult, allSchoolPapersResult] = await Promise.all([
-    supabase.from("quizzes").select("id", { count: "exact", head: true }).is("archived_at", null),
+    applyTeacherScope(supabase.from("quizzes").select("id", { count: "exact", head: true }).is("archived_at", null), scope),
     supabase.from("students").select("id", { count: "exact", head: true }),
-    supabase.from("papers").select("id, score, total, status, scanned_at, quiz_id").order("scanned_at", { ascending: false }).limit(5),
-    supabase.from("quizzes").select("id, title, subject, grade, created_at").is("archived_at", null).order("created_at", { ascending: false }).limit(5),
+    scopePapers(supabase.from("papers").select("id, score, total, status, scanned_at, quiz_id").order("scanned_at", { ascending: false }).limit(5)),
+    applyTeacherScope(supabase.from("quizzes").select("id, title, subject, grade, created_at").is("archived_at", null).order("created_at", { ascending: false }).limit(5), scope),
     school.rbd
       ? supabase.from("simce_resultados").select("agno, grado, asignatura, puntaje_promedio, nivel_insuficiente_pct, nivel_elemental_pct, nivel_adecuado_pct, alumnos_evaluados").eq("rbd", school.rbd).order("agno", { ascending: false })
       : Promise.resolve({ data: [] }),
@@ -249,6 +264,14 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
         <MobileWorkflowCard />
 
+        <TeacherScopeFilter scope={scope} teachers={teachers} basePath="/dashboard" searchParams={sp} />
+        {scope.mode !== "all" && (
+          <p className="-mt-2 text-xs text-[#6b7280]">
+            Estás viendo {scope.mode === "mine" ? "tus ensayos" : "los ensayos de un docente"}. Cambia a
+            &quot;Todo el colegio&quot; para los totales del establecimiento.
+          </p>
+        )}
+
         <DateRangeFilter />
 
         {/* SIMCE oficial — siempre visible en el tope del panel */}
@@ -258,8 +281,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="Ensayos activos" value={formatNumber(quizzesCount ?? 0, locale)} detail="sin archivar" />
           <StatCard label="Alumnos" value={formatNumber(studentsCount ?? 0, locale)} detail="registrados" />
-          <StatCard label="Lecturas del colegio" value={formatNumber(allSchoolPapers.length, locale)} detail="hojas sincronizadas" />
-          <StatCard label="Promedio del colegio" value={`${schoolAvg}%`} detail="logro sobre todos los ensayos" accent />
+          {/* Con el foco puesto en un docente, estos KPI ya no son "del colegio":
+              el rotulo tiene que decir lo que el numero realmente cuenta. */}
+          <StatCard label={scope.mode === "all" ? "Lecturas del colegio" : "Lecturas"} value={formatNumber(allSchoolPapers.length, locale)} detail={scopeDetail} />
+          <StatCard label={scope.mode === "all" ? "Promedio del colegio" : "Promedio"} value={`${schoolAvg}%`} detail={scope.mode === "all" ? "logro sobre todos los ensayos" : "logro sobre los ensayos mostrados"} accent />
         </section>
 
         {/* ===================== ANÁLISIS DEL ÚLTIMO ENSAYO ===================== */}
