@@ -696,6 +696,11 @@ async function main() {
     if (invented.length > 0) {
       fail(`anti-invencion: hoja EN BLANCO (ruido=${noise} sombra=${shade} lavado=${wash}) devolvio ${invented.length} respuestas inventadas [${blank.results.map((r) => r.answer).join("")}]`);
     }
+    // Y se reporta como hoja EN BLANCO, no como fallo de lectura: es lo que
+    // permite a la app ofrecer "guardar como prueba sin respuestas" en vez de
+    // descartar el escaneo (una prueba entregada sin responder es un resultado
+    // legitimo, y antes no quedaba registro de que ese alumno entrego).
+    if (!blank.blank) fail(`anti-invencion: hoja en blanco (ruido=${noise}) no se marco como blank (reason="${blank.reason}")`);
   }
 
   const ansInv = Array.from({ length: 20 }, (_, i) => i % 5);

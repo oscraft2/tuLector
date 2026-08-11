@@ -11,6 +11,7 @@ export const SCAN_CODES = {
   ALIGN_START: 100,    // Problema de alineacion
   ALIGN_END: 106,
   OUT_OF_FOCUS: 1001,  // Fuera de foco
+  BLANK_SHEET: 1002,   // Hoja reconocida pero SIN ninguna marca (entregada en blanco)
 } as const;
 
 export const SCAN_PREFS = {

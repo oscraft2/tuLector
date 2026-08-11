@@ -172,6 +172,14 @@ export default function ScanPage() {
  const [assignError, setAssignError] = useState<string | null>(null);
  const [assignedNote, setAssignedNote] = useState<string | null>(null);
  const [assignUndoId, setAssignUndoId] = useState<string | null>(null);
+ // Hoja reconocida pero SIN marcas: queda a la espera de que el profesor decida
+ // guardarla como prueba sin respuestas (ver report.blank del motor).
+ const [blankPending, setBlankPending] = useState<{
+  rut: string; dvOk: boolean; code: unknown; nameImg: string | null;
+  photo: string | null; warp: string | null; source: "camera" | "upload";
+  questions: { question: number; flag?: string }[];
+ } | null>(null);
+ const [blankSaving, setBlankSaving] = useState(false);
  const [stream, setStream] = useState<MediaStream | null>(null);
  const streamRef = useRef<MediaStream | null>(null);
  const [error, setError] = useState("");
@@ -277,10 +285,13 @@ export default function ScanPage() {
  // hoja salga de cuadro antes de rearmar el disparo automático).
  useEffect(() => {
   if (phase !== "hud" || !sensoryPrefs.burstMode) return;
+  // Hoja en blanco: el HUD NO se cierra solo -- lleva la decision de guardarla
+  // como prueba sin respuestas, y esa la toma el profesor, no un temporizador.
+  if (blankPending) return;
   const duration = hudKind === "error" ? 3000 : hudKind === "warning" ? 2200 : 1500;
   const t = setTimeout(() => setPhase("clearing"), duration);
   return () => clearTimeout(t);
- }, [phase, hudKind, sensoryPrefs.burstMode]);
+ }, [phase, hudKind, sensoryPrefs.burstMode, blankPending]);
 
  // FASE 3 (dataset): el profe confirma que la lectura es correcta → guarda un
  // ejemplo ETIQUETADO (ground truth) para entrenar el clasificador. NO toca la captura.
@@ -544,6 +555,37 @@ export default function ScanPage() {
    return `/scan/reverso?${params.toString()}`;
   };
 
+  /** Guarda una hoja EN BLANCO como prueba sin respuestas: todas las preguntas
+   *  van con "-" (las de desarrollo conservan su flag "abierta", que el servidor
+   *  ya excluye del puntaje). Queda con su puntaje real 0 y, sobre todo, con el
+   *  alumno registrado -- antes el escaneo se descartaba y no quedaba rastro de
+   *  que esa persona entregó.
+   *
+   *  Si la sincronizacion falla (servidor caido), el aviso desaparece y hay que
+   *  volver a escanear la hoja: mismo comportamiento que cualquier otro escaneo
+   *  fallido, y sin red la lectura igual se encola. */
+  const saveBlankSheet = async () => {
+   if (!blankPending || blankSaving) return;
+   setBlankSaving(true);
+   const answers: BubbleResult[] = blankPending.questions.map((q) => ({
+    question: q.question,
+    answer: "-",
+    scores: [],
+    correct: null,
+    ...(q.flag ? { flag: q.flag as BubbleResult["flag"] } : {}),
+   }));
+   try {
+    await syncResult({
+     rut: blankPending.rut, answers, photo: blankPending.photo, warp: blankPending.warp,
+     source: blankPending.source, dvOk: blankPending.dvOk, code: blankPending.code,
+     nameImg: blankPending.nameImg,
+    });
+    setBlankPending(null);
+   } finally {
+    setBlankSaving(false);
+   }
+  };
+
   /** Asigna el escaneo pendiente a un alumno. Si el alumno destino ya tenia
    *  otra hoja de este mismo ensayo, el servidor responde 409 y se pregunta
    *  antes de sobrescribir (nunca se decide por el profesor). */
@@ -623,6 +665,7 @@ export default function ScanPage() {
    // asignacion manual pendiente.
    setLastPaperId(null);
    setCourseNote(null);
+   setBlankPending(null);
    setAssignPaperId(null);
    setAssignUndoId(null);
    setAssignedNote(null);
@@ -843,6 +886,31 @@ export default function ScanPage() {
    if (rutR.diag) addLog(`RUT: offset dx=${rutR.diag.dx} dy=${rutR.diag.dy} → ${rutR.rut || "—"} DV=${rutR.dvOk ? "OK" : rutR.dvComputed ? "calc" : "—"}`);
    addLog(`Código hoja: ${codeR ? `id=${codeR.sheetId} v${codeR.version} p${codeR.page}/${codeR.pagesTotal}` : "no detectado"}`);
 
+   // HOJA EN BLANCO: la hoja se reconocio bien (anclas, formato, filas) pero no
+   // trae ninguna marca. No es un fallo de lectura -- es una prueba entregada
+   // sin responder, y hasta ahora se descartaba sin dejar registro del alumno.
+   // Se ofrece guardarla como prueba sin respuestas (un toque), en vez de
+   // guardarla sola: dejar un 0 a nombre de alguien es una decision del profesor.
+   if (report.blank) {
+    addLog(`Hoja en blanco (registro OK, 0 marcas). RUT=${rutR.rut || "—"}`);
+    setDebugLog(logs);
+    // Codigo propio: en la auditoria una hoja en blanco NO debe confundirse con
+    // "fuera de foco" -- son problemas distintos y llevan a revisiones distintas.
+    await save("scan_fail", SCAN_CODES.BLANK_SHEET, false);
+    setBlankPending({
+     rut: rutR.rut, dvOk: rutR.dvOk, code: codeR, nameImg,
+     photo: photoThumb, warp: warpThumb, source,
+     questions: report.results.map((r) => ({ question: r.question, flag: r.flag })),
+    });
+    // La pantalla de resultado (modo no ráfaga) pinta `results`/`studentId`: sin
+    // esto mostraría la grilla del escaneo ANTERIOR sobre una hoja en blanco.
+    setResults(report.results);
+    setStudentId(idRows);
+    setScanCount((c) => c + 1);
+    enterResult("warning", rutR.rut ? `Hoja en blanco · ${rutR.rut}` : "Hoja en blanco (sin ID legible)", corners);
+    return;
+   }
+
    if (!report.valid) {
     addLog(`ERR[${SCAN_CODES.WRONG_FORMAT}]: ${report.reason}`);
     setDebugLog(logs);
@@ -855,6 +923,9 @@ export default function ScanPage() {
 
    const bubbleResults = report.results;
 
+   // Red de seguridad: hoy el motor ya devuelve report.blank en este caso y la
+   // rama de arriba lo atiende, asi que esto no deberia alcanzarse. Se conserva
+   // por si el motor cambia -- un escaneo sin respuestas nunca debe seguir de largo.
    const answeredCount = bubbleResults.filter(r => r.answer !== "-" && r.answer !== "?").length;
    if (answeredCount === 0) {
     addLog(`ERR[${SCAN_CODES.OUT_OF_FOCUS}]: Sin respuestas`);
@@ -1777,6 +1848,26 @@ export default function ScanPage() {
        >
         {labeled ? "✓ Lectura confirmada" : "✓ Confirmar lectura (correcta)"}
        </button>
+       {/* Hoja reconocida sin ninguna marca: se puede dejar registrada como
+           prueba sin respuestas (antes el escaneo se perdía). */}
+       {blankPending && (
+        <div className="mb-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3">
+         <p className="text-[11px] font-bold text-amber-200">
+          Hoja en blanco{blankPending.rut ? ` · ${blankPending.rut}` : " (sin ID legible)"}
+         </p>
+         <p className="mt-0.5 text-[10px] text-amber-200/80">
+          Se reconoció la hoja pero no tiene ninguna marca. Si el alumno entregó sin responder,
+          guárdala para que quede registrado.
+         </p>
+         <button
+          onClick={saveBlankSheet}
+          disabled={blankSaving}
+          className="mt-2 w-full rounded-xl bg-amber-500 py-2.5 text-xs font-black uppercase tracking-widest text-black active:scale-95 transition disabled:opacity-50"
+         >
+          {blankSaving ? "Guardando…" : "Guardar como prueba sin respuestas"}
+         </button>
+        </div>
+       )}
        {/* Escaneo sin dueño: se resuelve aquí mismo, sin ir al dashboard. */}
        {assignPaperId && (
         <button
@@ -1823,7 +1914,9 @@ export default function ScanPage() {
        <div className={`rounded-2xl border backdrop-blur-md px-4 py-3 shadow-2xl ${tone}`}>
         <div className="flex items-center justify-between gap-3">
          <div className="min-w-0">
-          {hudKind !== "error" && hasAnswerKey ? (
+          {blankPending ? (
+           <div className="text-sm font-black uppercase leading-tight tracking-wide">Hoja en blanco</div>
+          ) : hudKind !== "error" && hasAnswerKey ? (
            <div className="text-lg font-black leading-tight">
             {correct}<span className="opacity-60 text-sm font-bold">/{config.numQuestions - openCount}</span>
            </div>
@@ -1860,6 +1953,23 @@ export default function ScanPage() {
           </div>
           {/* El HUD entero es pointer-events-none (no debe bloquear el re-encuadre):
               este enlace reactiva los eventos solo en su propia caja. */}
+          {blankPending && (
+           <div className="pointer-events-auto flex flex-col items-end gap-1">
+            <button
+             onClick={saveBlankSheet}
+             disabled={blankSaving}
+             className="rounded-full border border-white/40 bg-white/15 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest disabled:opacity-50"
+            >
+             {blankSaving ? "Guardando…" : "Guardar en blanco"}
+            </button>
+            <button
+             onClick={() => { setBlankPending(null); nextScan(); }}
+             className="text-[9px] font-bold uppercase tracking-widest underline opacity-70"
+            >
+             Descartar
+            </button>
+           </div>
+          )}
           {assignPaperId && (
            <button
             onClick={() => setShowAssign(true)}

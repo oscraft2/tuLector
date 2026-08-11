@@ -57,6 +57,11 @@ export interface GradeDiag {
 
 export interface GradeReport {
   results: BubbleResult[]; valid: boolean; reason?: string; diag?: GradeDiag;
+  /** La hoja se registro bien (anclas/formato/timing OK) pero NO tiene ninguna
+   *  marca: esta EN BLANCO. Es un resultado legitimo -- un alumno que entrego
+   *  sin responder -- distinto de "no pude leer la hoja", y la app lo ofrece
+   *  guardar como prueba sin respuestas en vez de descartar el escaneo. */
+  blank?: boolean;
 }
 
 // ─── Configuracion ─────────────────────────────────────────────
@@ -1025,7 +1030,11 @@ export function gradeBubbles(imageData: ImageData, config: OMRConfig = DEFAULT_C
 
   const answeredCount = results.filter(r => r.answer !== "-" && r.answer !== "?").length;
   if (answeredCount === 0) {
-    return { results, valid: false, reason: "Sin respuestas detectadas", diag };
+    // Llegar hasta aca significa que el registro fue bueno (warp con contenido,
+    // formato validado, filas ubicadas): la hoja es de tuLector y esta VACIA.
+    // `blank` lo distingue de un fallo de lectura para que la app pueda ofrecer
+    // guardarla como prueba sin respuestas (ver /scan).
+    return { results, valid: false, blank: true, reason: "Hoja en blanco: no se detecto ninguna marca", diag };
   }
 
   // Umbral RELATIVO a numQuestions (antes fijo en 18, calibrado para examenes
