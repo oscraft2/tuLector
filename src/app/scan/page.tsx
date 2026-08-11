@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { findCorners, gradeBubbles, readRut, readSheetCode, warpSheet, cropNameBox, DEFAULT_CONFIG, type BubbleResult } from "@/lib/omr";
 import { isNativeApp, captureNativePhoto, toggleTorch } from "@/lib/native/capacitor";
 import { enqueueScan, getQueueSize } from "@/lib/offline_queue";
+import { saveQuizPack, loadQuizPack } from "@/lib/quiz_cache";
 import { SCAN_CODES, SCAN_MESSAGES, SCAN_THRESHOLDS } from "@/lib/scanner_config";
 import { optX, rowCY, BUBBLE_R, SHEET_W, SHEET_H, rutColX, rutRowY, RUT_COLS, RUT_ROWS, RUT_R, questionLayout } from "@/lib/sheet_layout";
 import { saveScanLog, SCAN_LOG_VERSION, imageDataToThumb, downscaleCanvas } from "@/lib/scan_log";
@@ -112,9 +113,16 @@ function canvasToDataUrl(canvas: HTMLCanvasElement): string {
  return canvas.toDataURL("image/jpeg", 0.85);
 }
 
-// Clave por defecto (demo/fallback offline). La clave real se carga desde la
-// URL (?key=CBBBC... o ?quiz=<id> via Supabase) en tiempo de ejecucion.
-const DEFAULT_ANSWER_KEY = ["C","B","B","B","C","E","E","D","C","B","A","B","C","D","E","E","D","C","B","A"];
+// Antes aca vivia DEFAULT_ANSWER_KEY, una clave de demo hardcodeada que se
+// usaba como "fallback offline". Era peligrosa: sin red la carga del ensayo
+// falla, se quedaba esa clave falsa, y el profesor veia "18/20 correctas" con
+// toda naturalidad sobre un numero que no significaba nada. Ahora, sin clave
+// real no se muestra puntaje: se muestran las respuestas leidas y se dice que
+// falta la pauta.
+const NO_ANSWER_KEY: string[] = [];
+
+/** Ensayo activo cacheado para poder corregir SIN RED (ver quiz_cache.ts). */
+const QUIZ_PACK_KEY = "tulector_active_quiz_pack";
 
 // ─── Captura por votacion multi-frame (estabiliza el resultado) ───
 const VOTE_TARGET = 3;        // frames validos a votar (3 = RUT robusto, como cuando leia 4/4)
@@ -180,7 +188,13 @@ export default function ScanPage() {
  const [lastDiag, setLastDiag] = useState<FrameDiag | null>(null);
  const [warpedThumb, setWarpedThumb] = useState<string | null>(null);
  const [capturing, setCapturing] = useState(false);
- const [answerKey, setAnswerKey] = useState<string[]>(DEFAULT_ANSWER_KEY);
+ const [answerKey, setAnswerKey] = useState<string[]>(NO_ANSWER_KEY);
+ // Sin pauta real no se muestra puntaje (ver NO_ANSWER_KEY).
+ const hasAnswerKey = answerKey.length > 0;
+ // Lecturas esperando red. Se muestra siempre que haya alguna, para que el
+ // profesor sepa que tiene trabajo sin subir antes de cerrar la app.
+ const [queuedCount, setQueuedCount] = useState(0);
+ const [isOnline, setIsOnline] = useState(true);
  const [native, setNative] = useState(false);
  // Config de lectura sincronizada con el generador (/sheet la guarda en localStorage).
  const [scanCfg, setScanCfg] = useState({
@@ -305,8 +319,27 @@ export default function ScanPage() {
    const labels = String(raw || "ABCDE").toUpperCase().replace(/[^A-Z]/g, "");
    return labels || "ABCDE";
   };
+  /** Rehidrata el ensayo cacheado. Devuelve true si habia uno usable. */
+  const hydrateFromCache = () => {
+   const pack = loadQuizPack(QUIZ_PACK_KEY);
+   if (!pack) return false;
+   setActiveQuizId(pack.quizId);
+   setActiveSheetCode(pack.sheetCode);
+   setActiveCountryCode(pack.countryCode || "CL");
+   if (pack.answerKey.length > 0) setAnswerKey(pack.answerKey);
+   setScanCfg(pack.cfg);
+   return true;
+  };
+
   (async () => {
    try {
+    // Sin red no se intenta la llamada: se va directo al ensayo cacheado. Asi
+    // el arranque offline no queda esperando un fetch que va a fallar.
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+     if (hydrateFromCache()) setError("Sin conexion. Se usa el ultimo ensayo descargado; las lecturas se sincronizaran despues.");
+     else setError("Sin conexion y sin ensayo descargado. Conectate una vez para poder corregir sin red.");
+     return;
+    }
     const res = await fetch("/api/scan/active-quiz", { credentials: "include", cache: "no-store" });
     if (!res.ok) {
      setError("Selecciona un ensayo desde el dashboard antes de escanear.");
@@ -353,11 +386,52 @@ export default function ScanPage() {
     };
     setScanCfg(nextCfg);
     try { localStorage.setItem("tulector_scan_config", JSON.stringify(nextCfg)); } catch { /* sin storage */ }
+
+    // Deja el ensayo listo para corregir sin red la proxima vez.
+    if (data.id) {
+     saveQuizPack(QUIZ_PACK_KEY, {
+      quizId: String(data.id),
+      answerKey: data.answer_key ? parseKey(String(data.answer_key)) : [],
+      sheetCode: typeof data.sheet_code === "number" ? data.sheet_code : null,
+      countryCode: data.country_code ?? "CL",
+      cfg: nextCfg,
+      title: data.title,
+      savedAt: Date.now(),
+     });
+    }
    } catch {
-    setError("No se pudo cargar el ensayo activo. Se mantiene clave offline de prueba.");
+    // La red se cayo a mitad de camino: mismo camino que el arranque offline.
+    if (hydrateFromCache()) setError("Sin conexion. Se usa el ultimo ensayo descargado; las lecturas se sincronizaran despues.");
+    else setError("No se pudo cargar el ensayo activo y no hay uno descargado. Sin pauta no se calcula puntaje.");
    }
   })();
  }, []);
+
+ // Estado de red + cola pendiente. La cola tambien la vacia NativeBootstrap al
+ // volver la conexion, asi que se relee al reconectar para reflejarlo.
+ useEffect(() => {
+  let alive = true;
+  // El estado inicial se resuelve DENTRO de refresh (no en el cuerpo del
+  // efecto): asi no hay setState sincrono ni riesgo de desajuste de hidratacion,
+  // porque el HTML del servidor siempre se renderiza como "en linea".
+  const refresh = async () => {
+   const size = await getQueueSize().catch(() => 0);
+   if (!alive) return;
+   setQueuedCount(size);
+   setIsOnline(typeof navigator === "undefined" ? true : navigator.onLine);
+  };
+  const onOnline = () => { setIsOnline(true); setTimeout(refresh, 2000); };
+  const onOffline = () => setIsOnline(false);
+  refresh();
+  window.addEventListener("online", onOnline);
+  window.addEventListener("offline", onOffline);
+  return () => {
+   alive = false;
+   window.removeEventListener("online", onOnline);
+   window.removeEventListener("offline", onOffline);
+  };
+ }, []);
+
  const badFrameCount = useRef(0);
  const goodFrameCount = useRef(0);
  const stableFrames = useRef(0);
@@ -396,9 +470,27 @@ export default function ScanPage() {
  };
 
   const syncResult = async ({ rut, answers, photo, warp, source, dvOk, code, nameImg }: { rut: string; answers: BubbleResult[]; photo?: string | null; warp?: string | null; source: "camera" | "upload"; dvOk?: boolean; code?: unknown; nameImg?: string | null }) => {
+   // Sin red: se encola de una y NO se intenta el POST. Antes esto caia al
+   // early-return de abajo cuando el arranque habia sido offline (activeQuizId
+   // quedaba null porque la carga del ensayo fallaba) y la lectura se PERDIA.
+   // Con el ensayo cacheado, activeQuizId si esta y la lectura se conserva.
+   if (activeQuizId && typeof navigator !== "undefined" && !navigator.onLine) {
+    await enqueueScan({
+     quizId: activeQuizId,
+     rut,
+     answers: answers.map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
+     source,
+     dvOk,
+     code,
+    });
+    setQueuedCount(await getQueueSize());
+    setSyncState("queued");
+    setSyncMessage("Sin conexion. Guardado localmente. Se sincronizara al recuperar red.");
+    return;
+   }
    if (!activeQuizId) {
     setSyncState("error");
-    setSyncMessage("Selecciona un ensayo desde el dashboard para sincronizar.");
+    setSyncMessage("Sin ensayo activo. Conectate una vez para descargarlo y poder corregir sin red.");
     return;
    }
    setSyncState("saving");
@@ -492,6 +584,7 @@ export default function ScanPage() {
       dvOk,
       code,
      });
+     setQueuedCount(await getQueueSize());
      setSyncState("queued");
      setSyncMessage("Sin conexion. Guardado localmente. Se sincronizara al recuperar red.");
     } else {
@@ -1215,6 +1308,23 @@ export default function ScanPage() {
 
     {/* Status overlay */}
     <div className="absolute top-4 left-0 right-0 flex flex-col items-center gap-1.5 z-20 pointer-events-none">
+     {/* Estado offline y trabajo sin subir: el profesor tiene que poder verlo
+         ANTES de cerrar la app, no descubrirlo despues. */}
+     {(!isOnline || queuedCount > 0) && (
+      <div className={`px-3 py-1 rounded-full backdrop-blur-lg border flex items-center gap-2 ${isOnline ? "bg-sky-600/20 border-sky-500/50" : "bg-amber-600/20 border-amber-500/50"}`}>
+       <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? "bg-sky-400" : "bg-amber-400 animate-pulse"}`} />
+       <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-100">
+        {!isOnline && "Sin conexión"}
+        {!isOnline && queuedCount > 0 && " · "}
+        {queuedCount > 0 && `${queuedCount} en cola`}
+       </span>
+      </div>
+     )}
+     {!hasAnswerKey && (
+      <div className="px-3 py-1 rounded-full backdrop-blur-lg border bg-amber-600/20 border-amber-500/50">
+       <span className="text-[10px] font-bold uppercase tracking-wider text-amber-200">Sin pauta — no se calcula puntaje</span>
+      </div>
+     )}
      <div className={`px-4 py-1.5 rounded-full backdrop-blur-lg border transition-all flex items-center gap-2 ${phase === "scanning" ? "bg-green-600/20 border-green-500/50" : "bg-black/40 border-zinc-800/50"}`}>
       <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${phase === "scanning" ? "bg-green-400" : detected && inFocus ? "bg-green-500" : "bg-zinc-600"}`} />
       <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-200">
@@ -1400,8 +1510,14 @@ export default function ScanPage() {
          <>
           <div className="flex justify-between items-start mb-4">
            <div>
-            <h2 className="text-2xl font-black text-white">{correct}<span className="text-zinc-500 text-lg font-bold">/{config.numQuestions - openCount}</span></h2>
+            {hasAnswerKey ? (
+             <h2 className="text-2xl font-black text-white">{correct}<span className="text-zinc-500 text-lg font-bold">/{config.numQuestions - openCount}</span></h2>
+            ) : (
+             /* Sin pauta cargada NO se inventa un puntaje: se informa la lectura. */
+             <h2 className="text-lg font-black text-amber-400">{answered} respuestas leidas</h2>
+            )}
             <p className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Escaneo #{scanCount} · {answered} resp · {config.numQuestions}p/{config.numOptions}o/{config.numColumns}c · {BUILD_TAG}</p>
+            {!hasAnswerKey && <p className="mt-1 text-[10px] font-bold text-amber-400/90 normal-case tracking-normal">Sin pauta cargada — no se puede calcular el puntaje.</p>}
            </div>
            <div className="flex flex-col items-end gap-1">
             <div className="bg-green-500/10 text-green-500 px-3 py-1 rounded-full text-[10px] font-black border border-green-500/20">
@@ -1489,10 +1605,12 @@ export default function ScanPage() {
        <div className={`rounded-2xl border backdrop-blur-md px-4 py-3 shadow-2xl ${tone}`}>
         <div className="flex items-center justify-between gap-3">
          <div className="min-w-0">
-          {hudKind !== "error" ? (
+          {hudKind !== "error" && hasAnswerKey ? (
            <div className="text-lg font-black leading-tight">
             {correct}<span className="opacity-60 text-sm font-bold">/{config.numQuestions - openCount}</span>
            </div>
+          ) : hudKind !== "error" ? (
+           <div className="text-sm font-black leading-tight">Leída · sin pauta</div>
           ) : (
            <div className="text-xs font-black uppercase tracking-wide">Hoja no leída</div>
           )}
