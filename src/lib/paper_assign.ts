@@ -259,29 +259,78 @@ export async function deleteGradeRecord(supabase: MinimalClient, schoolId: strin
     .eq("student_code", studentCode);
 }
 
+/**
+ * Nota de un alumno para un ensayo, al asignar/reasignar/deshacer una hoja.
+ *
+ * Asignar una hoja NO cambia las respuestas, asi que la nota correcta ya esta
+ * calculada y guardada en el paper (`papers.grade`, via computeQuizScore). Se
+ * REUSA esa en vez de recalcularla aca, que es lo que se hacia antes: ese
+ * recalculo usaba solo la exigencia del COLEGIO e ignoraba la del ensayo
+ * (`quizzes.exigencia`), asi que reasignar una hoja podia cambiarle la nota al
+ * alumno en silencio. Con puntaje por pregunta o tabla propia la diferencia
+ * seria mayor todavia.
+ *
+ * `raw_score`/`total_questions` guardan PUNTOS (ver migracion quiz_points); sin
+ * ponderacion valen lo mismo que las correctas, como siempre.
+ */
 export async function upsertGradeRecord(
   supabase: MinimalClient,
   school: DashboardSchool,
   args: { quizId: string; paperId: string; studentCode: string | null; score: number; total: number },
 ) {
   if (!args.studentCode) return;
-  const gradeResult = calculateGrade(args.score, args.total, school.country_code ?? "CL", {
-    gradeScale: { min: school.grading_scale_min ?? 1.0, max: school.grading_scale_max ?? 7.0 },
-    passingGrade: school.passing_grade ?? 4.0,
-    exigencia: school.exigencia ?? 0.6,
-  });
+
+  const stored = await readStoredScores(supabase, args.paperId);
+  const rawScore = stored?.points ?? args.score;
+  const totalQuestions = stored?.points_total ?? args.total;
+
+  // Nota guardada si la hay; si no (paper viejo sin `grade`), el calculo de
+  // siempre con los valores del colegio.
+  let grade = stored?.grade ?? null;
+  let passing: boolean;
+  if (grade != null) {
+    passing = grade >= (school.passing_grade ?? 4.0);
+  } else {
+    const gradeResult = calculateGrade(rawScore, totalQuestions, school.country_code ?? "CL", {
+      gradeScale: { min: school.grading_scale_min ?? 1.0, max: school.grading_scale_max ?? 7.0 },
+      passingGrade: school.passing_grade ?? 4.0,
+      exigencia: school.exigencia ?? 0.6,
+    });
+    grade = gradeResult.grade;
+    passing = gradeResult.passing;
+  }
+
   await supabase.from("grade_records").upsert(
     {
       school_id: school.id,
       student_code: args.studentCode,
       quiz_id: args.quizId,
       paper_id: args.paperId,
-      raw_score: args.score,
-      total_questions: args.total,
-      calculated_grade: gradeResult.grade,
-      passing: gradeResult.passing,
+      raw_score: rawScore,
+      total_questions: totalQuestions,
+      calculated_grade: grade,
+      passing,
       graded_at: new Date().toISOString(),
     },
     { onConflict: "school_id,student_code,quiz_id" },
   );
+}
+
+/** Puntaje ya calculado de una hoja. Devuelve null si la BD todavia no tiene
+ *  las columnas de la migracion quiz_points: ahi se usa el camino de antes. */
+async function readStoredScores(
+  supabase: MinimalClient,
+  paperId: string,
+): Promise<{ points: number | null; points_total: number | null; grade: number | null } | null> {
+  for (const select of ["points,points_total,grade", "grade"]) {
+    const { data, error } = await supabase.from("papers").select(select).eq("id", paperId).maybeSingle();
+    if (error || !data) continue;
+    const row = data as unknown as { points?: number | null; points_total?: number | null; grade?: number | null };
+    return {
+      points: row.points ?? null,
+      points_total: row.points_total ?? null,
+      grade: row.grade != null ? Number(row.grade) : null,
+    };
+  }
+  return null;
 }

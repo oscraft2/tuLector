@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import type { DashboardActionState } from "@/app/dashboard/actions";
 import { createQuiz, updateQuiz, createCourse } from "@/app/dashboard/actions";
 import { AnswerKeyEditor } from "@/components/dashboard/AnswerKeyEditor";
+import { GradeScalePanel } from "@/components/dashboard/GradeScalePanel";
 import { CourseForm } from "@/components/dashboard/CourseForm";
 import { SCHOOL_GRADES } from "@/lib/grades";
 import { ActionFeedbackDialog } from "@/components/dashboard/ActionFeedbackDialog";
@@ -48,6 +49,16 @@ type ExistingQuiz = {
   multi_select_questions?: string | null;
   open_question_rubrics?: string | null;
   exigencia: number | null;
+  /** Puntaje por pregunta y escala de nota propias (migraciones quiz_points y
+   *  quiz_grade_scale). Ausentes/NULL = el ensayo se corrige como siempre. */
+  default_question_points?: number | string | null;
+  question_points?: string | null;
+  score_open_questions?: boolean | null;
+  passing_grade?: number | string | null;
+  grade_scale_min?: number | string | null;
+  grade_scale_max?: number | string | null;
+  grade_table?: string | null;
+  equivalent_scale?: string | null;
 };
 
 export function QuizCreateForm({
@@ -217,6 +228,9 @@ export function QuizCreateForm({
             defaultOptionOverrides={quiz?.option_overrides ?? ""}
             defaultMultiSelectQuestions={quiz?.multi_select_questions ?? ""}
             defaultOpenQuestionRubrics={quiz?.open_question_rubrics ?? ""}
+            defaultDefaultQuestionPoints={quiz?.default_question_points != null ? String(quiz.default_question_points) : ""}
+            defaultQuestionPoints={quiz?.question_points ?? ""}
+            defaultScoreOpenQuestions={quiz?.score_open_questions === true}
             countryCode={countryCode}
           />
 
@@ -234,6 +248,19 @@ export function QuizCreateForm({
               {isChile && " No afecta puntajes PAES/SIMCE."}
             </span>
           </label>
+
+          <GradeScalePanel
+            schoolGrading={{
+              min: countryProfile.grading.min,
+              max: countryProfile.grading.max,
+              passing: countryProfile.grading.passing,
+            }}
+            defaultPassingGrade={quiz?.passing_grade != null ? String(quiz.passing_grade) : ""}
+            defaultScaleMin={quiz?.grade_scale_min != null ? String(quiz.grade_scale_min) : ""}
+            defaultScaleMax={quiz?.grade_scale_max != null ? String(quiz.grade_scale_max) : ""}
+            defaultGradeTable={quiz?.grade_table ?? ""}
+            defaultEquivalentScale={quiz?.equivalent_scale ?? ""}
+          />
 
           <p className="text-xs text-[#5b6472]">
             Formatos compatibles con el lector móvil: hasta {QUIZ_MAX_QUESTIONS} preguntas por hoja (hasta {QUIZ_MAX_QUESTIONS_MULTIPAGE} repartidas en varias hojas) y 3, 4 o 5 opciones.

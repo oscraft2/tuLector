@@ -231,36 +231,8 @@ export function groupStats(papers: { score: number; total: number; passing: bool
   };
 }
 
-/** Genera CSV de exportacion compatible con sistemas de gobierno LATAM */
-export function generateExportCSV(
-  papers: { studentId: string; studentName: string; score: number; total: number }[],
-  format: "agencia_calidad" | "icfes" | "planea" | "generic" = "generic",
-  metadata: Record<string, string> = {}
-): string {
-  const configs = {
-    agencia_calidad: {
-      headers: ["RUN", "Nombre", "Puntaje", "Nota", "Asignatura", "Eje", "Habilidad", "Fecha"],
-      delimiter: ";",
-    },
-    icfes: { headers: ["ID", "Estudiante", "Puntaje", "Calificacion", "Competencia", "DBA"], delimiter: "," },
-    planea: { headers: ["CURP", "Alumno", "Aciertos", "Calificacion", "Eje", "Habilidad"], delimiter: "," },
-    generic: { headers: ["ID", "Nombre", "Puntaje", "Nota", "Total", "Porcentaje"], delimiter: "," },
-  };
-
-  const config = configs[format];
-  let csv = config.headers.join(config.delimiter) + "\n";
-
-  papers.forEach((p) => {
-    const pct = p.total > 0 ? Math.round((p.score / p.total) * 100) : 0;
-    const values =
-      format === "agencia_calidad"
-        ? [p.studentId, p.studentName, p.score.toString(), pct.toString(), metadata.subject || "", metadata.axis || "", metadata.skill || "", new Date().toISOString().slice(0, 10)]
-        : format === "generic"
-        ? [p.studentId, p.studentName, p.score.toString(), pct.toString(), p.total.toString(), pct + "%"]
-        : [p.studentId, p.studentName, p.score.toString(), pct.toString(), metadata.axis || "", metadata.skill || ""];
-
-    csv += values.join(config.delimiter) + "\n";
-  });
-
-  return csv;
-}
+// `generateExportCSV` vivia aca con los formatos LATAM hardcodeados y NADIE la
+// llamaba: los formatos reales estan en la tabla `export_formats` y las
+// columnas en src/lib/export_columns.ts. Se elimino al construir la
+// exportacion configurable (docs/plan-puntaje-y-exportacion.md, Fase 4) para no
+// dejar una tercera definicion de columnas divergiendo en silencio.

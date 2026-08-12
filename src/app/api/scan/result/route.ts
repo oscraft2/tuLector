@@ -61,10 +61,46 @@ type QuizRow = {
   batch_id?: string | null;
   /** Curso al que pertenece ESTE ensayo (cada fila de un lote tiene el suyo). */
   course_id?: string | null;
+  /** Puntaje por pregunta (migracion quiz_points). Ausentes = 1 pt por pregunta. */
+  default_question_points?: number | string | null;
+  question_points?: string | null;
+  score_open_questions?: boolean | null;
+  open_question_rubrics?: string | null;
+  /** Escala de nota propia (migracion quiz_grade_scale). Ausentes = la del colegio. */
+  passing_grade?: number | null;
+  grade_scale_min?: number | null;
+  grade_scale_max?: number | null;
+  grade_table?: string | null;
+  equivalent_scale?: string | null;
 };
+
+/**
+ * Columnas de PUNTAJE por ensayo (migracion 20260813000000_quiz_points). Van en
+ * un select aparte del resto: si la BD no las tiene todavia, se cae al select de
+ * siempre y el ensayo se corrige con 1 punto por pregunta, igual que antes.
+ */
+const QUIZ_SCORING_COLUMNS = [
+  "default_question_points", "question_points", "score_open_questions", "open_question_rubrics",
+  "passing_grade", "grade_scale_min", "grade_scale_max", "grade_table", "equivalent_scale",
+] as const;
+// Literal, no `.join()`: el cliente tipado de Supabase parsea el select en tipos
+// y un `string` cualquiera lo tumba. Se mantiene a mano junto al array de arriba.
+const QUIZ_SCORING_SELECT = "default_question_points,question_points,score_open_questions,open_question_rubrics,passing_grade,grade_scale_min,grade_scale_max,grade_table,equivalent_scale";
 
 /** Columnas de un ensayo hermano: las mismas que necesita el resto del flujo. */
 const SIBLING_SELECT = "id,batch_id,course_id,sheet_code,answer_key,num_questions,open_questions,multi_select_questions,evaluation_type,exigencia";
+const SIBLING_SELECT_WITH_POINTS = `${SIBLING_SELECT},${QUIZ_SCORING_SELECT}` as const;
+
+/** Builder minimo de PostgREST para un select DINAMICO, mismo recurso que
+ *  quiz_batch.ts: el cliente tipado parsea la cadena del select en tipos y
+ *  exige un literal, pero aca el select cambia segun si la BD ya tiene las
+ *  columnas de puntaje. El cast queda encerrado en estos dos tipos. */
+type LooseFilter = {
+  eq: (column: string, value: unknown) => LooseFilter;
+  is: (column: string, value: unknown) => LooseFilter;
+  maybeSingle: () => PromiseLike<{ data: unknown }>;
+};
+type QuizTableLoose = { select: (columns: string) => LooseFilter };
 
 function normalizeAnswers(value: unknown): ScanAnswer[] {
   if (!Array.isArray(value)) return [];
@@ -195,7 +231,7 @@ async function findExistingPaper(
 
 /** Columnas de `papers` que llegaron en migraciones posteriores y pueden faltar
  *  en una BD sin migrar. Se escriben si existen; si no, se van cayendo una a una. */
-const OPTIONAL_PAPER_COLUMNS = ["sheet_code_read", "course_id"] as const;
+const OPTIONAL_PAPER_COLUMNS = ["sheet_code_read", "course_id", "points", "points_total"] as const;
 
 /**
  * Inserta (o actualiza) el paper, reintentando SIN las columnas opcionales que
@@ -256,6 +292,13 @@ async function finalizeGrading(
   let expectedSheetCode = typeof quiz.sheet_code === "number" ? quiz.sheet_code : null;
   let sheetMismatch = extras.sheetIdRead !== null && expectedSheetCode !== null && extras.sheetIdRead !== expectedSheetCode;
 
+  // Un ensayo hermano REEMPLAZA a `quiz` para puntuar, asi que tiene que traer
+  // tambien las columnas de puntaje. Si el select de arriba ya cayo a la version
+  // sin ellas (BD sin migrar), la clave no aparece en el objeto y aca se pide el
+  // select de siempre -- sin este ajuste, pedirlas en una BD sin migrar dejaria
+  // el hermano en null y se perderia el re-enrutado por lote.
+  const siblingSelect = "question_points" in quiz ? SIBLING_SELECT_WITH_POINTS : SIBLING_SELECT;
+
   // Hoja "hermana" del mismo lote multi-curso (ver batch_id, createQuiz en
   // dashboard/actions.ts): mismo contenido/clave, otro curso, su propio
   // sheet_code -- si la hoja escaneada no calza con el ensayo activo pero SI
@@ -266,9 +309,12 @@ async function finalizeGrading(
   // la proteccion "hoja correcta" (indice unico school_id+sheet_code) no se
   // debilita, solo se hace la busqueda un paso mas amplia.
   if (sheetMismatch && quiz.batch_id) {
-    const { data: sibling } = await supabase
-      .from("quizzes")
-      .select(SIBLING_SELECT)
+    // Mismo idioma que fetchSiblingQuizzes (src/lib/quiz_batch.ts): el select es
+    // dinamico (con o sin las columnas de puntaje segun la BD), y el cliente
+    // tipado de Supabase parsea la CADENA del select en tipos, asi que un
+    // `string` cualquiera lo deja en ParserError. Se castea la tabla una vez.
+    const { data: sibling } = await (supabase.from("quizzes") as unknown as QuizTableLoose)
+      .select(siblingSelect)
       .eq("school_id", school.id)
       .eq("batch_id", quiz.batch_id)
       .eq("sheet_code", extras.sheetIdRead)
@@ -305,7 +351,7 @@ async function finalizeGrading(
       if (courseId && quiz.course_id !== courseId) {
         // Hermanos por lote o, si el lote no quedó registrado, por contenido
         // idéntico (misma clave y nº de preguntas) -- ver fetchSiblingQuizzes.
-        const siblings = await fetchSiblingQuizzes(supabase, school.id, quiz, SIBLING_SELECT);
+        const siblings = await fetchSiblingQuizzes(supabase, school.id, quiz, siblingSelect);
         const decision = resolveQuizForStudent(quiz, courseId, siblings);
         if (decision.kind === "rerouted") {
           quiz = decision.quiz;
@@ -334,7 +380,12 @@ async function finalizeGrading(
   // El puntaje se calcula con el ensayo FINAL (tras el re-enrutado): los
   // hermanos comparten clave y formato, pero la nota debe salir del ensayo en el
   // que la hoja realmente queda guardada.
-  const { score, total, grade, passing, equivalentScore: eqScore } = computeQuizScore(quiz, answers, school, extras.countryCode);
+  // `openAnswers` va vacio a proposito: la hoja se acaba de leer, no puede haber
+  // ninguna pregunta de desarrollo confirmada todavia. Si el ensayo puntua las
+  // abiertas, su max_points ya entra al denominador y la nota sube despues, al
+  // confirmar cada una (confirmOpenAnswer recalcula el paper).
+  const { score, total, points, pointsTotal, grade, passing, equivalentScore: eqScore } =
+    computeQuizScore(quiz, answers, school, extras.countryCode);
 
   const status = sheetMismatch || !studentCode || !matchedStudent ? "manual_review" : "corrected";
   const scannedAt = new Date().toISOString();
@@ -347,6 +398,10 @@ async function finalizeGrading(
     student_name: studentName ?? (studentCode ? "Sin identificar" : "Sin RUT"),
     score,
     total,
+    // Puntaje PONDERADO (migracion quiz_points). Sin ponderacion coincide con
+    // score/total; de aca salen la nota y el puntaje equivalente.
+    points,
+    points_total: pointsTotal,
     answers: answers.map((answer) => ({ q: answer.q, a: answer.a })),
     raw_scores: answers.map((answer) => ({ q: answer.q, a: answer.a, s: answer.s ?? [] })),
     image_url: trimDataUrl(extras.photo),
@@ -383,8 +438,10 @@ async function finalizeGrading(
       student_code: studentRecordCode,
       quiz_id: quiz.id,
       paper_id: paperId,
-      raw_score: score,
-      total_questions: total,
+      // raw_score = PUNTOS (la columna siempre significo "puntaje bruto"); sin
+      // ponderacion su valor es identico al conteo de correctas de antes.
+      raw_score: points,
+      total_questions: pointsTotal,
       calculated_grade: grade,
       passing,
       graded_at: scannedAt,
@@ -449,13 +506,27 @@ export async function POST(request: Request) {
 
     const { supabase, user, school } = await getDashboardContext();
 
+    const QUIZ_FULL_SELECT = "id,school_id,title,answer_key,num_questions,open_questions,multi_select_questions,evaluation_type,evaluation_variant,sheet_code,exigencia,batch_id,course_id";
+
     let quizResult = await supabase
       .from("quizzes")
-      .select("id,school_id,title,answer_key,num_questions,open_questions,multi_select_questions,evaluation_type,evaluation_variant,sheet_code,exigencia,batch_id,course_id")
+      .select(`${QUIZ_FULL_SELECT},${QUIZ_SCORING_SELECT}`)
       .eq("id", quizId)
       .eq("school_id", school.id)
       .is("archived_at", null)
       .single();
+
+    // Sin la migracion de puntaje: se reintenta sin esas columnas y el resto de
+    // la cadena de degradacion sigue igual que siempre.
+    if (quizResult.error && QUIZ_SCORING_COLUMNS.some((col) => isMissingColumnError(quizResult.error, col))) {
+      quizResult = await supabase
+        .from("quizzes")
+        .select(QUIZ_FULL_SELECT)
+        .eq("id", quizId)
+        .eq("school_id", school.id)
+        .is("archived_at", null)
+        .single();
+    }
 
     if (quizResult.error && (isMissingColumnError(quizResult.error, "batch_id") || isMissingColumnError(quizResult.error, "course_id"))) {
       // BD sin migrar (batch_id/course_id): degradacion silenciosa -- sin estas

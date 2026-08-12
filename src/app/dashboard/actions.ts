@@ -33,8 +33,12 @@ import { type StudentCsvRow, guessColumnMapping, rowsFromMapping } from "@/lib/s
 import { suggestColumns, OPEN_BOXES_PER_PAGE } from "@/lib/sheet_generator";
 import { parseSheetMode, compactModeIssue } from "@/lib/sheet_mode";
 import { sendTemplatedEmail } from "@/lib/email";
-import { calculateGrade } from "@/lib/latam";
 import { computeQuizScore } from "@/lib/grading";
+import { upsertGradeRecord } from "@/lib/paper_assign";
+import {
+  readQuizScoringFields, quizScoringIssue, hasScoringConfig,
+  QUIZ_POINTS_COLUMNS, QUIZ_GRADE_SCALE_COLUMNS,
+} from "@/lib/quiz_scoring_fields";
 import type { DashboardSchool } from "@/lib/supabase_server";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
@@ -105,6 +109,12 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
       throw new Error("Una pregunta no puede ser de desarrollo y de seleccion multiple a la vez.");
     }
     const openQuestionRubrics = parseOpenQuestionRubrics(String(formData.get("open_question_rubrics") ?? ""));
+    // Puntaje por pregunta y escala de nota propias del ensayo. Todo NULL = el
+    // ensayo se corrige exactamente como siempre (1 punto por pregunta, escala
+    // del colegio) -- ver src/lib/quiz_scoring_fields.ts.
+    const scoring = readQuizScoringFields(formData, numQuestions);
+    const scoringIssue = quizScoringIssue(scoring);
+    if (scoringIssue) throw new Error(scoringIssue);
     // La clave de una fila de seleccion multiple no representa "que subconjunto
     // es correcto" (es una letra), asi que se trata igual que las abiertas para
     // el proposito de la clave/puntaje: fuera del calculo automatico (ver
@@ -192,6 +202,7 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
         evaluation_variant: evalVariant,
         sheet_mode: sheetMode,
         ...(exigencia !== null ? { exigencia } : {}),
+        ...scoring,
       };
       for (let retries = 0; ; retries++) {
         let insertPayload: Record<string, unknown> = { ...payload, sheet_code: Math.min(baseCode + sheetOffset, SHEET_CODE_MAX) };
@@ -237,6 +248,19 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
           // ensayo simplemente cae al fallback LEGACY_OPEN_BOXES_PER_PAGE al
           // imprimir/leer (mismo comportamiento que hoy, sin regresion).
           insertPayload = withoutOpenBoxesPerPage(insertPayload);
+          error = (await supabase.from("quizzes").insert(insertPayload)).error;
+        }
+        if (error && QUIZ_POINTS_COLUMNS.some((col) => isMissingColumnError(error, col))) {
+          // Solo se degrada si el ensayo NO pondera: guardarlo sin el puntaje
+          // dejaria una nota calculada con otro criterio que el que el profesor
+          // acaba de configurar, y en silencio.
+          if (hasScoringConfig(scoring, QUIZ_POINTS_COLUMNS)) throw new Error("El puntaje por pregunta requiere actualizar la base de datos (migracion 20260813000000_quiz_points.sql).");
+          insertPayload = withoutColumns(insertPayload, QUIZ_POINTS_COLUMNS);
+          error = (await supabase.from("quizzes").insert(insertPayload)).error;
+        }
+        if (error && QUIZ_GRADE_SCALE_COLUMNS.some((col) => isMissingColumnError(error, col))) {
+          if (hasScoringConfig(scoring, QUIZ_GRADE_SCALE_COLUMNS)) throw new Error("La escala de nota propia requiere actualizar la base de datos (migracion 20260813000001_quiz_grade_scale.sql).");
+          insertPayload = withoutColumns(insertPayload, QUIZ_GRADE_SCALE_COLUMNS);
           error = (await supabase.from("quizzes").insert(insertPayload)).error;
         }
         if (error && isMissingColumnError(error, "open_questions")) {
@@ -339,6 +363,9 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
     const evalVariant = String(formData.get("evaluation_variant") ?? "") || null;
     const rawExigencia = formData.get("exigencia");
     const exigencia = rawExigencia ? Math.max(0, Math.min(1, Number(rawExigencia) || 0.60)) : null;
+    const scoring = readQuizScoringFields(formData, numQuestions);
+    const scoringIssue = quizScoringIssue(scoring);
+    if (scoringIssue) throw new Error(scoringIssue);
     const grade = String(formData.get("grade") ?? "") || null;
     const courseId = grade ? await findOrCreateCourse(supabase, school.id, grade) : existing.course_id ?? null;
     // El form de edicion NO manda sheet_mode (el formato se elige en el
@@ -369,12 +396,19 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
       sheet_mode: sheetMode,
       updated_at: new Date().toISOString(),
       ...(exigencia !== null ? { exigencia } : {}),
+      ...scoring,
     };
 
     const keyChanged = String(existing.answer_key ?? "") !== answerKey;
     const structureChanged = existing.num_questions !== numQuestions || existing.options_per_question !== numOptions;
     const openChanged = String(existing.open_questions ?? "") !== String(updatePayload.open_questions ?? "")
       || String(existing.multi_select_questions ?? "") !== String(updatePayload.multi_select_questions ?? "");
+    // El puntaje y la escala mueven la NOTA de cada hoja aunque la clave no
+    // cambie: sin esto, editar "la 7 vale 3" dejaba las hojas ya escaneadas con
+    // la nota vieja y nadie se enteraba.
+    const scoringChanged = [...QUIZ_POINTS_COLUMNS, ...QUIZ_GRADE_SCALE_COLUMNS].some(
+      (col) => String((existing as Record<string, unknown>)[col] ?? "") !== String(scoring[col] ?? ""),
+    );
 
     let effectivePayload: Record<string, unknown> = updatePayload;
     let { error: updateError } = await supabase.from("quizzes").update(effectivePayload).eq("id", id);
@@ -403,6 +437,16 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
       effectivePayload = withoutOpenQuestionRubrics(effectivePayload);
       updateError = (await supabase.from("quizzes").update(effectivePayload).eq("id", id)).error;
     }
+    if (updateError && QUIZ_POINTS_COLUMNS.some((col) => isMissingColumnError(updateError, col))) {
+      if (hasScoringConfig(scoring, QUIZ_POINTS_COLUMNS)) throw new Error("El puntaje por pregunta requiere actualizar la base de datos (migracion 20260813000000_quiz_points.sql).");
+      effectivePayload = withoutColumns(effectivePayload, QUIZ_POINTS_COLUMNS);
+      updateError = (await supabase.from("quizzes").update(effectivePayload).eq("id", id)).error;
+    }
+    if (updateError && QUIZ_GRADE_SCALE_COLUMNS.some((col) => isMissingColumnError(updateError, col))) {
+      if (hasScoringConfig(scoring, QUIZ_GRADE_SCALE_COLUMNS)) throw new Error("La escala de nota propia requiere actualizar la base de datos (migracion 20260813000001_quiz_grade_scale.sql).");
+      effectivePayload = withoutColumns(effectivePayload, QUIZ_GRADE_SCALE_COLUMNS);
+      updateError = (await supabase.from("quizzes").update(effectivePayload).eq("id", id)).error;
+    }
     if (updateError && isMissingColumnError(updateError, "open_questions")) {
       if (openQuestions.length > 0) throw new Error("Preguntas de desarrollo requieren actualizar la base de datos (migracion open_questions).");
       updateError = (await supabase.from("quizzes").update(withoutOpenQuestions(effectivePayload)).eq("id", id)).error;
@@ -410,7 +454,7 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
     if (updateError) throw new Error(updateError.message);
 
     let recorrected = 0;
-    if (keyChanged || structureChanged || openChanged) {
+    if (keyChanged || structureChanged || openChanged || scoringChanged) {
       const updatedQuiz = { ...existing, ...updatePayload };
       const { data: papers } = await supabase
         .from("papers")
@@ -420,21 +464,26 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
       if (papers && papers.length > 0) {
         const countryCode = school.country_code ?? "CL";
         const scannedAt = new Date().toISOString();
+        // Puntajes de desarrollo YA confirmados por el profesor: solo hacen
+        // falta si este ensayo puntua las abiertas. Una sola consulta para
+        // todas las hojas, no una por hoja.
+        const openByPaper = await fetchConfirmedOpenAnswers(
+          supabase, scoring.score_open_questions === true, papers.map((p) => p.id as string),
+        );
         for (const paper of papers) {
           const answers = Array.isArray(paper.answers) ? (paper.answers as { q: number; a: string }[]) : [];
-          const result = computeQuizScore(updatedQuiz, answers, school, countryCode);
-          await supabase
-            .from("papers")
-            .update({ score: result.score, total: result.total, grade: result.grade, equivalent_score: result.equivalentScore })
-            .eq("id", paper.id);
+          const result = computeQuizScore(updatedQuiz, answers, school, countryCode, openByPaper.get(paper.id as string) ?? []);
+          await updatePaperScores(supabase, paper.id as string, result);
           if (paper.student_rut_norm) {
             await supabase.from("grade_records").upsert({
               school_id: school.id,
               student_code: paper.student_rut_norm,
               quiz_id: id,
               paper_id: paper.id,
-              raw_score: result.score,
-              total_questions: result.total,
+              // raw_score = PUNTOS (ver migracion quiz_points); sin ponderacion
+              // coincide con el conteo de correctas de siempre.
+              raw_score: result.points,
+              total_questions: result.pointsTotal,
               calculated_grade: result.grade,
               passing: result.passing,
               graded_at: scannedAt,
@@ -489,6 +538,24 @@ export async function duplicateQuiz(_prevState: DashboardActionState, formData: 
       num_columns: data.num_columns ?? suggestColumns(Math.min(Number(data.num_questions), QUIZ_MAX_QUESTIONS)),
       option_labels: data.option_labels,
       answer_key: data.answer_key,
+      // La copia hereda TODA la configuracion de correccion del original. Antes
+      // se quedaban fuera las abiertas, la seleccion multiple, los overrides de
+      // opciones y las rubricas: duplicar un ensayo DIA devolvia una copia que
+      // se corregia con otro criterio que el original, en silencio.
+      open_questions: data.open_questions ?? null,
+      option_overrides: data.option_overrides ?? null,
+      multi_select_questions: data.multi_select_questions ?? null,
+      open_question_rubrics: data.open_question_rubrics ?? null,
+      open_boxes_per_page: data.open_boxes_per_page ?? OPEN_BOXES_PER_PAGE,
+      // Puntaje por pregunta y escala de nota propias.
+      default_question_points: data.default_question_points ?? null,
+      question_points: data.question_points ?? null,
+      score_open_questions: data.score_open_questions ?? null,
+      passing_grade: data.passing_grade ?? null,
+      grade_scale_min: data.grade_scale_min ?? null,
+      grade_scale_max: data.grade_scale_max ?? null,
+      grade_table: data.grade_table ?? null,
+      equivalent_scale: data.equivalent_scale ?? null,
       subject: data.subject,
       grade: data.grade,
       course_id: courseId,
@@ -517,8 +584,21 @@ export async function duplicateQuiz(_prevState: DashboardActionState, formData: 
         error = (await supabase.from("quizzes").insert(effective)).error;
       }
       if (error && isMissingColumnError(error, "course_id")) {
-        const retryResult = await supabase.from("quizzes").insert(withoutCourseId(effective));
-        error = retryResult.error;
+        effective = withoutCourseId(effective);
+        error = (await supabase.from("quizzes").insert(effective)).error;
+      }
+      // Las columnas de config que puede no tener una BD sin migrar. Aca la
+      // degradacion es SIEMPRE silenciosa, a diferencia de createQuiz: si la
+      // columna no existe, el ensayo ORIGINAL tampoco la tiene, asi que quitarla
+      // de la copia no le hace perder nada.
+      const OPTIONAL_COPY_COLUMNS = [
+        "open_questions", "option_overrides", "multi_select_questions", "open_question_rubrics",
+        "open_boxes_per_page", ...QUIZ_POINTS_COLUMNS, ...QUIZ_GRADE_SCALE_COLUMNS,
+      ];
+      for (const column of OPTIONAL_COPY_COLUMNS) {
+        if (!error || !isMissingColumnError(error, column)) continue;
+        effective = withoutColumns(effective, [column]);
+        error = (await supabase.from("quizzes").insert(effective)).error;
       }
       if (!error) break;
       if (error.code === "23505" && retries < MAX_SHEET_CODE_RETRIES) {
@@ -586,6 +666,64 @@ function withoutOpenBoxesPerPage<T extends { open_boxes_per_page?: unknown }>(pa
   const { open_boxes_per_page: _openBoxesPerPage, ...rest } = payload;
   void _openBoxesPerPage;
   return rest;
+}
+
+/** Quita un grupo de columnas del payload. Para las migraciones que aportan
+ *  varias columnas a la vez (puntaje por pregunta, escala de nota) en vez de
+ *  una funcion `withoutX` por columna. */
+function withoutColumns(payload: Record<string, unknown>, columns: readonly string[]) {
+  const rest = { ...payload };
+  for (const column of columns) delete rest[column];
+  return rest;
+}
+
+type ScoredResult = ReturnType<typeof computeQuizScore>;
+
+/**
+ * Escribe el resultado de una hoja re-corregida. `points`/`points_total` son de
+ * la migracion quiz_points: si la BD no las tiene, se guarda igual sin ellas
+ * (la nota, que es lo que el profesor ve, ya viaja en `grade`).
+ */
+async function updatePaperScores(
+  supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"],
+  paperId: string,
+  result: ScoredResult,
+): Promise<void> {
+  const base = { score: result.score, total: result.total, grade: result.grade, equivalent_score: result.equivalentScore };
+  const { error } = await supabase
+    .from("papers")
+    .update({ ...base, points: result.points, points_total: result.pointsTotal })
+    .eq("id", paperId);
+  if (error && (isMissingColumnError(error, "points") || isMissingColumnError(error, "points_total"))) {
+    await supabase.from("papers").update(base).eq("id", paperId);
+  }
+}
+
+/**
+ * Puntajes de desarrollo YA confirmados, agrupados por hoja. Devuelve un mapa
+ * vacio si el ensayo no puntua las abiertas (no hace ni la consulta) o si la
+ * tabla `open_answers` todavia no existe -- el puntaje de las cerradas nunca
+ * puede quedar bloqueado por esto.
+ */
+async function fetchConfirmedOpenAnswers(
+  supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"],
+  enabled: boolean,
+  paperIds: string[],
+): Promise<Map<string, { question: number; confirmed_points: number | null }[]>> {
+  const byPaper = new Map<string, { question: number; confirmed_points: number | null }[]>();
+  if (!enabled || paperIds.length === 0) return byPaper;
+  const { data, error } = await supabase
+    .from("open_answers")
+    .select("paper_id,question,confirmed_points")
+    .in("paper_id", paperIds);
+  if (error || !data) return byPaper;
+  for (const row of data) {
+    const paperId = String(row.paper_id);
+    const list = byPaper.get(paperId) ?? [];
+    list.push({ question: Number(row.question), confirmed_points: row.confirmed_points as number | null });
+    byPaper.set(paperId, list);
+  }
+  return byPaper;
 }
 
 function withoutBatchId<T extends { batch_id?: unknown }>(payload: T) {
@@ -1021,7 +1159,55 @@ export async function confirmOpenAnswer(formData: FormData) {
     .eq("question", question)
     .eq("school_id", school.id);
   if (error) throw new Error(error.message);
+  // Si el ensayo puntua las abiertas, confirmar SUBE la nota en el acto. Sin
+  // esto el numero confirmado se quedaba guardado sin llegar nunca a la nota.
+  if (quizId) await regradePaperAfterOpenAnswer(supabase, school, quizId, paperId);
   if (quizId) revalidatePath(`/dashboard/quizzes/${quizId}`);
+}
+
+/**
+ * Re-corrige UNA hoja tras confirmar una pregunta de desarrollo. No hace nada
+ * si el ensayo no puntua las abiertas (`score_open_questions`), que es el caso
+ * por defecto: ahi el puntaje confirmado es solo informativo para el profesor,
+ * exactamente como antes.
+ */
+async function regradePaperAfterOpenAnswer(
+  supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"],
+  school: DashboardSchool,
+  quizId: string,
+  paperId: string,
+): Promise<void> {
+  const { data: quiz, error: quizError } = await supabase.from("quizzes").select("*").eq("id", quizId).single();
+  // Sin la migracion de puntaje la columna no existe y `score_open_questions`
+  // llega undefined: no hay nada que recalcular, se sale igual que siempre.
+  if (quizError || !quiz || quiz.score_open_questions !== true) return;
+
+  const { data: paper } = await supabase
+    .from("papers")
+    .select("id, answers, student_rut_norm")
+    .eq("id", paperId)
+    .eq("school_id", school.id)
+    .single();
+  if (!paper) return;
+
+  const openByPaper = await fetchConfirmedOpenAnswers(supabase, true, [paperId]);
+  const answers = Array.isArray(paper.answers) ? (paper.answers as { q: number; a: string }[]) : [];
+  const result = computeQuizScore(quiz, answers, school, school.country_code ?? "CL", openByPaper.get(paperId) ?? []);
+  await updatePaperScores(supabase, paperId, result);
+
+  if (paper.student_rut_norm) {
+    await supabase.from("grade_records").upsert({
+      school_id: school.id,
+      student_code: paper.student_rut_norm,
+      quiz_id: quizId,
+      paper_id: paperId,
+      raw_score: result.points,
+      total_questions: result.pointsTotal,
+      calculated_grade: result.grade,
+      passing: result.passing,
+      graded_at: new Date().toISOString(),
+    }, { onConflict: "school_id,student_code,quiz_id" });
+  }
 }
 
 /**
@@ -1454,26 +1640,16 @@ async function assignPaperToStudent(
     .single();
   if (error || !paper) throw new Error("No se pudo actualizar el paper.");
 
-  const gradeResult = calculateGrade(paper.score ?? 0, paper.total ?? 0, school.country_code ?? "CL", {
-    gradeScale: {
-      min: school.grading_scale_min ?? 1.0,
-      max: school.grading_scale_max ?? 7.0,
-    },
-    passingGrade: school.passing_grade ?? 4.0,
-    exigencia: school.exigencia ?? 0.60,
+  // Misma regla que upsertGradeRecord (src/lib/paper_assign.ts): identificar una
+  // hoja no cambia sus respuestas, asi que la nota ya calculada con la config
+  // del ENSAYO manda sobre un recalculo con la del colegio.
+  await upsertGradeRecord(supabase, school, {
+    quizId: paper.quiz_id as string,
+    paperId: paper.id as string,
+    studentCode: studentRutNorm ?? normalizeRut(studentCode),
+    score: paper.score ?? 0,
+    total: paper.total ?? 0,
   });
-
-  await supabase.from("grade_records").upsert({
-    school_id: school.id,
-    student_code: studentRutNorm ?? normalizeRut(studentCode),
-    quiz_id: paper.quiz_id,
-    paper_id: paper.id,
-    raw_score: paper.score,
-    total_questions: paper.total,
-    calculated_grade: gradeResult.grade,
-    passing: gradeResult.passing,
-    graded_at: new Date().toISOString(),
-  }, { onConflict: "school_id,student_code,quiz_id" });
 
   return paper.quiz_id as string;
 }

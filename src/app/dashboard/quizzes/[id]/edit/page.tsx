@@ -47,6 +47,17 @@ export default async function QuizEditPage({ params }: PageProps) {
             multi_select_questions: quiz.multi_select_questions ?? null,
             open_question_rubrics: quiz.open_question_rubrics ?? null,
             exigencia: quiz.exigencia ?? null,
+            // Puntaje/escala propios. El select es `*`, asi que en una BD sin
+            // migrar estas claves llegan undefined y los paneles arrancan en su
+            // estado por defecto (todo vale 1, escala del colegio).
+            default_question_points: quiz.default_question_points ?? null,
+            question_points: quiz.question_points ?? null,
+            score_open_questions: quiz.score_open_questions ?? null,
+            passing_grade: quiz.passing_grade ?? null,
+            grade_scale_min: quiz.grade_scale_min ?? null,
+            grade_scale_max: quiz.grade_scale_max ?? null,
+            grade_table: quiz.grade_table ?? null,
+            equivalent_scale: quiz.equivalent_scale ?? null,
           }}
           courses={courses ?? []}
           countryCode={school.country_code ?? "CL"}

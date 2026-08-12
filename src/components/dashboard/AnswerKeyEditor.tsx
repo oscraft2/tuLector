@@ -9,8 +9,10 @@ import {
 } from "@/lib/quiz_constraints";
 import { resolveCountryProfile } from "@/lib/country_profiles";
 import { DIA_PRESETS, DIA_CUSTOM_ID, findDiaPreset } from "@/lib/dia_presets";
+import { parseQuestionPoints } from "@/lib/quiz_constraints";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
 import { AnswerKeyFromSheet } from "@/components/dashboard/AnswerKeyFromSheet";
+import { QuestionPointsPanel } from "@/components/dashboard/QuestionPointsPanel";
 import { ChevronIcon } from "@/components/header/icons";
 
 export type EvaluationType = "custom" | "paes" | "simce" | "dia";
@@ -24,6 +26,9 @@ export function AnswerKeyEditor({
   defaultOptionOverrides = "",
   defaultMultiSelectQuestions = "",
   defaultOpenQuestionRubrics = "",
+  defaultDefaultQuestionPoints = "",
+  defaultQuestionPoints = "",
+  defaultScoreOpenQuestions = false,
   countryCode = "CL",
 }: {
   name?: string;
@@ -38,6 +43,12 @@ export function AnswerKeyEditor({
   defaultMultiSelectQuestions?: string;
   /** JSON-string de rubricas por pregunta abierta tal como viene de BD. */
   defaultOpenQuestionRubrics?: string;
+  /** quizzes.default_question_points tal como viene de BD ("" = 1 pt). */
+  defaultDefaultQuestionPoints?: string;
+  /** quizzes.question_points ("3:2,7:0.5") tal como viene de BD. */
+  defaultQuestionPoints?: string;
+  /** quizzes.score_open_questions tal como viene de BD. */
+  defaultScoreOpenQuestions?: boolean;
   countryCode?: string;
 }) {
   const [evalType, setEvalType] = useState<EvaluationType>("custom");
@@ -71,6 +82,12 @@ export function AnswerKeyEditor({
   const [multiText, setMultiText] = useState(defaultMultiSelectQuestions);
   const [rubrics, setRubrics] = useState<Record<number, OpenQuestionRubric>>(() => parseOpenQuestionRubrics(defaultOpenQuestionRubrics));
   const [rubricPanelOpen, setRubricPanelOpen] = useState(() => Object.values(parseOpenQuestionRubrics(defaultOpenQuestionRubrics)).some((r) => r.rubric.trim().length > 0));
+  // Puntaje por pregunta ya guardado ("3:2,7:0.5"): se parsea una sola vez, el
+  // panel lo toma como estado inicial y desde ahi maneja lo suyo.
+  const initialQuestionPoints = useMemo(
+    () => parseQuestionPoints(defaultQuestionPoints, QUIZ_MAX_QUESTIONS_MULTIPAGE),
+    [defaultQuestionPoints],
+  );
   const [allowPartial, setAllowPartial] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -543,6 +560,16 @@ export function AnswerKeyEditor({
         </div>
       )}
       <input type="hidden" name="open_question_rubrics" value={serializeOpenQuestionRubrics(rubrics) ?? ""} />
+
+      <QuestionPointsPanel
+        questionCount={questionCount}
+        openQuestions={openQuestions}
+        multiSelectQuestions={multiSelectQuestions}
+        rubrics={rubrics}
+        defaultDefaultPoints={defaultDefaultQuestionPoints}
+        defaultQuestionPoints={initialQuestionPoints}
+        defaultScoreOpen={defaultScoreOpenQuestions}
+      />
 
       <details className="rounded-md border border-[#eef0f3]">
         <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-[#4b5563]">

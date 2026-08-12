@@ -166,6 +166,62 @@ export function serializeOptionOverrides(overrides: Record<number, number>): str
   return entries.sort((a, b) => a[0] - b[0]).map(([q, n]) => `${q}:${n}`).join(",");
 }
 
+/** Puntaje maximo aceptado para una sola pregunta (tope de cordura, no de motor). */
+export const QUIZ_MAX_QUESTION_POINTS = 100;
+
+/**
+ * Parsea el puntaje por pregunta puntual ("3:2,7:0.5" o como lo tipee el
+ * profesor) a un mapa {pregunta: puntos}, 1-indexado. Mismo formato y misma
+ * tolerancia que parseOptionOverrides -- se escribe aparte y no se reusa
+ * porque aca el VALOR admite decimales (media pregunta, 0.5 pts) con coma o
+ * punto, mientras que las opciones son enteros por definicion.
+ *
+ * Solo se guardan las preguntas que DIFIEREN de default_question_points; una
+ * pregunta ausente vale el default (ver pointsForQuestion en quiz_score.ts).
+ *
+ * La coma cumple DOS papeles en castellano ("3:2,7:3" separa pares; "4:0,5" es
+ * media unidad), asi que separa pares SOLO cuando lo que sigue es otro par
+ * (digitos y luego ":"). Sin esa distincion, "4:0,5" se partia en "4:0" y "5"
+ * y la pregunta terminaba valiendo 0 puntos en silencio.
+ */
+export function parseQuestionPoints(
+  value: FormDataEntryValue | string | null | undefined,
+  numQuestions: number,
+): Record<number, number> {
+  const out: Record<number, number> = {};
+  const pairs = String(value ?? "").split(/[;\s]+|,(?=\s*\d+\s*[:=])/).filter(Boolean);
+  for (const pair of pairs) {
+    const m = pair.match(/^(\d+)\s*[:=]\s*(\d+(?:[.,]\d+)?)$/);
+    if (!m) continue;
+    const q = Number(m[1]);
+    const pts = Number(m[2].replace(",", "."));
+    if (!Number.isInteger(q) || q < 1 || q > numQuestions) continue;
+    if (!Number.isFinite(pts) || pts < 0 || pts > QUIZ_MAX_QUESTION_POINTS) continue;
+    out[q] = pts;
+  }
+  return out;
+}
+
+/** Serializa a la forma canonica de BD ("3:2,7:0.5") o null si no hay puntajes
+ *  distintos del default. El separador decimal canonico es el PUNTO (la coma es
+ *  el separador de pares), aunque el profesor pueda tipear coma. */
+export function serializeQuestionPoints(points: Record<number, number>): string | null {
+  const entries = Object.entries(points).map(([q, pts]) => [Number(q), pts] as const);
+  if (entries.length === 0) return null;
+  return entries.sort((a, b) => a[0] - b[0]).map(([q, pts]) => `${q}:${pts}`).join(",");
+}
+
+/** Normaliza el puntaje por defecto de una pregunta. NULL/vacio/invalido = 1
+ *  (el comportamiento historico: toda pregunta cerrada vale 1 punto). */
+export function normalizeDefaultQuestionPoints(
+  value: FormDataEntryValue | string | number | null | undefined,
+): number {
+  if (value === null || value === undefined || value === "") return 1;
+  const parsed = Number(String(value).replace(",", "."));
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > QUIZ_MAX_QUESTION_POINTS) return 1;
+  return parsed;
+}
+
 /**
  * Fuerza "-" en los slots de preguntas abiertas de una clave ya normalizada
  * por slots (normalizeAnswerKeySlots): una abierta nunca tiene letra correcta.

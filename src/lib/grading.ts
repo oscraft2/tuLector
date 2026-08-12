@@ -1,82 +1,21 @@
 import "server-only";
-import { calculateGrade } from "@/lib/latam";
-import { parseOpenQuestions, parseMultiSelectQuestions } from "@/lib/quiz_constraints";
 
 /**
- * Lee la letra esperada de una clave en una posicion dada. Preserva "-"
- * (pregunta todavia sin responder, ver normalizeAnswerKeySlots en
- * quiz_constraints.ts) en vez de descartarlo -- descartarlo correria el
- * indice de todo lo que viene despues de un hueco. Una posicion "-" nunca
- * cuenta como correcta (comparada contra answer.a !== "-" en computeQuizScore).
+ * Punto de entrada del SERVIDOR para la correccion de un ensayo. La formula
+ * vive en src/lib/quiz_score.ts, que es puro (sin "server-only") para poder
+ * probarse con node:test + tsx; este archivo solo marca que el calculo no debe
+ * arrastrarse a un Client Component y conserva la ruta de import que ya usan
+ * el escaneo (api/scan/result/route.ts) y la re-correccion (dashboard/actions.ts).
  */
-export function answerKeyAt(answerKey: string, index: number): string {
-  return answerKey.replace(/[^A-Za-z-]/g, "").toUpperCase()[index] ?? "";
-}
+export {
+  answerKeyAt,
+  equivalentScore,
+  computeQuizScore,
+} from "@/lib/quiz_score";
 
-export function equivalentScore(evaluationType: string | null | undefined, score: number, total: number): number | null {
-  if (total <= 0) return null;
-  const pct = score / total;
-  if (evaluationType === "paes") return Math.round(100 + pct * 900);
-  if (evaluationType === "simce") return Math.round(100 + pct * 300);
-  return Math.round(pct * 100);
-}
-
-export type ScoreableAnswer = { q: number; a: string };
-
-export type ScoreableQuiz = {
-  answer_key: string | null;
-  num_questions: number | null;
-  /** CSV canonico "18,27,33" de preguntas de desarrollo (ver parseOpenQuestions):
-   *  quedan FUERA del puntaje automatico (numerador y denominador). */
-  open_questions?: string | null;
-  /** CSV canonico de preguntas de seleccion MULTIPLE (ver
-   *  parseMultiSelectQuestions): un letra-esperada-unica no representa "que
-   *  subconjunto es correcto", asi que quedan FUERA del puntaje automatico
-   *  igual que las abiertas (numerador y denominador). El motor SI las lee
-   *  (ver src/tulector/omr.ts) -- solo el auto-grading las excluye. */
-  multi_select_questions?: string | null;
-  evaluation_type?: string | null;
-  exigencia?: number | null;
-};
-
-export type ScoreableSchool = {
-  grading_scale_min?: number | null;
-  grading_scale_max?: number | null;
-  passing_grade?: number | null;
-  exigencia?: number | null;
-};
-
-/**
- * Formula de puntaje/nota compartida entre el camino de escaneo en vivo
- * (finalizeGrading en api/scan/result/route.ts) y la re-correccion masiva al
- * editar la clave de un ensayo que ya tiene hojas escaneadas (updateQuiz en
- * dashboard/actions.ts) -- una sola fuente de verdad para el calculo.
- */
-export function computeQuizScore(
-  quiz: ScoreableQuiz,
-  answers: ScoreableAnswer[],
-  school: ScoreableSchool,
-  countryCode: string,
-) {
-  const numQ = Number(quiz.num_questions ?? answers.length);
-  // Las preguntas de desarrollo (abiertas) y de seleccion multiple no se
-  // corrigen automaticamente: la nota es correctas / preguntas-de-alternativas.
-  const open = new Set(parseOpenQuestions(quiz.open_questions ?? "", numQ));
-  const multi = new Set(parseMultiSelectQuestions(quiz.multi_select_questions ?? "", numQ));
-  const total = Math.max(1, numQ - open.size - multi.size);
-  const score = answers.reduce((sum, answer) => {
-    if (open.has(answer.q) || multi.has(answer.q)) return sum;
-    const expected = answerKeyAt(String(quiz.answer_key ?? ""), answer.q - 1);
-    return sum + (answer.a !== "-" && answer.a === expected ? 1 : 0);
-  }, 0);
-  const gradeResult = calculateGrade(score, total, countryCode, {
-    gradeScale: {
-      min: school.grading_scale_min ?? 1.0,
-      max: school.grading_scale_max ?? 7.0,
-    },
-    passingGrade: school.passing_grade ?? 4.0,
-    exigencia: quiz.exigencia ?? school.exigencia ?? 0.6,
-  });
-  const eqScore = equivalentScore(quiz.evaluation_type, score, total);
-  return { score, total, grade: gradeResult.grade, passing: gradeResult.passing, equivalentScore: eqScore };
-}
+export type {
+  ScoreableAnswer,
+  ScoreableOpenAnswer,
+  ScoreableQuiz,
+  ScoreableSchool,
+} from "@/lib/quiz_score";

@@ -12,13 +12,38 @@ import { PrintButton } from "@/components/dashboard/PrintButton";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
 import { parseOpenQuestions, countMissingKeySlots } from "@/lib/quiz_constraints";
 import { parseSheetMode, compactModeIssue } from "@/lib/sheet_mode";
-import { isMissingColumnError } from "@/lib/supabase_errors";
 import { buildPaperCourseResolver } from "@/lib/paper_course";
 import { findMisplacedPapers } from "@/lib/paper_reroute";
 import { reroutePapersAction } from "@/app/dashboard/papers/actions";
 import { ReroutePapersCard } from "@/components/dashboard/ReroutePapersCard";
+import { ExportPanel, type ExportTemplateOption } from "@/components/dashboard/ExportPanel";
+import { fetchExportPresets } from "@/lib/export_presets";
 
 export const dynamic = "force-dynamic";
+
+/** Plantillas de exportacion del colegio. Lista vacia si la migracion
+ *  20260813000002_export_templates.sql no se aplico todavia. */
+async function fetchExportTemplates(
+  supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"],
+  schoolId: string,
+): Promise<ExportTemplateOption[]> {
+  const { data, error } = await supabase
+    .from("export_templates")
+    .select("id,name,columns,header_labels,per_question,separator,format,is_default")
+    .eq("school_id", schoolId)
+    .order("name");
+  if (error || !data) return [];
+  return data.map((row) => ({
+    id: String(row.id),
+    name: String(row.name),
+    columns: Array.isArray(row.columns) ? row.columns.map(String) : [],
+    headerLabels: (row.header_labels as Record<string, string> | null) ?? null,
+    perQuestion: Array.isArray(row.per_question) ? row.per_question.map(String) : null,
+    separator: (row.separator as string | null) ?? null,
+    format: (row.format as string | null) ?? null,
+    isDefault: row.is_default === true,
+  }));
+}
 
 type PageProps = { params: Promise<{ id: string }> };
 
@@ -35,27 +60,43 @@ type QuizPaper = {
   equivalent_score: number | null;
   grade: string | number | null;
   answers: unknown;
+  /** Puntaje ponderado (migracion quiz_points). Ausentes en una BD sin migrar. */
+  points?: number | null;
+  points_total?: number | null;
 };
 
 export default async function QuizDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const { supabase, school } = await getDashboardContext();
-  // `course_id` (20260812000000) puede faltar en una BD sin migrar: se reintenta
-  // sin la columna y el curso se resuelve igual por el alumno (paper_course.ts).
+  const { supabase, school, isAdmin } = await getDashboardContext();
   const papersQuery = (select: string) =>
     supabase.from("papers").select(select).eq("quiz_id", id).order("scanned_at", { ascending: false });
   const PAPER_COLUMNS = "id,student_name,student_id,student_rut_norm,score,total,status,scanned_at,equivalent_score,grade,answers";
 
-  const [{ data: quiz }, papersResult, { data: metadata }, { data: students }] = await Promise.all([
+  // `course_id` (20260812000000) y `points`/`points_total` (20260813000000)
+  // pueden faltar en una BD sin migrar, en cualquier combinacion: se prueban de
+  // mas a menos columnas. Sin course_id el curso se resuelve igual por el alumno
+  // (paper_course.ts) y sin points la tabla muestra solo correctas, como antes.
+  const fetchPapers = async () => {
+    const attempts = [
+      `${PAPER_COLUMNS},points,points_total,course_id`,
+      `${PAPER_COLUMNS},course_id`,
+      `${PAPER_COLUMNS},points,points_total`,
+      PAPER_COLUMNS,
+    ];
+    for (const select of attempts) {
+      const result = await papersQuery(select);
+      if (!result.error) return result.data;
+    }
+    return null;
+  };
+
+  const [{ data: quiz }, papers, { data: metadata }, { data: students }] = await Promise.all([
     supabase.from("quizzes").select("*").eq("id", id).single(),
-    papersQuery(`${PAPER_COLUMNS},course_id`),
+    fetchPapers(),
     supabase.from("question_metadata").select("question_number,axis_name,skill_name,difficulty").eq("quiz_id", id).order("question_number"),
     supabase.from("students").select("id,rut,student_id,rut_normalized").eq("school_id", school.id),
   ]);
   if (!quiz) notFound();
-  const papers = papersResult.error && isMissingColumnError(papersResult.error, "course_id")
-    ? (await papersQuery(PAPER_COLUMNS)).data
-    : papersResult.data;
   const quizPapers = (papers ?? []) as unknown as QuizPaper[];
   // Curso REAL del alumno (la hoja no manda: un curso puede rendir con la hoja
   // de otro -- ver src/lib/paper_course.ts).
@@ -95,6 +136,17 @@ export default async function QuizDetailPage({ params }: PageProps) {
   }
   const paperNameById = new Map(quizPapers.map((p) => [p.id, p.student_name || p.student_id || "Sin identificar"]));
 
+  // Opciones del panel de exportacion. Ambas se degradan a lista vacia si la
+  // tabla no existe todavia: sin plantillas ni presets el panel sigue
+  // exportando con las columnas que elija el profesor.
+  const exportTemplates = await fetchExportTemplates(supabase, school.id);
+  const exportPresets = (await fetchExportPresets(supabase, school.country_code ?? "CL")).map((preset) => ({
+    id: preset.id,
+    name: preset.name,
+    description: preset.description,
+    columns: preset.spec.columns,
+  }));
+
   const resolveGrade = (score: number, total: number) => {
     const gradeResult = calculateGrade(score, total, school.country_code ?? "CL", {
       exigencia: (quiz.exigencia as number | undefined) ?? school.exigencia ?? 0.60,
@@ -116,15 +168,31 @@ export default async function QuizDetailPage({ params }: PageProps) {
     return studentId ? `/dashboard/students/${studentId}` : null;
   };
 
+  // ¿Este ensayo pondera? Si ninguna pregunta vale distinto de 1 y las abiertas
+  // no suman, `points` coincide con `score` y la tabla se ve igual que siempre.
+  const isWeighted = quizPapers.some(
+    (p) => p.points != null && p.points_total != null && (p.points !== p.score || p.points_total !== p.total),
+  );
+
+  /** "18/20" y, si el ensayo pondera, tambien el puntaje: "18/20 · 22/24 pts".
+   *  Sin esto, en un ensayo donde la 7 vale 3 el "18/20" es enganoso. */
+  const getCorrectDisplay = (paper: QuizPaper) => {
+    const correct = `${paper.score ?? "-"}/${paper.total ?? quiz.num_questions}`;
+    if (!isWeighted || paper.points == null || paper.points_total == null) return correct;
+    return `${correct} · ${paper.points}/${paper.points_total} pts`;
+  };
+
   const getScoreDisplay = (paper: QuizPaper) => {
-    if (isPAES) {
-      return `${paper.equivalent_score ?? Math.round(100 + ((paper.score ?? 0) / (paper.total || quiz.num_questions)) * 900)} pts PAES`;
+    const grade = paper.grade || (paper.total ? resolveGrade(Number(paper.score ?? 0), Number(paper.total)) : "-");
+    if (isPAES || isSIMCE) {
+      const fallbackPct = (paper.score ?? 0) / (paper.total || quiz.num_questions);
+      const equivalent = paper.equivalent_score ?? Math.round(100 + fallbackPct * (isPAES ? 900 : 300));
+      const label = `${equivalent} pts ${isPAES ? "PAES" : "SIMCE"}`;
+      // Con ponderacion el profesor necesita ver AMBAS: el puntaje oficial del
+      // instrumento y la nota con la que va al libro de clases.
+      return isWeighted ? `${label} · Nota ${grade}` : label;
     }
-    if (isSIMCE) {
-      return `${paper.equivalent_score ?? Math.round(100 + ((paper.score ?? 0) / (paper.total || quiz.num_questions)) * 300)} pts SIMCE`;
-    }
-    const defaultGrade = paper.grade || (paper.total ? resolveGrade(Number(paper.score ?? 0), Number(paper.total)) : "-");
-    return `Nota ${defaultGrade}`;
+    return `Nota ${grade}`;
   };
 
   const getVariantLabel = () => {
@@ -289,25 +357,19 @@ export default async function QuizDetailPage({ params }: PageProps) {
         )}
 
         <section>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <h2 className="whitespace-nowrap text-[12.5px] font-semibold uppercase tracking-[0.1em] text-[#6b7280]">Resultados por alumno</h2>
-              <span className="h-px flex-1 bg-[#e6e8eb]" />
-            </div>
-            <div className="flex flex-col items-end gap-1">
-              <a
-                href={`/api/quiz/${quiz.id}/export-dia`}
-                aria-disabled={quizPapers.length === 0}
-                className={
-                  quizPapers.length === 0
-                    ? "pointer-events-none rounded-md border border-[#cfd6df] bg-white px-4 py-2 text-sm font-semibold text-[#111827] opacity-50"
-                    : "rounded-md border border-[#cfd6df] bg-white px-4 py-2 text-sm font-semibold text-[#111827] hover:bg-gray-50"
-                }
-              >
-                Exportar Formato Pruebas DIA
-              </a>
-              <p className="text-xs text-[#8a93a1]">Listo para subir a la extensión de ingreso a la plataforma DIA.</p>
-            </div>
+          <div className="mb-3 flex items-center gap-3">
+            <h2 className="whitespace-nowrap text-[12.5px] font-semibold uppercase tracking-[0.1em] text-[#6b7280]">Resultados por alumno</h2>
+            <span className="h-px flex-1 bg-[#e6e8eb]" />
+          </div>
+          <div className="mb-3">
+            <ExportPanel
+              quizId={quiz.id}
+              papersCount={quizPapers.length}
+              diaHref={`/api/quiz/${quiz.id}/export-dia`}
+              templates={exportTemplates}
+              presets={exportPresets}
+              canSaveTemplate={isAdmin}
+            />
           </div>
         </section>
         <DataTable
@@ -333,7 +395,7 @@ export default async function QuizDetailPage({ params }: PageProps) {
                   ) : studentLabel}
                 </td>
                 <td className="px-5 py-4 text-[#5b6472]">{course?.name ?? "-"}</td>
-                <td className="px-5 py-4">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</td>
+                <td className="px-5 py-4">{getCorrectDisplay(paper)}</td>
                 <td className="px-5 py-4 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
                 <td className="px-5 py-4"><StatusPill>{paper.status ?? "active"}</StatusPill></td>
                 <td className="px-5 py-4 text-[#5b6472]">{new Date(paper.scanned_at).toLocaleString("es-CL")}</td>
@@ -359,7 +421,7 @@ export default async function QuizDetailPage({ params }: PageProps) {
                 </div>
                 <div className="mt-3 grid gap-1 text-sm text-[#5b6472]">
                   <p>Curso: <span className="font-semibold text-[#111827]">{courseOf(paper)?.name ?? "-"}</span></p>
-                  <p>Correctas: <span className="font-semibold text-[#111827]">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</span></p>
+                  <p>Correctas: <span className="font-semibold text-[#111827]">{getCorrectDisplay(paper)}</span></p>
                   <p>Resultado: <span className="font-semibold text-[#07305f]">{getScoreDisplay(paper)}</span></p>
                   <p className="text-xs">Fecha: {new Date(paper.scanned_at).toLocaleString("es-CL")}</p>
                 </div>

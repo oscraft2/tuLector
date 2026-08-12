@@ -1,41 +1,17 @@
 import { normalizarCursoDIA } from "@/lib/dia_curso";
+// El mapeo de respuesta cruda -> celda ("-" vacio, "?"/doble marca "NULA",
+// multi-select "1|3|5" tal cual) y el RUT con guion viven en el catalogo comun
+// de exportacion: asi el CSV de DIA y el configurable no pueden divergir.
+// Semantica DIA: celda vacia = "No Responde" (ver dia-bot/docs/FINDINGS.md
+// seccion 8.1); el RUT con guion es como la plataforma lo expone
+// (`usuario.rutCompleto`, seccion 6.bis).
+import { celdaRespuesta, celdaMultiSelect, formatRutConGuion, answersByQuestion } from "@/lib/export_columns";
 
 export type ExportPaper = {
   student_name: string | null;
   student_rut_norm: string | null;
   answers: unknown;
 };
-
-/** RUT canonico de tuLector viene sin guion (`canonicalRut`, src/lib/rut.ts:
- * `${body}${dv}`). Se reformatea con guion aca solo para exportar, porque asi
- * es como la plataforma DIA expone el RUT (`usuario.rutCompleto`) -- ver
- * dia-bot/docs/FINDINGS.md seccion 6.bis. */
-function formatRutConGuion(rutNorm: string | null): string {
-  if (!rutNorm) return "";
-  const m = rutNorm.match(/^(\d{7,8})([0-9K])$/);
-  if (!m) return rutNorm;
-  return `${m[1]}-${m[2]}`;
-}
-
-/** Mapea la letra cruda del motor OMR al valor que espera el bot de ingreso:
- * "-" (sin marca) -> celda vacia = "No Responde" en DIA.
- * "?" (reflejo/no legible) o largo>1 (doble marca) -> "NULA".
- * cualquier otra cosa -> la letra tal cual (A, B, C, D...). */
-function celdaRespuesta(a: string | undefined): string {
-  if (!a || a === "-") return "";
-  if (a === "?" || a.length > 1) return "NULA";
-  return a;
-}
-
-/** Mapea la respuesta cruda de una pregunta de SELECCION MULTIPLE ("marca
- * todas las correctas"): el motor ya entrega las etiquetas marcadas unidas
- * por "|" (ej. "1|3|5", ver src/tulector/omr.ts gradeBubbles) o "-" si no se
- * marco ninguna. A diferencia de celdaRespuesta, un largo>1 NO es ambiguedad
- * aca -- es el formato normal de una respuesta con varias marcas. */
-function celdaMultiSelect(a: string | undefined): string {
-  if (!a || a === "-") return "";
-  return a;
-}
 
 function csvEscape(value: string): string {
   return /[",\n;]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
@@ -80,13 +56,7 @@ export function buildDiaCsv({
   const openSet = new Set(openQuestions);
   const multiSet = new Set(multiSelectQuestions);
   const rows = papers.map((paper) => {
-    const porPregunta = new Map<number, string>();
-    if (Array.isArray(paper.answers)) {
-      for (const item of paper.answers as { q?: unknown; a?: unknown }[]) {
-        const q = Number(item?.q);
-        if (Number.isInteger(q)) porPregunta.set(q, String(item?.a ?? ""));
-      }
-    }
+    const porPregunta = answersByQuestion(paper.answers);
     const celdas = Array.from({ length: numQuestions }, (_, i) => {
       const qNum = i + 1;
       if (openSet.has(qNum)) return "";
