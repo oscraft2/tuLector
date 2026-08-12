@@ -409,6 +409,12 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
     const scoringChanged = [...QUIZ_POINTS_COLUMNS, ...QUIZ_GRADE_SCALE_COLUMNS].some(
       (col) => String((existing as Record<string, unknown>)[col] ?? "") !== String(scoring[col] ?? ""),
     );
+    // Cambiar de Personalizado a PAES/SIMCE (o al reves) cambia la FORMULA del
+    // puntaje equivalente. Sin esto las hojas ya escaneadas conservaban el
+    // equivalent_score viejo y la tabla mostraba el porcentaje rotulado como
+    // "pts PAES" -- un numero creible y equivocado.
+    const evalChanged = String(existing.evaluation_type ?? "") !== evalType
+      || String(existing.evaluation_variant ?? "") !== String(evalVariant ?? "");
 
     let effectivePayload: Record<string, unknown> = updatePayload;
     let { error: updateError } = await supabase.from("quizzes").update(effectivePayload).eq("id", id);
@@ -454,7 +460,7 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
     if (updateError) throw new Error(updateError.message);
 
     let recorrected = 0;
-    if (keyChanged || structureChanged || openChanged || scoringChanged) {
+    if (keyChanged || structureChanged || openChanged || scoringChanged || evalChanged) {
       const updatedQuiz = { ...existing, ...updatePayload };
       const { data: papers } = await supabase
         .from("papers")

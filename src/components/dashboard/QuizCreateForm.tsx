@@ -49,6 +49,10 @@ type ExistingQuiz = {
   multi_select_questions?: string | null;
   open_question_rubrics?: string | null;
   exigencia: number | null;
+  /** Tipo/variante de evaluacion ya guardados: sin esto el editor abria siempre
+   *  en "Personalizado" y guardar degradaba un ensayo PAES/SIMCE a custom. */
+  evaluation_type?: string | null;
+  evaluation_variant?: string | null;
   /** Puntaje por pregunta y escala de nota propias (migraciones quiz_points y
    *  quiz_grade_scale). Ausentes/NULL = el ensayo se corrige como siempre. */
   default_question_points?: number | string | null;
@@ -231,6 +235,8 @@ export function QuizCreateForm({
             defaultDefaultQuestionPoints={quiz?.default_question_points != null ? String(quiz.default_question_points) : ""}
             defaultQuestionPoints={quiz?.question_points ?? ""}
             defaultScoreOpenQuestions={quiz?.score_open_questions === true}
+            defaultEvaluationType={quiz?.evaluation_type ?? ""}
+            defaultEvaluationVariant={quiz?.evaluation_variant ?? ""}
             countryCode={countryCode}
           />
 

@@ -47,6 +47,8 @@ export default async function QuizEditPage({ params }: PageProps) {
             multi_select_questions: quiz.multi_select_questions ?? null,
             open_question_rubrics: quiz.open_question_rubrics ?? null,
             exigencia: quiz.exigencia ?? null,
+            evaluation_type: quiz.evaluation_type ?? null,
+            evaluation_variant: quiz.evaluation_variant ?? null,
             // Puntaje/escala propios. El select es `*`, asi que en una BD sin
             // migrar estas claves llegan undefined y los paneles arrancan en su
             // estado por defecto (todo vale 1, escala del colegio).

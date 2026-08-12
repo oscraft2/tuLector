@@ -29,6 +29,8 @@ export function AnswerKeyEditor({
   defaultDefaultQuestionPoints = "",
   defaultQuestionPoints = "",
   defaultScoreOpenQuestions = false,
+  defaultEvaluationType = "",
+  defaultEvaluationVariant = "",
   countryCode = "CL",
 }: {
   name?: string;
@@ -49,10 +51,24 @@ export function AnswerKeyEditor({
   defaultQuestionPoints?: string;
   /** quizzes.score_open_questions tal como viene de BD. */
   defaultScoreOpenQuestions?: boolean;
+  /** quizzes.evaluation_type tal como viene de BD ('custom'|'paes'|'simce'). */
+  defaultEvaluationType?: string;
+  /** quizzes.evaluation_variant tal como viene de BD ('paes_m1', 'dia_5b_lectura'...). */
+  defaultEvaluationVariant?: string;
   countryCode?: string;
 }) {
-  const [evalType, setEvalType] = useState<EvaluationType>("custom");
-  const [evalVariant, setEvalVariant] = useState<string>("");
+  // El tipo arranca en el que el ensayo YA tiene. Antes era `useState("custom")`
+  // fijo: al editar un ensayo PAES el formulario abria en "Personalizado" y al
+  // guardar escribia evaluation_type='custom', degradandolo en silencio -- el
+  // puntaje PAES/SIMCE desaparecia de la tabla de resultados y nadie entendia
+  // por que. Un ensayo DIA guarda 'custom' en la BD (la columna tiene un CHECK
+  // cerrado) y se reconoce por su variante, por eso el caso aparte.
+  const [evalType, setEvalType] = useState<EvaluationType>(() => {
+    if (defaultEvaluationVariant?.startsWith("dia")) return "dia";
+    if (defaultEvaluationType === "paes" || defaultEvaluationType === "simce") return defaultEvaluationType;
+    return "custom";
+  });
+  const [evalVariant, setEvalVariant] = useState<string>(defaultEvaluationVariant ?? "");
   // PAES/SIMCE (con formula propia de puntaje 100-1000/100-400) son especificos
   // de Chile. Otros paises usan los sistemas de evaluacion de su propio perfil
   // (country_profiles.ts) como ETIQUETA (evaluation_type sigue "custom", puntaje
@@ -92,9 +108,19 @@ export function AnswerKeyEditor({
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Al EDITAR un ensayo, el tipo ya viene puesto y este efecto correria en el
+  // primer render pisando las preguntas/opciones reales con las del preset (un
+  // PAES de 30 preguntas volveria a 40). El preset solo debe aplicarse cuando el
+  // profesor CAMBIA el tipo, no al abrir el formulario.
+  const skipPresetPrefill = useRef(Boolean(defaultEvaluationType || defaultEvaluationVariant));
+
   // Pre-fill question/option count when evalType or variant changes.
   // Campos SIEMPRE editables (el profesor puede ajustar el N° de preguntas).
   useEffect(() => {
+    if (skipPresetPrefill.current) {
+      skipPresetPrefill.current = false;
+      return;
+    }
     if (evalType === "paes") {
       if (evalVariant === "paes_lectora" || evalVariant === "paes_historia" || evalVariant === "paes_ciencias") {
         setQuestionCount(40);
