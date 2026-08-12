@@ -6,15 +6,17 @@ import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
+type CategoryRow = { id: string; name: string; slug: string; locale: string; sort_order: number; published: boolean };
+
 export default async function CategoryEditorPage({ params }: { params: { id: string } }) {
   const isNew = params.id === "new";
   const { admin } = await requirePlatformContext(["platform_admin", "support"]);
 
-  let category: any = null;
+  let category: CategoryRow | null = null;
   if (!isNew) {
     const { data } = await admin.from("faq_categories").select("*").eq("id", params.id).single();
     if (!data) notFound();
-    category = data;
+    category = data as CategoryRow;
   }
 
   return (

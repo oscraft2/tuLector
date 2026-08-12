@@ -1,5 +1,4 @@
 import { createSupabaseServerClient } from "@/lib/supabase_server";
-import { notFound } from "next/navigation";
 import Link from "next/link";
 import { PublicHeader } from "@/components/PublicHeader";
 import { PublicFooter } from "@/components/PublicFooter";
@@ -10,6 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function HelpCenterPage({ params, searchParams }: { params: { locale: string }, searchParams: { q?: string, c?: string } }) {
   const { locale } = params;
   const q = searchParams.q ?? "";
+  const categoryId = searchParams.c ?? "";
   
   const validLocale = locales.includes(locale as Locale) ? (locale as Locale) : defaultLocale;
 
@@ -25,22 +25,28 @@ export default async function HelpCenterPage({ params, searchParams }: { params:
 
   let searchResults = null;
   if (q) {
-    const { data: articles } = await supabase
+    let articlesQuery = supabase
       .from("faq_articles")
       .select("id, title, slug, category_id, body_md")
       .eq("locale", validLocale)
       .eq("published", true)
+      .eq("status", "published")
       .textSearch("search", q, { type: "websearch" })
       .limit(10);
+    if (categoryId) articlesQuery = articlesQuery.eq("category_id", categoryId);
+    const { data: articles } = await articlesQuery;
     searchResults = articles;
   } else {
-    const { data: topArticles } = await supabase
+    let topArticlesQuery = supabase
       .from("faq_articles")
       .select("id, title, slug, category_id, body_md")
       .eq("locale", validLocale)
       .eq("published", true)
+      .eq("status", "published")
       .order("view_count", { ascending: false })
       .limit(6);
+    if (categoryId) topArticlesQuery = topArticlesQuery.eq("category_id", categoryId);
+    const { data: topArticles } = await topArticlesQuery;
     searchResults = topArticles;
   }
 

@@ -4,9 +4,7 @@ import { messages } from "@/i18n/messages";
 import { PublicHeader } from "@/components/PublicHeader";
 import { PublicFooter } from "@/components/PublicFooter";
 import { SupportForm } from "./SupportForm";
-import { SearchHero } from "@/components/support/SearchHero";
 import Link from "next/link";
-import Image from "next/image";
 
 const siteUrl = "https://tulector.app";
 

@@ -35,7 +35,7 @@ export default async function HelpCenterAdminPage() {
             </Link>
           </div>
           <DataTable
-            columns={["Título / Slug", "Categoría", "Idioma", "Estadísticas", "Estado", "Acciones"]}
+            columns={["Título / Slug", "Categoría", "Idioma", "Estadísticas", "Estado editorial", "Acciones"]}
             rows={articles ?? []}
             empty="No hay artículos."
             renderRow={(a) => {
@@ -53,12 +53,12 @@ export default async function HelpCenterAdminPage() {
                     Útil: {a.helpful_yes} 👍 / {a.helpful_no} 👎
                   </td>
                   <td className="px-5 py-4">
-                    <form action={toggleFaqPublished} className="inline-block">
+                   <form action={toggleFaqPublished} className="inline-block">
                       <input type="hidden" name="id" value={a.id} />
                       <input type="hidden" name="table" value="faq_articles" />
                       <input type="hidden" name="published" value={a.published ? "false" : "true"} />
-                      <button className={`rounded px-2 py-1 text-xs font-semibold ${a.published ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                        {a.published ? "Publicado" : "Borrador"}
+                     <button className={`rounded px-2 py-1 text-xs font-semibold ${a.status === 'published' || a.published ? 'bg-green-100 text-green-800' : a.status === 'review' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-800'}`}>
+                       {a.status === "review" ? "En revisión" : a.status === "archived" ? "Archivado" : a.status === "published" || a.published ? "Publicado" : "Borrador"}
                       </button>
                     </form>
                   </td>

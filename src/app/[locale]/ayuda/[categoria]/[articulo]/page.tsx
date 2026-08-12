@@ -4,6 +4,7 @@ import Link from "next/link";
 import { PublicHeader } from "@/components/PublicHeader";
 import { PublicFooter } from "@/components/PublicFooter";
 import { FaqVoteForm } from "./FaqVoteForm";
+import { MarkdownContent } from "@/components/MarkdownContent";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ export default async function HelpCenterArticlePage({ params }: { params: { loca
     .eq("locale", locale)
     .eq("slug", articulo)
     .eq("published", true)
+    .eq("status", "published")
     .single();
 
   if (!article) {
@@ -36,6 +38,7 @@ export default async function HelpCenterArticlePage({ params }: { params: { loca
     .select("name, slug")
     .eq("id", article.category_id)
     .single();
+  if (!category || category.slug !== params.categoria) notFound();
 
   return (
     <>
@@ -57,11 +60,8 @@ export default async function HelpCenterArticlePage({ params }: { params: { loca
 
         {/* Content */}
         <div className="max-w-4xl mx-auto px-6 py-12">
-          <article className="prose prose-lg max-w-none prose-headings:text-[#111827] prose-a:text-[#2563eb] prose-img:rounded-lg">
-            {/* Si usamos markdown-it o react-markdown lo renderizamos, pero para ahora hacemos un render crudo */}
-            {article.body_md.split("\\n").map((p: string, i: number) => (
-              <p key={i}>{p}</p>
-            ))}
+           <article className="prose prose-lg max-w-none prose-headings:text-[#111827] prose-a:text-[#2563eb] prose-img:rounded-lg">
+             <MarkdownContent value={article.body_md} />
           </article>
 
           <hr className="my-12 border-[#e5e7eb]" />
