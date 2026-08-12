@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { calculateGrade } from "@/lib/latam";
-import { isMissingColumnError } from "@/lib/supabase_errors";
 import { buildPaperCourseResolver, groupByCourse } from "@/lib/paper_course";
+import { equivalencesForCourse } from "@/lib/course_level";
+import { achievementPct, paesEquivalence, simceEquivalence, paesTableForQuiz } from "@/lib/paes_scale";
 import { PaperAssignSheet } from "@/components/native/PaperAssignSheet";
 
 type PageProps = { params: Promise<{ quizId: string }> };
@@ -22,10 +23,22 @@ type PaperResult = {
   grade: string | number | null;
   name_img_url: string | null;
   image_url: string | null;
+  /** Puntaje ponderado (migracion quiz_points); ausente en una BD sin migrar. */
+  points?: number | null;
+  points_total?: number | null;
 };
 
-const PAPER_SELECT = "id,student_name,student_id,student_rut_norm,course_id,score,total,status,scanned_at,equivalent_score,grade,name_img_url,image_url";
-const PAPER_SELECT_LEGACY = "id,student_name,student_id,student_rut_norm,score,total,status,scanned_at,equivalent_score,grade,name_img_url,image_url";
+const PAPER_BASE = "id,student_name,student_id,student_rut_norm,score,total,status,scanned_at,equivalent_score,grade,name_img_url,image_url";
+// `course_id` (20260812000000) y `points`/`points_total` (20260813000000) pueden
+// faltar en una BD sin migrar, en cualquier combinacion: se prueba de mas a
+// menos columnas. Sin course_id el curso se resuelve igual por el alumno, y sin
+// points la equivalencia sale del conteo de correctas.
+const PAPER_SELECTS = [
+  `${PAPER_BASE},course_id,points,points_total`,
+  `${PAPER_BASE},course_id`,
+  `${PAPER_BASE},points,points_total`,
+  PAPER_BASE,
+];
 
 /**
  * Detalle nativo de resultados por ensayo: tarjetas por alumno, AGRUPADAS por
@@ -40,17 +53,21 @@ export default async function NativeQuizResultsPage({ params }: PageProps) {
   const papersQuery = (select: string) =>
     supabase.from("papers").select(select).eq("quiz_id", quizId).neq("status", "void").order("scanned_at", { ascending: false });
 
-  const [{ data: quiz }, papersResult] = await Promise.all([
-    supabase.from("quizzes").select("id,title,num_questions,evaluation_type,evaluation_variant,exigencia").eq("id", quizId).eq("school_id", school.id).single(),
-    papersQuery(PAPER_SELECT),
+  const fetchPapers = async () => {
+    for (const select of PAPER_SELECTS) {
+      const result = await papersQuery(select);
+      if (!result.error) return result.data;
+    }
+    return null;
+  };
+
+  const [{ data: quiz }, papers] = await Promise.all([
+    // `subject` y `grade` deciden que tabla del DEMRE aplica y si corresponde
+    // mostrar SIMCE (ver equivalencesForCourse / paesTableForQuiz).
+    supabase.from("quizzes").select("id,title,num_questions,evaluation_type,evaluation_variant,exigencia,subject,grade").eq("id", quizId).eq("school_id", school.id).single(),
+    fetchPapers(),
   ]);
   if (!quiz) notFound();
-
-  // BD sin la migracion de papers.course_id: el curso se resuelve igual, por el
-  // alumno (ver buildPaperCourseResolver).
-  const papers = papersResult.error && isMissingColumnError(papersResult.error, "course_id")
-    ? (await papersQuery(PAPER_SELECT_LEGACY)).data
-    : papersResult.data;
 
   const rows = ((papers ?? []) as unknown as PaperResult[]).map((p) => ({ ...p, course_id: p.course_id ?? null }));
   const courseOf = await buildPaperCourseResolver(supabase, school.id, rows);
@@ -59,17 +76,32 @@ export default async function NativeQuizResultsPage({ params }: PageProps) {
     ? Math.round(rows.reduce((sum, p) => sum + ((p.score ?? 0) / Math.max(1, p.total ?? quiz.num_questions)) * 100, 0) / rows.length)
     : 0;
 
-  const isPAES = quiz.evaluation_type === "paes";
-  const isSIMCE = quiz.evaluation_type === "simce";
-
   const scoreDisplay = (paper: PaperResult) => {
     const total = paper.total || quiz.num_questions;
-    if (isPAES) return `${paper.equivalent_score ?? Math.round(100 + ((paper.score ?? 0) / total) * 900)} pts PAES`;
-    if (isSIMCE) return `${paper.equivalent_score ?? Math.round(100 + ((paper.score ?? 0) / total) * 300)} pts SIMCE`;
     if (paper.grade) return `Nota ${paper.grade}`;
     const gradeResult = calculateGrade(paper.score ?? 0, total, school.country_code ?? "CL", { exigencia: (quiz.exigencia as number | undefined) ?? school.exigencia ?? 0.6 });
     return `Nota ${gradeResult.grade}`;
   };
+
+  // Equivalencias: PAES con la tabla del DEMRE que corresponda a este ensayo, y
+  // SIMCE solo hasta II medio. Mismo criterio que la tabla web del ensayo.
+  const showEquivalence = equivalencesForCourse(quiz.grade as string | null);
+  const paesTable = paesTableForQuiz(quiz);
+
+  const equivalenceOf = (paper: PaperResult) => {
+    const pct = achievementPct(paper);
+    if (pct === null) return null;
+    return {
+      paes: paesEquivalence(pct, paesTable),
+      simce: simceEquivalence(pct),
+    };
+  };
+
+  // Promedio PAES del grupo: se promedian los puntajes de cada alumno, no el
+  // puntaje del porcentaje promedio -- la tabla no es lineal, asi que no dan lo
+  // mismo, y lo que el profesor entiende por "el PAES del curso" es lo primero.
+  const paesScores = rows.map(equivalenceOf).filter((e): e is NonNullable<typeof e> => e !== null).map((e) => e.paes.score);
+  const avgPaes = paesScores.length ? Math.round(paesScores.reduce((a, b) => a + b, 0) / paesScores.length) : null;
 
   return (
     <main className="min-h-dvh bg-[#f5f6f8] text-[#0b1220]">
@@ -81,15 +113,25 @@ export default async function NativeQuizResultsPage({ params }: PageProps) {
       </header>
 
       <section className="space-y-5 px-5 py-6 pb-24">
-        <div className="grid grid-cols-2 gap-3">
+        {/* Dos recuadros sin equivalencia, tres con ella. Las etiquetas se
+            acortan al pasar a tres para que ninguna corte en pantalla angosta. */}
+        <div className={`grid gap-3 ${avgPaes !== null && showEquivalence.paes ? "grid-cols-3" : "grid-cols-2"}`}>
           <div className="rounded-2xl border border-[#e6e8eb] bg-white p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6b7280]">Alumnos</p>
-            <p className="mt-1 text-2xl font-black text-[#111827]">{rows.length}</p>
+            <p className="mt-1 text-2xl font-black tabular-nums text-[#111827]">{rows.length}</p>
           </div>
           <div className="rounded-2xl border border-[#e6e8eb] bg-white p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6b7280]">Logro promedio</p>
-            <p className="mt-1 text-2xl font-black text-[#111827]">{avg}%</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6b7280]">
+              {avgPaes !== null && showEquivalence.paes ? "Logro" : "Logro promedio"}
+            </p>
+            <p className="mt-1 text-2xl font-black tabular-nums text-[#111827]">{avg}%</p>
           </div>
+          {avgPaes !== null && showEquivalence.paes && (
+            <div className="rounded-2xl border border-[#e6e8eb] bg-white p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6b7280]">PAES</p>
+              <p className="mt-1 text-2xl font-black tabular-nums text-[#111827]">{avgPaes}</p>
+            </div>
+          )}
         </div>
 
         {rows.length === 0 ? (
@@ -131,6 +173,27 @@ export default async function NativeQuizResultsPage({ params }: PageProps) {
                         <p className="mt-1 text-xs text-[#5b6472]">
                           {paper.score ?? "-"}/{paper.total ?? quiz.num_questions} · {scoreDisplay(paper)}
                         </p>
+                        {/* Equivalencias: una linea propia, mas tenue que la
+                            nota, para que se lea como referencia y no compita
+                            con el dato principal. Se omite entera en una hoja
+                            sin puntaje (sin identificar). */}
+                        {(() => {
+                          const eq = equivalenceOf(paper);
+                          if (!eq) return null;
+                          return (
+                            <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-semibold tabular-nums text-[#8a93a1]">
+                              {showEquivalence.paes && (
+                                <span>PAES <span className="text-[#5b6472]">{eq.paes.score}</span></span>
+                              )}
+                              {showEquivalence.paes && showEquivalence.simce && (
+                                <span aria-hidden className="text-[#d5dae0]">·</span>
+                              )}
+                              {showEquivalence.simce && (
+                                <span>SIMCE <span className="text-[#5b6472]">{eq.simce.score}{eq.simce.aproximado ? "~" : ""}</span></span>
+                              )}
+                            </p>
+                          );
+                        })()}
                         {/* Identificar o corregir el alumno sin salir de la app
                             (la APK se basta sola: nada de mandar al dashboard web). */}
                         <PaperAssignSheet
