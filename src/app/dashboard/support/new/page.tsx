@@ -18,7 +18,7 @@ export default async function NewTicketDashboardPage() {
           Los tickets creados aquí quedarán vinculados a tu cuenta y podrás darles seguimiento desde el dashboard o vía correo.
         </p>
         
-        <SupportForm mode="dashboard" locale={locale} defaultEmail={user.email ?? ""} />
+        <SupportForm locale={locale} />
       </div>
     </>
   );
