@@ -1,9 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { createTicketAction } from "./actions";
+import { createAuthenticatedTicketAction, createTicketAction } from "./actions";
 
-export function SupportForm({ locale }: { locale: string }) {
+type SupportFormProps = {
+  locale: string;
+  mode?: "public" | "dashboard";
+  defaultName?: string;
+  defaultEmail?: string;
+};
+
+export function SupportForm({ locale, mode = "public", defaultName = "", defaultEmail = "" }: SupportFormProps) {
   const [loading, setLoading] = useState(false);
   const [successLink, setSuccessLink] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -17,8 +24,9 @@ export function SupportForm({ locale }: { locale: string }) {
     formData.append("locale", locale);
 
     try {
-      const token = await createTicketAction(formData);
-      setSuccessLink(`/${locale}/t/${token}`);
+       const action = mode === "dashboard" ? createAuthenticatedTicketAction : createTicketAction;
+       const token = await action(formData);
+       setSuccessLink(`/t/${token}`);
     } catch (err: any) {
       setError(err.message || "Ocurrió un error inesperado.");
     } finally {
@@ -45,22 +53,22 @@ export function SupportForm({ locale }: { locale: string }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
-          <input type="text" id="name" name="name" required className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+           <input type="text" id="name" name="name" defaultValue={defaultName} maxLength={120} required className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
         <div>
           <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Correo Electrónico</label>
-          <input type="email" id="email" name="email" required className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+           <input type="email" id="email" name="email" defaultValue={defaultEmail} maxLength={320} required className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
       </div>
 
       <div>
         <label htmlFor="subject" className="block text-sm font-medium text-gray-700 mb-1">Asunto</label>
-        <input type="text" id="subject" name="subject" required className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+         <input type="text" id="subject" name="subject" maxLength={160} required className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
       </div>
 
       <div>
         <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-1">Mensaje</label>
-        <textarea id="message" name="message" rows={5} required className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+         <textarea id="message" name="message" rows={5} maxLength={10000} required className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
       </div>
 
       <button disabled={loading} type="submit" className="w-full bg-[#0a0a0a] text-white font-semibold rounded py-3 hover:bg-[#111] transition-colors disabled:opacity-50">

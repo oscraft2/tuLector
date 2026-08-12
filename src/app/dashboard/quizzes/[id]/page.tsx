@@ -19,7 +19,7 @@ import { ReroutePapersCard } from "@/components/dashboard/ReroutePapersCard";
 import { ExportPanel, type ExportTemplateOption } from "@/components/dashboard/ExportPanel";
 import { fetchExportPresets } from "@/lib/export_presets";
 import { equivalencesForCourse } from "@/lib/course_level";
-import { achievementPct, paesEquivalence, simceEquivalence } from "@/lib/paes_scale";
+import { achievementPct, paesEquivalence, simceEquivalence, paesTableForQuiz } from "@/lib/paes_scale";
 
 export const dynamic = "force-dynamic";
 
@@ -198,6 +198,10 @@ export default async function QuizDetailPage({ params }: PageProps) {
   // ensayo, no con el de cada alumno: es una decision de la tabla completa.
   const showEquivalence = equivalencesForCourse(quiz.grade as string | null);
 
+  // Que tabla del DEMRE aplica a este ensayo: su variante PAES si la tiene, si
+  // no la asignatura, y si tampoco, la de M1 del proceso mas reciente.
+  const paesTable = paesTableForQuiz(quiz);
+
   /**
    * Puntaje PAES y SIMCE de una hoja, derivados SIEMPRE del porcentaje de logro.
    * Nunca se lee `papers.equivalent_score`: en un ensayo "Personalizado" esa
@@ -207,15 +211,18 @@ export default async function QuizDetailPage({ params }: PageProps) {
   const getEquivalences = (paper: QuizPaper) => {
     const pct = achievementPct(paper);
     if (pct === null) return { paes: null, simce: null };
-    return { paes: paesEquivalence(pct), simce: simceEquivalence(pct) };
+    return { paes: paesEquivalence(pct, paesTable), simce: simceEquivalence(pct) };
   };
 
-  // Mientras no este cargada la tabla oficial del DEMRE, el puntaje es
-  // proporcional y el encabezado lo dice ("PAES ~").
-  const sampleEquivalence = paesEquivalence(0.5);
-  const equivalenceIsApprox = sampleEquivalence.aproximado;
-  const approxTitle = equivalenceIsApprox
+  // PAES sale de la tabla oficial del DEMRE (adaptada a porcentaje); SIMCE
+  // sigue siendo proporcional porque no existe una tabla equivalente publicada.
+  const paesSample = paesEquivalence(0.5, paesTable);
+  const simceSample = simceEquivalence(0.5);
+  const paesTitle = paesSample.aproximado
     ? "Puntaje proporcional al porcentaje de logro, no la conversión oficial del DEMRE."
+    : `Según la tabla de transformación del DEMRE — ${paesSample.tabla}. Aplicada sobre el porcentaje de logro, para que valga en un ensayo de cualquier largo.`;
+  const simceTitle = simceSample.aproximado
+    ? "Puntaje proporcional al porcentaje de logro (100-400). La Agencia de Calidad no publica una tabla de conversión oficial."
     : undefined;
 
   const getVariantLabel = () => {
@@ -403,8 +410,8 @@ export default async function QuizDetailPage({ params }: PageProps) {
           // ordenadas por fecha de escaneo descendente.
           columns={[
             "Alumno", "Curso", "Respuestas Correctas", "Nota",
-            ...(showEquivalence.paes ? [equivalenceIsApprox ? "PAES ~" : "PAES"] : []),
-            ...(showEquivalence.simce ? [equivalenceIsApprox ? "SIMCE ~" : "SIMCE"] : []),
+            ...(showEquivalence.paes ? [paesSample.aproximado ? "PAES ~" : "PAES"] : []),
+            ...(showEquivalence.simce ? [simceSample.aproximado ? "SIMCE ~" : "SIMCE"] : []),
           ]}
           rows={quizPapers}
           empty="Aun no hay lecturas sincronizadas para este ensayo."
@@ -431,12 +438,12 @@ export default async function QuizDetailPage({ params }: PageProps) {
                 <td className="px-5 py-4">{getCorrectDisplay(paper)}</td>
                 <td className="px-5 py-4 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
                 {showEquivalence.paes && (
-                  <td className="px-5 py-4 font-semibold text-[#111827]" title={approxTitle}>
+                  <td className="px-5 py-4 font-semibold text-[#111827]" title={paesTitle}>
                     {eq.paes?.score ?? "-"}
                   </td>
                 )}
                 {showEquivalence.simce && (
-                  <td className="px-5 py-4 font-semibold text-[#111827]" title={approxTitle}>
+                  <td className="px-5 py-4 font-semibold text-[#111827]" title={simceTitle}>
                     {eq.simce?.score ?? "-"}
                   </td>
                 )}
@@ -467,13 +474,13 @@ export default async function QuizDetailPage({ params }: PageProps) {
                   <p>Correctas: <span className="font-semibold text-[#111827]">{getCorrectDisplay(paper)}</span></p>
                   <p>Resultado: <span className="font-semibold text-[#07305f]">{getScoreDisplay(paper)}</span></p>
                   {showEquivalence.paes && (
-                    <p title={approxTitle}>
-                      PAES{equivalenceIsApprox ? " ~" : ""}: <span className="font-semibold text-[#111827]">{eq.paes?.score ?? "-"}</span>
+                    <p title={paesTitle}>
+                      PAES{paesSample.aproximado ? " ~" : ""}: <span className="font-semibold text-[#111827]">{eq.paes?.score ?? "-"}</span>
                     </p>
                   )}
                   {showEquivalence.simce && (
-                    <p title={approxTitle}>
-                      SIMCE{equivalenceIsApprox ? " ~" : ""}: <span className="font-semibold text-[#111827]">{eq.simce?.score ?? "-"}</span>
+                    <p title={simceTitle}>
+                      SIMCE{simceSample.aproximado ? " ~" : ""}: <span className="font-semibold text-[#111827]">{eq.simce?.score ?? "-"}</span>
                     </p>
                   )}
                 </div>

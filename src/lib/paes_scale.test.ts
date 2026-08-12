@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  scoreFromTable, paesEquivalence, simceEquivalence, achievementPct,
+  scoreFromTable, paesEquivalence, simceEquivalence, achievementPct, paesTableForQuiz,
   PAES_TABLES, SIMCE_TABLES, type ConversionTable,
 } from "./paes_scale";
 
@@ -21,36 +21,103 @@ test("achievementPct acota a [0,1]", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fallback proporcional: mientras no este cargada la tabla del DEMRE
+// Tablas oficiales importadas del DEMRE
 // ─────────────────────────────────────────────────────────────────────────────
 
-test("sin tabla cargada el puntaje es el proporcional de siempre, y se marca aproximado", () => {
-  assert.equal(PAES_TABLES.length, 0, "si esto falla, ya se cargo una tabla y hay que revisar el test");
-  assert.equal(SIMCE_TABLES.length, 0);
+test("estan cargadas las 20 tablas del DEMRE (5 pruebas x 2 procesos x 2 años)", () => {
+  assert.equal(PAES_TABLES.length, 20);
+  for (const prueba of ["m1", "m2", "competencia-lectora", "ciencias", "hycsoc"]) {
+    for (const proceso of ["regular", "invierno"]) {
+      for (const anio of [2025, 2026]) {
+        const id = `${prueba}_${proceso}_${anio}`;
+        assert.ok(PAES_TABLES.some((t) => t.id === id), `falta ${id}`);
+      }
+    }
+  }
+});
 
-  assert.deepEqual(paesEquivalence(0), { score: 100, aproximado: true });
-  assert.deepEqual(paesEquivalence(1), { score: 1000, aproximado: true });
-  assert.deepEqual(paesEquivalence(0.5), { score: 550, aproximado: true });
+test("cada tabla del DEMRE es coherente: 0%→100, 100%→1000 y monotona", () => {
+  for (const table of PAES_TABLES) {
+    const first = table.rows[0];
+    const last = table.rows[table.rows.length - 1];
+    assert.equal(first.pct, 0, `${table.id}: la primera fila debe ser 0% de logro`);
+    assert.equal(first.score, 100, `${table.id}: 0% debe dar el piso 100`);
+    assert.equal(last.pct, 100, `${table.id}: la ultima fila debe ser 100%`);
+    assert.equal(last.score, 1000, `${table.id}: 100% debe dar el techo 1000`);
+    for (let i = 1; i < table.rows.length; i++) {
+      assert.ok(table.rows[i].pct > table.rows[i - 1].pct, `${table.id}: pct no crece en la fila ${i}`);
+      assert.ok(table.rows[i].score >= table.rows[i - 1].score, `${table.id}: el puntaje BAJA en la fila ${i}`);
+    }
+  }
+});
 
+test("el largo de cada prueba coincide con el instrumento real", () => {
+  const esperado: Record<string, number> = {
+    m1: 60, m2: 49, "competencia-lectora": 60, ciencias: 75, hycsoc: 60,
+  };
+  for (const table of PAES_TABLES) {
+    const prueba = table.id.replace(/_(regular|invierno)_\d+$/, "");
+    assert.equal(table.preguntas, esperado[prueba], `${table.id}`);
+    // Una fila por cada nº de correctas posible, de 0 a N.
+    assert.equal(table.rows.length, esperado[prueba] + 1, `${table.id}: nº de filas`);
+  }
+});
+
+test("la tabla oficial NO es lineal: ahi esta el punto de haberla importado", () => {
+  const m1 = PAES_TABLES.find((t) => t.id === "m1_regular_2026")!;
+  const alMedio = scoreFromTable(m1, 0.5)!;
+  const proporcional = Math.round(100 + 0.5 * 900); // 550
+  assert.notEqual(alMedio, proporcional);
+  // Una sola respuesta correcta ya salta muy por encima del piso: eso es lo que
+  // la aproximacion proporcional no podia capturar.
+  assert.ok(scoreFromTable(m1, 1 / 60)! > 150, "1 de 60 correctas");
+});
+
+test("paesEquivalence usa la tabla y ya no se marca aproximado", () => {
+  const eq = paesEquivalence(0.5);
+  assert.equal(eq.aproximado, false);
+  assert.ok(eq.tabla && eq.tabla.length > 0, "debe decir que tabla se aplico");
+  assert.deepEqual(paesEquivalence(0).score, 100);
+  assert.deepEqual(paesEquivalence(1).score, 1000);
+});
+
+test("SIMCE sigue siendo proporcional y se marca como aproximado", () => {
+  assert.equal(SIMCE_TABLES.length, 0, "la Agencia de Calidad no publica tabla equivalente");
   assert.deepEqual(simceEquivalence(0), { score: 100, aproximado: true });
   assert.deepEqual(simceEquivalence(1), { score: 400, aproximado: true });
   assert.deepEqual(simceEquivalence(0.5), { score: 250, aproximado: true });
 });
 
-test("los numeros del 2° Medio B real cuadran con la aritmetica a mano", () => {
-  // SOFIA 11/36 = 30,6%
-  assert.equal(paesEquivalence(11 / 36).score, 375);
-  assert.equal(simceEquivalence(11 / 36).score, 192);
-  // SERGIO 14/36 = 38,9%
-  assert.equal(paesEquivalence(14 / 36).score, 450);
-  assert.equal(simceEquivalence(14 / 36).score, 217);
-  // TRINIDAD 6/36 = 16,7%
-  assert.equal(paesEquivalence(6 / 36).score, 250);
-  assert.equal(simceEquivalence(6 / 36).score, 150);
+// ─────────────────────────────────────────────────────────────────────────────
+// Elección de tabla por ensayo
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("la variante PAES del ensayo elige su prueba", () => {
+  assert.ok(paesTableForQuiz({ evaluation_variant: "paes_m1" }).id.startsWith("m1_regular_"));
+  assert.ok(paesTableForQuiz({ evaluation_variant: "paes_m2" }).id.startsWith("m2_regular_"));
+  assert.ok(paesTableForQuiz({ evaluation_variant: "paes_lectora" }).id.startsWith("competencia-lectora_regular_"));
+  assert.ok(paesTableForQuiz({ evaluation_variant: "paes_ciencias" }).id.startsWith("ciencias_regular_"));
+  assert.ok(paesTableForQuiz({ evaluation_variant: "paes_historia" }).id.startsWith("hycsoc_regular_"));
+});
+
+test("sin variante, la asignatura del ensayo decide", () => {
+  assert.ok(paesTableForQuiz({ subject: "Matemática" }).id.startsWith("m1_"));
+  assert.ok(paesTableForQuiz({ subject: "Lengua y Literatura" }).id.startsWith("competencia-lectora_"));
+  assert.ok(paesTableForQuiz({ subject: "Historia, Geografía y Ciencias Sociales" }).id.startsWith("hycsoc_"));
+  assert.ok(paesTableForQuiz({ subject: "Ciencias Naturales (Biología)" }).id.startsWith("ciencias_"));
+});
+
+test("sin variante ni asignatura reconocible, cae a la tabla por defecto", () => {
+  assert.equal(paesTableForQuiz({}).id, "m1_regular_2026");
+  assert.equal(paesTableForQuiz({ subject: "Orientación" }).id, "m1_regular_2026");
+});
+
+test("siempre se prefiere el proceso REGULAR mas reciente", () => {
+  assert.equal(paesTableForQuiz({ evaluation_variant: "paes_m1" }).id, "m1_regular_2026");
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tabla de conversion (cuando se cargue la del DEMRE)
+// Interpolación
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TABLA: ConversionTable = {
@@ -72,9 +139,7 @@ test("scoreFromTable devuelve el valor exacto en los tramos declarados", () => {
 });
 
 test("scoreFromTable interpola entre dos tramos", () => {
-  // 37,5% esta a mitad de camino entre 25 (438) y 50 (612) => 525
   assert.equal(scoreFromTable(TABLA, 0.375), 525);
-  // 75% esta a mitad entre 50 (612) y 100 (1000) => 806
   assert.equal(scoreFromTable(TABLA, 0.75), 806);
 });
 
@@ -85,9 +150,4 @@ test("scoreFromTable satura fuera de rango en vez de extrapolar", () => {
 
 test("scoreFromTable con una tabla vacia devuelve null (cae al proporcional)", () => {
   assert.equal(scoreFromTable({ id: "x", label: "x", rows: [] }, 0.5), null);
-});
-
-test("una tabla NO lineal se separa del proporcional, que es el punto de cargarla", () => {
-  assert.equal(scoreFromTable(TABLA, 0.25), 438);
-  assert.equal(paesEquivalence(0.25).score, 325, "el proporcional daria 325");
 });
