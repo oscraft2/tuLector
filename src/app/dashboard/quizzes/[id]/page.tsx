@@ -18,6 +18,8 @@ import { reroutePapersAction } from "@/app/dashboard/papers/actions";
 import { ReroutePapersCard } from "@/components/dashboard/ReroutePapersCard";
 import { ExportPanel, type ExportTemplateOption } from "@/components/dashboard/ExportPanel";
 import { fetchExportPresets } from "@/lib/export_presets";
+import { equivalencesForCourse } from "@/lib/course_level";
+import { achievementPct, paesEquivalence, simceEquivalence } from "@/lib/paes_scale";
 
 export const dynamic = "force-dynamic";
 
@@ -154,8 +156,10 @@ export default async function QuizDetailPage({ params }: PageProps) {
     return String(gradeResult.grade);
   };
 
-  const isPAES = quiz.evaluation_type === "paes";
-  const isSIMCE = quiz.evaluation_type === "simce";
+  // `isPAES`/`isSIMCE` se fueron con la columna "Resultado Equivalente": ahora
+  // PAES y SIMCE tienen columna propia y se muestran segun el NIVEL del curso,
+  // no segun el tipo del ensayo. QuizStats recibe el quiz entero y resuelve lo
+  // suyo por su cuenta.
   const studentIdByRut = new Map<string, string>();
   for (const student of students ?? []) {
     const rutNorm = student.rut_normalized ?? canonicalRut(student.rut) ?? canonicalRut(student.student_id);
@@ -182,18 +186,37 @@ export default async function QuizDetailPage({ params }: PageProps) {
     return `${correct} · ${paper.points}/${paper.points_total} pts`;
   };
 
+  /** Solo la NOTA: el puntaje PAES/SIMCE tiene ahora columna propia, asi que
+   *  esta ya no tiene que elegir entre mostrar uno u otro. */
   const getScoreDisplay = (paper: QuizPaper) => {
     const grade = paper.grade || (paper.total ? resolveGrade(Number(paper.score ?? 0), Number(paper.total)) : "-");
-    if (isPAES || isSIMCE) {
-      const fallbackPct = (paper.score ?? 0) / (paper.total || quiz.num_questions);
-      const equivalent = paper.equivalent_score ?? Math.round(100 + fallbackPct * (isPAES ? 900 : 300));
-      const label = `${equivalent} pts ${isPAES ? "PAES" : "SIMCE"}`;
-      // Con ponderacion el profesor necesita ver AMBAS: el puntaje oficial del
-      // instrumento y la nota con la que va al libro de clases.
-      return isWeighted ? `${label} · Nota ${grade}` : label;
-    }
     return `Nota ${grade}`;
   };
+
+  // Que equivalencias tienen sentido para el nivel de ESTE ensayo: hasta II
+  // medio ambas, en III y IV medio solo PAES. Se decide con el curso del
+  // ensayo, no con el de cada alumno: es una decision de la tabla completa.
+  const showEquivalence = equivalencesForCourse(quiz.grade as string | null);
+
+  /**
+   * Puntaje PAES y SIMCE de una hoja, derivados SIEMPRE del porcentaje de logro.
+   * Nunca se lee `papers.equivalent_score`: en un ensayo "Personalizado" esa
+   * columna guarda el PORCENTAJE (0-100), asi que pintarla bajo el encabezado
+   * "PAES" mostraria 90 donde corresponde 910.
+   */
+  const getEquivalences = (paper: QuizPaper) => {
+    const pct = achievementPct(paper);
+    if (pct === null) return { paes: null, simce: null };
+    return { paes: paesEquivalence(pct), simce: simceEquivalence(pct) };
+  };
+
+  // Mientras no este cargada la tabla oficial del DEMRE, el puntaje es
+  // proporcional y el encabezado lo dice ("PAES ~").
+  const sampleEquivalence = paesEquivalence(0.5);
+  const equivalenceIsApprox = sampleEquivalence.aproximado;
+  const approxTitle = equivalenceIsApprox
+    ? "Puntaje proporcional al porcentaje de logro, no la conversión oficial del DEMRE."
+    : undefined;
 
   const getVariantLabel = () => {
     if (!quiz.evaluation_variant) return "Personalizado";
@@ -373,7 +396,16 @@ export default async function QuizDetailPage({ params }: PageProps) {
           </div>
         </section>
         <DataTable
-          columns={["Alumno", "Curso", "Respuestas Correctas", "Resultado Equivalente", "Estado", "Fecha"]}
+          // "Estado" y "Fecha" cedieron su lugar a las equivalencias. Ninguno se
+          // pierde de vista: una hoja en manual_review sigue apareciendo en la
+          // columna Alumno como "NOMBRE · identificar" con enlace (el unico
+          // estado sobre el que el profesor actua), y las hojas siguen
+          // ordenadas por fecha de escaneo descendente.
+          columns={[
+            "Alumno", "Curso", "Respuestas Correctas", "Nota",
+            ...(showEquivalence.paes ? [equivalenceIsApprox ? "PAES ~" : "PAES"] : []),
+            ...(showEquivalence.simce ? [equivalenceIsApprox ? "SIMCE ~" : "SIMCE"] : []),
+          ]}
           rows={quizPapers}
           empty="Aun no hay lecturas sincronizadas para este ensayo."
           renderRow={(paper) => {
@@ -383,6 +415,7 @@ export default async function QuizDetailPage({ params }: PageProps) {
             // Hoja sin dueño: se entra a identificarla (foto del nombre, buscador
             // de alumnos y descarte) en vez de quedar como un texto muerto.
             const needsId = paper.status === "manual_review";
+            const eq = getEquivalences(paper);
             return (
               <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0">
                 <td className="px-5 py-4 font-semibold">
@@ -397,14 +430,23 @@ export default async function QuizDetailPage({ params }: PageProps) {
                 <td className="px-5 py-4 text-[#5b6472]">{course?.name ?? "-"}</td>
                 <td className="px-5 py-4">{getCorrectDisplay(paper)}</td>
                 <td className="px-5 py-4 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
-                <td className="px-5 py-4"><StatusPill>{paper.status ?? "active"}</StatusPill></td>
-                <td className="px-5 py-4 text-[#5b6472]">{new Date(paper.scanned_at).toLocaleString("es-CL")}</td>
+                {showEquivalence.paes && (
+                  <td className="px-5 py-4 font-semibold text-[#111827]" title={approxTitle}>
+                    {eq.paes?.score ?? "-"}
+                  </td>
+                )}
+                {showEquivalence.simce && (
+                  <td className="px-5 py-4 font-semibold text-[#111827]" title={approxTitle}>
+                    {eq.simce?.score ?? "-"}
+                  </td>
+                )}
               </tr>
             );
           }}
           renderMobileRow={(paper) => {
             const studentLabel = paper.student_name ?? paper.student_id ?? "Sin identificar";
             const studentHref = studentHrefForPaper(paper);
+            const eq = getEquivalences(paper);
             return (
               <article key={paper.id} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
@@ -419,11 +461,21 @@ export default async function QuizDetailPage({ params }: PageProps) {
                   )}
                   <StatusPill>{paper.status ?? "active"}</StatusPill>
                 </div>
+                {/* La tarjeta muestra lo MISMO que la fila de escritorio. */}
                 <div className="mt-3 grid gap-1 text-sm text-[#5b6472]">
                   <p>Curso: <span className="font-semibold text-[#111827]">{courseOf(paper)?.name ?? "-"}</span></p>
                   <p>Correctas: <span className="font-semibold text-[#111827]">{getCorrectDisplay(paper)}</span></p>
                   <p>Resultado: <span className="font-semibold text-[#07305f]">{getScoreDisplay(paper)}</span></p>
-                  <p className="text-xs">Fecha: {new Date(paper.scanned_at).toLocaleString("es-CL")}</p>
+                  {showEquivalence.paes && (
+                    <p title={approxTitle}>
+                      PAES{equivalenceIsApprox ? " ~" : ""}: <span className="font-semibold text-[#111827]">{eq.paes?.score ?? "-"}</span>
+                    </p>
+                  )}
+                  {showEquivalence.simce && (
+                    <p title={approxTitle}>
+                      SIMCE{equivalenceIsApprox ? " ~" : ""}: <span className="font-semibold text-[#111827]">{eq.simce?.score ?? "-"}</span>
+                    </p>
+                  )}
                 </div>
               </article>
             );

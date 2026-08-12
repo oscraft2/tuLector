@@ -11,54 +11,23 @@
  * mano en el CSV) que adivinar mal o dejar la celda vacia.
  */
 
-const ORDINAL_A_ROMANO: Record<string, string> = {
-  PRIMERO: "I", PRIMER: "I",
-  SEGUNDO: "II",
-  TERCERO: "III", TERCER: "III",
-  CUARTO: "IV",
-};
-
-const ORDINAL_A_ARABIGO: Record<string, string> = {
-  PRIMERO: "1", PRIMER: "1",
-  SEGUNDO: "2",
-  TERCERO: "3", TERCER: "3",
-  CUARTO: "4",
-  QUINTO: "5",
-  SEXTO: "6",
-  SEPTIMO: "7",
-  OCTAVO: "8",
-};
+// El parseo del texto del curso vive en course_level.ts, que tambien lo usa
+// para decidir que equivalencias mostrar. Se comparte en vez de duplicarse: dos
+// heuristicas de curso divergiendo es como se termina con el CSV de DIA y la
+// tabla de resultados leyendo el mismo "2do medio C" de forma distinta.
+import {
+  ORDINAL_A_ROMANO, ORDINAL_A_ARABIGO,
+  extraerRomano, extraerDigito, extraerOrdinal, limpiarCurso,
+} from "./course_level";
 
 const YA_FORMATO_DIA = /^(?:[1-8]|I{1,3}|IV)\s+[A-Z]$/;
-
-function quitarTildes(s: string): string {
-  return s.normalize("NFD").replace(/[̀-ͯ]/g, "");
-}
-
-function extraerRomano(s: string): string | null {
-  const m = s.match(/\b(IV|III|II|I)\b/);
-  return m ? m[1] : null;
-}
-
-function extraerDigito(s: string, min: number, max: number): string | null {
-  const m = s.match(/[0-9]/);
-  if (!m) return null;
-  const n = Number(m[0]);
-  if (n < min || n > max) return null;
-  return String(n);
-}
-
-function extraerOrdinal(s: string, tabla: Record<string, string>): string | null {
-  const m = s.match(/\b(PRIMERO|PRIMER|SEGUNDO|TERCERO|TERCER|CUARTO|QUINTO|SEXTO|SEPTIMO|OCTAVO)\b/);
-  return m ? (tabla[m[1]] ?? null) : null;
-}
 
 export function normalizarCursoDIA(raw: string | null | undefined): string {
   if (!raw) return "";
   const original = raw.trim();
   if (!original) return "";
 
-  const limpio = quitarTildes(original).toUpperCase().replace(/[°º.]/g, " ").replace(/\s+/g, " ").trim();
+  const limpio = limpiarCurso(original);
 
   if (YA_FORMATO_DIA.test(limpio)) return limpio;
 
