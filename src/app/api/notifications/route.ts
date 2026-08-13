@@ -33,17 +33,37 @@ export async function GET() {
   }
 }
 
-/** Marcar como leida. La RLS (`notifications_user`) restringe la fila a las
- *  propias del usuario o, si es admin, a las del colegio — por eso basta el id. */
+/**
+ * Marcar como leida(s). Acepta las tres formas que necesita el campanario:
+ *   { id }            una sola (al hacer clic en ella)
+ *   { ids: [...] }    las que se acaban de mostrar (al abrir el panel)
+ *   { all: true }     todas las pendientes del usuario
+ *
+ * La RLS (`notifications_user`) restringe las filas a las propias del usuario o,
+ * si es admin, a las del colegio — por eso basta con el id y no hace falta
+ * repetir el filtro por usuario aca.
+ */
 export async function PATCH(request: Request) {
   try {
-    const { supabase } = await getDashboardContext();
-    const body = (await request.json()) as { id?: unknown; read_at?: unknown };
-    const id = typeof body.id === "string" ? body.id.trim() : "";
-    if (!id) return NextResponse.json({ error: "Falta la notificacion" }, { status: 400 });
+    const { supabase, school } = await getDashboardContext();
+    const body = (await request.json()) as { id?: unknown; ids?: unknown; all?: unknown; read_at?: unknown };
+
+    const ids = [
+      ...(typeof body.id === "string" ? [body.id.trim()] : []),
+      ...(Array.isArray(body.ids) ? body.ids.filter((v): v is string => typeof v === "string").map((v) => v.trim()) : []),
+    ].filter(Boolean);
+    const markAll = body.all === true;
+    if (ids.length === 0 && !markAll) {
+      return NextResponse.json({ error: "Falta la notificacion" }, { status: 400 });
+    }
 
     const readAt = typeof body.read_at === "string" ? body.read_at : new Date().toISOString();
-    const { error } = await supabase.from("notifications").update({ read_at: readAt }).eq("id", id);
+    // `is("read_at", null)` en el modo "todas": no se reescribe la fecha de las
+    // que ya estaban leidas, asi el historial conserva cuando se leyo cada una.
+    const query = supabase.from("notifications").update({ read_at: readAt });
+    const { error } = markAll
+      ? await query.eq("school_id", school.id).is("read_at", null)
+      : await query.in("id", ids);
     if (error) throw error;
     return NextResponse.json({ ok: true });
   } catch (error) {
