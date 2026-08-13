@@ -99,14 +99,19 @@ type Filterable = {
  * perderia de vista ensayos historicos sin darse cuenta. En "all" no se toca la
  * consulta y en "one" se filtra por ese docente exacto.
  */
-export function applyTeacherScope<T>(query: T, scope: TeacherScope): T {
+export function applyTeacherScope<T>(query: T, scope: TeacherScope, sharedQuizIds: string[] = []): T {
   if (scope.mode === "all" || !scope.userId) return query;
   // `eq`/`or` devuelven el MISMO builder, asi que el tipo original se conserva:
   // el generico va suelto (y no atado a Filterable) para no borrar el tipado de
   // las filas que infiere el cliente de Supabase en cada pantalla.
   const q = query as unknown as Filterable;
   if (scope.mode === "one") return q.eq("created_by", scope.userId) as unknown as T;
-  return q.or(`created_by.eq.${scope.userId},created_by.is.null`) as unknown as T;
+  // Los ensayos que OTRO docente me compartio y acepte (quiz_shares) no son
+  // mios (`created_by` es del dueño), pero en "lo mio" tienen que aparecer: son
+  // ensayos en los que estoy trabajando. Sin esto el admin, que es el unico que
+  // filtra por autor, los perderia de vista justo despues de aceptarlos.
+  const shared = sharedQuizIds.length > 0 ? `,id.in.(${sharedQuizIds.join(",")})` : "";
+  return q.or(`created_by.eq.${scope.userId},created_by.is.null${shared}`) as unknown as T;
 }
 
 /**
@@ -121,6 +126,7 @@ export async function quizIdsInScope(
   supabase: Pick<SupabaseClient, "from">,
   schoolId: string,
   scope: TeacherScope,
+  sharedQuizIds: string[] = [],
 ): Promise<string[] | null> {
   if (scope.mode === "all" || !scope.userId) return null;
   // La lista viaja despues en un `.in("quiz_id", ids)`. Es simple y suficiente
@@ -130,6 +136,7 @@ export async function quizIdsInScope(
   const { data, error } = await applyTeacherScope(
     supabase.from("quizzes").select("id").eq("school_id", schoolId),
     scope,
+    sharedQuizIds,
   );
   if (error) return null;
   return ((data ?? []) as { id: string }[]).map((q) => q.id);

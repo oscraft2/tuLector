@@ -72,6 +72,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
     { href: "/dashboard/students", label: "Gestión de alumnos" },
     { href: "/dashboard/courses", label: "Cursos" },
     { href: "/dashboard/quizzes", label: "Ensayos" },
+    // Solo con equipo hay algo que compartir (ver plan_gates: quiz_sharing).
+    ...(school.plan === "school" ? [{ href: "/dashboard/quizzes/compartidos", label: "Compartidos" }] : []),
     { href: "/dashboard/papers", label: t.papers },
     { href: "/dashboard/billing", label: t.billing },
     { href: "/dashboard/settings", label: t.settings },

@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { isMissingColumnError } from "@/lib/supabase_errors";
 import { fetchTeacherOptions, parseTeacherScope, quizIdsInScope, resolveScope } from "@/lib/teacher_scope";
+import { sharedQuizIdsFor } from "@/lib/quiz_shares";
 import { TeacherScopeFilter } from "@/components/dashboard/TeacherScopeFilter";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +37,9 @@ export default async function PapersPage({ searchParams }: { searchParams?: Prom
   const requested = parseTeacherScope(sp, { userId: user.id, isAdmin, plan: school.plan });
   const teachers = requested.canSwitch ? await fetchTeacherOptions(supabase, school.id, user.id) : [];
   const scope = resolveScope(requested, teachers.length);
-  const quizIds = await quizIdsInScope(supabase, school.id, scope);
+  // Los ensayos compartidos conmigo (quiz_shares) tambien traen hojas mias.
+  const sharedQuizIds = await sharedQuizIdsFor(supabase, school.id, user.id);
+  const quizIds = await quizIdsInScope(supabase, school.id, scope, sharedQuizIds);
 
   const papersQuery = (columns: string) => {
     const q = supabase.from("papers").select(columns).neq("status", "void").order("scanned_at", { ascending: false }).limit(100);

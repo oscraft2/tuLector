@@ -4,6 +4,7 @@ import { getDashboardContext } from "@/lib/supabase_server";
 import { startScanForQuiz } from "@/app/dashboard/actions";
 import { CreateQuizFab } from "@/components/native/CreateQuizFab";
 import { parseSheetMode } from "@/lib/sheet_mode";
+import { countPendingShares } from "@/lib/quiz_shares";
 
 type QuizRow = {
   id: string;
@@ -28,8 +29,13 @@ const sheetHref = (quiz: QuizRow) =>
  * APK. El motor OMR y /scan no cambian — esto solo decide QUE ensayo escanear.
  */
 export default async function NativeScanPage() {
-  const { supabase, school, isAdmin } = await getDashboardContext();
+  const { supabase, user, school, isAdmin } = await getDashboardContext();
   const activeQuizId = (await cookies()).get("tulector_active_quiz")?.value;
+
+  // Un ensayo compartido sin aceptar NO aparece en la lista de abajo (la RLS lo
+  // esconde hasta que se acepta), asi que se avisa aca mismo: es la pantalla
+  // donde el docente lo va a buscar.
+  const pendingShares = await countPendingShares(supabase, school.id, user.id);
 
   const [{ data: quizzes }, { data: courses }] = await Promise.all([
     supabase
@@ -67,6 +73,22 @@ export default async function NativeScanPage() {
       </header>
 
       <section className="space-y-5 px-5 py-6 pb-24">
+        {pendingShares > 0 && (
+          <Link
+            href="/app/compartidos"
+            className="flex items-center gap-3 rounded-2xl border border-[#c7d7ee] bg-[#eef4ff] p-4 active:scale-[0.98]"
+          >
+            <span className="text-xl" aria-hidden="true">🤝</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-[#07305f]">
+                {pendingShares} ensayo{pendingShares === 1 ? "" : "s"} compartido{pendingShares === 1 ? "" : "s"} contigo
+              </p>
+              <p className="mt-0.5 text-xs text-[#07305f]/80">Acéptalo para que aparezca en esta lista.</p>
+            </div>
+            <svg className="h-5 w-5 shrink-0 text-[#07305f]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+          </Link>
+        )}
+
         {activeQuiz ? (
           <div className="overflow-hidden rounded-2xl bg-[#07305f] shadow-sm">
             <form action={startScanForQuiz}>
@@ -129,6 +151,18 @@ export default async function NativeScanPage() {
           )}
         </div>
 
+        {/* Correccion rapida: no necesita ensayo ni alumnos, y vive en el mismo
+            origen que server.url, asi que se abre DENTRO del APK. */}
+        <Link
+          href="/scan/rapido"
+          className="flex items-center gap-3 rounded-2xl border border-[#e6e8eb] bg-white px-4 py-3.5 active:bg-[#f4f6f8]"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-[#111827]">Corrección rápida</p>
+            <p className="mt-0.5 text-xs text-[#5b6472]">Con un bloque compacto pegado en tu prueba: pauta y a escanear, sin alumnos.</p>
+          </div>
+          <svg className="h-5 w-5 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+        </Link>
       </section>
 
       <CreateQuizFab courses={(courses ?? []) as { id: string; name: string; grade: string | null }[]} isAdmin={isAdmin} />

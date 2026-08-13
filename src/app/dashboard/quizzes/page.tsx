@@ -12,6 +12,8 @@ import { parseSheetMode } from "@/lib/sheet_mode";
 import { isAnswerKeyIncomplete } from "@/lib/quiz_constraints";
 import { applyTeacherScope, fetchTeacherOptions, parseTeacherScope, resolveScope } from "@/lib/teacher_scope";
 import { TeacherScopeFilter } from "@/components/dashboard/TeacherScopeFilter";
+import { countPendingShares, fetchSharesForUser, fetchUserEmails, userLabel } from "@/lib/quiz_shares";
+import { planHasFeature } from "@/lib/plan_gates";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +41,8 @@ type QuizRow = {
   subject: string | null;
   grade: string | null;
   course_id?: string | null;
+  /** Autor del ensayo. Distingue "mio" de "me lo compartieron" (quiz_shares). */
+  created_by?: string | null;
   num_questions: number | null;
   options_per_question: number | null;
   answer_key: string | null;
@@ -76,16 +80,30 @@ export default async function QuizzesPage({ searchParams }: { searchParams?: Pro
   const teachers = requested.canSwitch ? await fetchTeacherOptions(supabase, school.id, user.id) : [];
   const scope = resolveScope(requested, teachers.length);
 
+  // Ensayos de otros docentes que acepte (quiz_shares). La RLS ya me los deja
+  // ver; esto sirve para que el filtro por autor del admin no los esconda y
+  // para marcarlos en la tabla como ajenos.
+  const sharingOn = planHasFeature(school.plan, "quiz_sharing");
+  const [incomingShares, pendingShares] = sharingOn
+    ? await Promise.all([
+        fetchSharesForUser(supabase, school.id, user.id, ["accepted"]),
+        countPendingShares(supabase, school.id, user.id),
+      ])
+    : [[], 0];
+  const sharedQuizIds = incomingShares.map((s) => s.quiz_id);
+  const sharedById = new Map(incomingShares.map((s) => [s.quiz_id, s.shared_by]));
+
   const quizzesQuery = (columns: string) =>
     applyTeacherScope(
       supabase.from("quizzes").select(columns).is("archived_at", null).order("created_at", { ascending: false }),
       scope,
+      sharedQuizIds,
     );
 
   // Columnas que llegaron en migraciones posteriores: se piden todas y, si la BD
   // no tiene alguna, se suelta esa y se reintenta. Antes era una cascada de
   // fallbacks escrita a mano, que habia que ampliar con cada columna nueva.
-  const BASE_COLUMNS = "id,title,subject,grade,num_questions,options_per_question,answer_key,created_at,archived_at";
+  const BASE_COLUMNS = "id,title,subject,grade,num_questions,options_per_question,answer_key,created_at,archived_at,created_by";
   const OPTIONAL_COLUMNS = ["sheet_mode", "course_id", "open_questions"];
 
   const loadQuizzes = async () => {
@@ -120,6 +138,12 @@ export default async function QuizzesPage({ searchParams }: { searchParams?: Pro
       papersCountByQuiz.set(row.quiz_id, (papersCountByQuiz.get(row.quiz_id) ?? 0) + 1);
     }
   }
+  // Correos de los dueños de los ensayos ajenos, para el pill "Compartido por".
+  const ownerEmails = await fetchUserEmails([...sharedById.values()].filter((v): v is string => Boolean(v)));
+  /** Un ensayo ajeno aceptado: se muestra pero sin las acciones de dueño. */
+  const isSharedWithMe = (quiz: QuizRow) => sharedById.has(quiz.id) && quiz.created_by !== user.id;
+  const sharedByLabel = (quiz: QuizRow) => userLabel(sharedById.get(quiz.id) ?? null, ownerEmails);
+
   const countryProfile = resolveCountryProfile(school.country_code ?? "CL");
   // El texto de ayuda no puede nombrar PAES/SIMCE (Chile) para un colegio de
   // otro pais -- usa los sistemas de evaluacion reales de su perfil.
@@ -132,6 +156,15 @@ export default async function QuizzesPage({ searchParams }: { searchParams?: Pro
       <PageHeader title={t.quizzes} description="Crea ensayos, define claves, duplica instrumentos y genera hojas v2 imprimibles para leerlas luego desde la app movil." />
 
       <TeacherScopeFilter scope={scope} teachers={teachers} basePath="/dashboard/quizzes" searchParams={sp} />
+
+      {/* Ensayos que un colega me compartio y todavia no acepto: hasta que
+          acepte, la RLS no me los muestra en ninguna parte. */}
+      {sharingOn && pendingShares > 0 && (
+        <p className="mb-5 rounded-md border border-[#c7d7ee] bg-[#eef4ff] px-4 py-3 text-sm text-[#07305f]">
+          🤝 Tienes <strong>{pendingShares}</strong> ensayo{pendingShares === 1 ? "" : "s"} compartido{pendingShares === 1 ? "" : "s"} esperando tu respuesta.{" "}
+          <Link href="/dashboard/quizzes/compartidos" className="font-semibold underline">Ver y aceptar</Link>
+        </p>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,450px)_minmax(0,1fr)] xl:gap-6">
 
@@ -157,6 +190,11 @@ export default async function QuizzesPage({ searchParams }: { searchParams?: Pro
                 {isKeyIncomplete(quiz) && (
                   <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Clave incompleta</span>
                 )}
+                {isSharedWithMe(quiz) && (
+                  <span className="ml-2 rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-semibold text-[#07305f]">
+                    Compartido por {sharedByLabel(quiz)}
+                  </span>
+                )}
               </td>
               <td className="px-5 py-4 text-[#5b6472]">{quiz.subject ?? "-"}</td>
               <td className="px-5 py-4">
@@ -178,23 +216,31 @@ export default async function QuizzesPage({ searchParams }: { searchParams?: Pro
                     </button>
                   </form>
                   <ExportDiaLink quizId={quiz.id} hasPapers={(papersCountByQuiz.get(quiz.id) ?? 0) > 0} />
-                  <ActionButton
-                    action={duplicateQuiz}
-                    fields={{ id: quiz.id }}
-                    label="Duplicar"
-                    pendingLabel="Duplicando…"
-                    className={DUP_CLS}
-                  />
-                  <ActionButton
-                    action={archiveQuiz}
-                    fields={{ id: quiz.id }}
-                    label="Archivar"
-                    pendingLabel="Archivando…"
-                    className={ARCH_CLS}
-                    confirm={`¿Archivar "${quiz.title}"? Podrás recuperarlo desde archivados.`}
-                    confirmTitle="¿Archivar ensayo?"
-                    confirmLabel="Archivar"
-                  />
+                  {/* Duplicar y archivar son del dueño: sobre un ensayo ajeno
+                      la RLS los rechazaria (archivar) o crearia una copia que
+                      parte la base en dos (duplicar), que es justo lo que esta
+                      feature viene a evitar. */}
+                  {!isSharedWithMe(quiz) && (
+                    <>
+                      <ActionButton
+                        action={duplicateQuiz}
+                        fields={{ id: quiz.id }}
+                        label="Duplicar"
+                        pendingLabel="Duplicando…"
+                        className={DUP_CLS}
+                      />
+                      <ActionButton
+                        action={archiveQuiz}
+                        fields={{ id: quiz.id }}
+                        label="Archivar"
+                        pendingLabel="Archivando…"
+                        className={ARCH_CLS}
+                        confirm={`¿Archivar "${quiz.title}"? Podrás recuperarlo desde archivados.`}
+                        confirmTitle="¿Archivar ensayo?"
+                        confirmLabel="Archivar"
+                      />
+                    </>
+                  )}
                 </div>
               </td>
             </tr>
@@ -204,6 +250,11 @@ export default async function QuizzesPage({ searchParams }: { searchParams?: Pro
               <Link href={`/dashboard/quizzes/${quiz.id}`} className="block text-base font-semibold text-[#07305f] hover:underline">{quiz.title}</Link>
               {isKeyIncomplete(quiz) && (
                 <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Clave incompleta</span>
+              )}
+              {isSharedWithMe(quiz) && (
+                <span className="mt-1 ml-1 inline-block rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-semibold text-[#07305f]">
+                  Compartido por {sharedByLabel(quiz)}
+                </span>
               )}
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[#5b6472]">
                 <p><span className="font-semibold text-[#111827]">Asignatura:</span> {quiz.subject ?? "-"}</p>
@@ -215,8 +266,12 @@ export default async function QuizzesPage({ searchParams }: { searchParams?: Pro
                 <Link href={sheetHref(quiz)} className="rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold hover:bg-gray-50">{sheetLabel(quiz)}</Link>
                 <form action={startScanForQuiz}><input type="hidden" name="quiz_id" value={quiz.id} /><button className="rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold hover:bg-gray-50">Escanear</button></form>
                 <ExportDiaLink quizId={quiz.id} hasPapers={(papersCountByQuiz.get(quiz.id) ?? 0) > 0} mobile />
-                <ActionButton action={duplicateQuiz} fields={{ id: quiz.id }} label="Duplicar" pendingLabel="Duplicando…" className={DUP_CLS_M} />
-                <ActionButton action={archiveQuiz} fields={{ id: quiz.id }} label="Archivar" pendingLabel="Archivando…" className={ARCH_CLS_M} confirm={`¿Archivar "${quiz.title}"?`} confirmTitle="¿Archivar ensayo?" confirmLabel="Archivar" />
+                {!isSharedWithMe(quiz) && (
+                  <>
+                    <ActionButton action={duplicateQuiz} fields={{ id: quiz.id }} label="Duplicar" pendingLabel="Duplicando…" className={DUP_CLS_M} />
+                    <ActionButton action={archiveQuiz} fields={{ id: quiz.id }} label="Archivar" pendingLabel="Archivando…" className={ARCH_CLS_M} confirm={`¿Archivar "${quiz.title}"?`} confirmTitle="¿Archivar ensayo?" confirmLabel="Archivar" />
+                  </>
+                )}
               </div>
             </article>
           )}

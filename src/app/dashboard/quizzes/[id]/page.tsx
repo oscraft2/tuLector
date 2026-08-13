@@ -20,6 +20,10 @@ import { ExportPanel, type ExportTemplateOption } from "@/components/dashboard/E
 import { fetchExportPresets } from "@/lib/export_presets";
 import { equivalencesForCourse } from "@/lib/course_level";
 import { achievementPct, paesEquivalence, simceEquivalence, paesTableForQuiz } from "@/lib/paes_scale";
+import { planHasFeature } from "@/lib/plan_gates";
+import { fetchTeacherOptions } from "@/lib/teacher_scope";
+import { fetchSharesForQuiz, fetchUserEmails, userLabel } from "@/lib/quiz_shares";
+import { ShareQuizPanel } from "@/components/dashboard/ShareQuizPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +73,7 @@ type QuizPaper = {
 
 export default async function QuizDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const { supabase, school, isAdmin } = await getDashboardContext();
+  const { supabase, user, school, isAdmin } = await getDashboardContext();
   const papersQuery = (select: string) =>
     supabase.from("papers").select(select).eq("quiz_id", id).order("scanned_at", { ascending: false });
   const PAPER_COLUMNS = "id,student_name,student_id,student_rut_norm,score,total,status,scanned_at,equivalent_score,grade,answers";
@@ -225,6 +229,32 @@ export default async function QuizDetailPage({ params }: PageProps) {
     ? "Puntaje proporcional al porcentaje de logro (100-400). La Agencia de Calidad no publica una tabla de conversión oficial."
     : undefined;
 
+  // ─── Compartir con el equipo (quiz_shares) ──────────────────────────────
+  // Un ensayo puede llegar aca por dos caminos: es mio (o soy admin) o me lo
+  // compartieron y lo acepte. En el segundo caso NO se ofrecen las acciones de
+  // dueño (editar, compartir de nuevo): la RLS las rechazaria igual, y un boton
+  // que revienta es peor que un boton ausente.
+  const isOwner = quiz.created_by === user.id;
+  const canManageQuiz = isOwner || isAdmin;
+  const canShare = canManageQuiz && planHasFeature(school.plan, "quiz_sharing");
+  const quizShares = canShare ? await fetchSharesForQuiz(supabase, quiz.id) : [];
+  const shareUserIds = quizShares.map((s) => s.shared_with);
+  // El correo del dueño hace falta para el aviso "Compartido por …" cuando el
+  // ensayo es ajeno; el de los invitados, para la lista del panel.
+  const shareEmails = await fetchUserEmails([
+    ...shareUserIds,
+    ...(!isOwner && quiz.created_by ? [String(quiz.created_by)] : []),
+  ]);
+  const teacherOptions = canShare ? await fetchTeacherOptions(supabase, school.id, user.id) : [];
+  const shareCandidates = teacherOptions
+    .filter((t) => !t.isSelf && t.userId !== quiz.created_by)
+    .map((t) => ({ userId: t.userId, label: t.label }));
+  const existingShares = quizShares.map((s) => ({
+    id: s.id,
+    label: userLabel(s.shared_with, shareEmails),
+    status: s.status,
+  }));
+
   const getVariantLabel = () => {
     if (!quiz.evaluation_variant) return "Personalizado";
     const labels: Record<string, string> = {
@@ -260,6 +290,14 @@ export default async function QuizDetailPage({ params }: PageProps) {
     <>
       <PageHeader title={quiz.title} description={`Evaluación: ${getVariantLabel()}. Detalle del ensayo, clave, lecturas sincronizadas y analisis por item.`} />
       <div className="space-y-6">
+        {/* Ensayo ajeno aceptado: se avisa de quien es y que se puede hacer.
+            Sin esto, un docente podria creer que la pauta es suya y editarla. */}
+        {!isOwner && (
+          <p className="rounded-md border border-[#c7d7ee] bg-[#eef4ff] px-4 py-3 text-sm text-[#07305f]">
+            🤝 Ensayo compartido por <strong>{userLabel(quiz.created_by as string | null, shareEmails)}</strong>.
+            Puedes imprimir su hoja y escanear: las hojas que leas quedan en este mismo ensayo. La clave la mantiene quien lo creó.
+          </p>
+        )}
         {/* Lote multi-curso: hojas corregidas con ESTA hoja pero de alumnos de
             otro curso del lote. Se ofrecen para mover al ensayo que les
             corresponde (ver src/lib/paper_reroute.ts). */}
@@ -286,7 +324,9 @@ export default async function QuizDetailPage({ params }: PageProps) {
               )}
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <Link href={`/dashboard/quizzes/${quiz.id}/edit`} className="rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold hover:bg-gray-50">Editar</Link>
+              {canManageQuiz && (
+                <Link href={`/dashboard/quizzes/${quiz.id}/edit`} className="rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold hover:bg-gray-50">Editar</Link>
+              )}
               {/* Un ensayo de bloque compacto se imprime desde /bloque (imagen
                   pegable), no desde /sheet (hoja completa). Se ofrece el otro
                   formato igual, en gris: el profesor puede querer verlo. */}
@@ -311,6 +351,10 @@ export default async function QuizDetailPage({ params }: PageProps) {
             <AnswerKeyGrid answerKey={String(quiz.answer_key ?? "")} numQuestions={Number(quiz.num_questions) || 0} openQuestions={openSet0} />
           </div>
         </section>
+
+        {canShare && (
+          <ShareQuizPanel quizId={quiz.id} candidates={shareCandidates} shares={existingShares} />
+        )}
 
         <section>
           <div className="mb-3 flex items-center gap-3">

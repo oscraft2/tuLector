@@ -106,6 +106,94 @@ const STATIC_TEMPLATES: Record<
       text: "Você foi convidado para colaborar na escola {{school_name}} no TuLector. Papel: {{role}}. Aceite o convite aqui: {{invite_link}}",
     },
   },
+  // Un docente comparte un ensayo con otro del mismo colegio (quiz_shares).
+  // Mismo formato que `invitation` a proposito: es la misma familia de correos
+  // ("alguien del equipo te esta dando acceso a algo") y el destinatario ya
+  // reconoce esa pieza.
+  quiz_shared: {
+    "es-CL": {
+      subject: "Te compartieron un ensayo en TuLector",
+      html: emailShell(
+        `
+          <p style="margin:0 0 26px; font-size:11px; font-weight:700; color:#8a8a83; text-transform:uppercase; letter-spacing:0.08em;">Ensayo compartido</p>
+          <p style="margin:0 0 18px; font-size:16px; line-height:1.7; color:#0a0a0a;"><strong>{{shared_by_email}}</strong> te compartió el ensayo <strong>{{quiz_title}}</strong> en <strong>{{school_name}}</strong>.</p>
+          <p style="margin:0 0 32px; font-size:16px; line-height:1.7; color:#0a0a0a;">Al aceptar podrás ver el ensayo, imprimir su hoja y escanear: las hojas que leas quedan en el <strong>mismo ensayo</strong>, junto a las de tus colegas.</p>
+          <a href="{{accept_link}}" style="display:inline-block; background-color:#0a0a0a; color:#ffffff; padding:14px 30px; text-decoration:none; font-weight:600; font-size:14px;">Ver y aceptar</a>
+          <p style="margin:36px 0 0; font-size:12px; line-height:1.6; color:#8a8a83;">¿El botón no funciona? Copia este enlace:<br><a href="{{accept_link}}" style="color:#0a0a0a; word-break:break-all;">{{accept_link}}</a></p>
+        `,
+        "TuLector — Corrección de pruebas y ensayos"
+      ),
+      text: "{{shared_by_email}} te compartió el ensayo {{quiz_title}} en {{school_name}}. Acepta para verlo y escanear sus hojas: {{accept_link}}",
+    },
+    en: {
+      subject: "A quiz was shared with you on TuLector",
+      html: emailShell(
+        `
+          <p style="margin:0 0 26px; font-size:11px; font-weight:700; color:#8a8a83; text-transform:uppercase; letter-spacing:0.08em;">Shared quiz</p>
+          <p style="margin:0 0 18px; font-size:16px; line-height:1.7; color:#0a0a0a;"><strong>{{shared_by_email}}</strong> shared the quiz <strong>{{quiz_title}}</strong> with you at <strong>{{school_name}}</strong>.</p>
+          <p style="margin:0 0 32px; font-size:16px; line-height:1.7; color:#0a0a0a;">Once you accept, you can view it, print its answer sheet and scan: the sheets you read land in the <strong>same quiz</strong>, next to your colleagues'.</p>
+          <a href="{{accept_link}}" style="display:inline-block; background-color:#0a0a0a; color:#ffffff; padding:14px 30px; text-decoration:none; font-weight:600; font-size:14px;">View and accept</a>
+          <p style="margin:36px 0 0; font-size:12px; line-height:1.6; color:#8a8a83;">If the button doesn't work, copy this link:<br><a href="{{accept_link}}" style="color:#0a0a0a; word-break:break-all;">{{accept_link}}</a></p>
+        `,
+        "TuLector — Exam and answer-sheet grading"
+      ),
+      text: "{{shared_by_email}} shared the quiz {{quiz_title}} with you at {{school_name}}. Accept to view it and scan its sheets: {{accept_link}}",
+    },
+    "pt-BR": {
+      subject: "Compartilharam um simulado com você no TuLector",
+      html: emailShell(
+        `
+          <p style="margin:0 0 26px; font-size:11px; font-weight:700; color:#8a8a83; text-transform:uppercase; letter-spacing:0.08em;">Simulado compartilhado</p>
+          <p style="margin:0 0 18px; font-size:16px; line-height:1.7; color:#0a0a0a;"><strong>{{shared_by_email}}</strong> compartilhou o simulado <strong>{{quiz_title}}</strong> com você na escola <strong>{{school_name}}</strong>.</p>
+          <p style="margin:0 0 32px; font-size:16px; line-height:1.7; color:#0a0a0a;">Ao aceitar, você poderá vê-lo, imprimir sua folha e escanear: as folhas que você ler ficam no <strong>mesmo simulado</strong>, junto com as dos colegas.</p>
+          <a href="{{accept_link}}" style="display:inline-block; background-color:#0a0a0a; color:#ffffff; padding:14px 30px; text-decoration:none; font-weight:600; font-size:14px;">Ver e aceitar</a>
+          <p style="margin:36px 0 0; font-size:12px; line-height:1.6; color:#8a8a83;">Se o botão não funcionar, copie este link:<br><a href="{{accept_link}}" style="color:#0a0a0a; word-break:break-all;">{{accept_link}}</a></p>
+        `,
+        "TuLector — Correção de provas e simulados"
+      ),
+      text: "{{shared_by_email}} compartilhou o simulado {{quiz_title}} com você na escola {{school_name}}. Aceite para vê-lo e escanear suas folhas: {{accept_link}}",
+    },
+  },
+  // Aviso de vuelta al dueño: sin esto, quien comparte no se entera de que ya
+  // puede contar con ese colega para escanear.
+  quiz_share_accepted: {
+    "es-CL": {
+      subject: "Aceptaron tu ensayo compartido en TuLector",
+      html: emailShell(
+        `
+          <p style="margin:0 0 26px; font-size:11px; font-weight:700; color:#8a8a83; text-transform:uppercase; letter-spacing:0.08em;">Ensayo compartido</p>
+          <p style="margin:0 0 18px; font-size:16px; line-height:1.7; color:#0a0a0a;"><strong>{{accepted_by_email}}</strong> aceptó el ensayo <strong>{{quiz_title}}</strong>. Ya puede escanear hojas y sus resultados aparecerán junto a los tuyos.</p>
+          <a href="{{quiz_link}}" style="display:inline-block; background-color:#0a0a0a; color:#ffffff; padding:14px 30px; text-decoration:none; font-weight:600; font-size:14px;">Ver el ensayo</a>
+        `,
+        "TuLector — Corrección de pruebas y ensayos"
+      ),
+      text: "{{accepted_by_email}} aceptó el ensayo {{quiz_title}}. Ya puede escanear sus hojas: {{quiz_link}}",
+    },
+    en: {
+      subject: "Your shared quiz was accepted on TuLector",
+      html: emailShell(
+        `
+          <p style="margin:0 0 26px; font-size:11px; font-weight:700; color:#8a8a83; text-transform:uppercase; letter-spacing:0.08em;">Shared quiz</p>
+          <p style="margin:0 0 18px; font-size:16px; line-height:1.7; color:#0a0a0a;"><strong>{{accepted_by_email}}</strong> accepted the quiz <strong>{{quiz_title}}</strong>. They can now scan sheets and their results will show up next to yours.</p>
+          <a href="{{quiz_link}}" style="display:inline-block; background-color:#0a0a0a; color:#ffffff; padding:14px 30px; text-decoration:none; font-weight:600; font-size:14px;">Open the quiz</a>
+        `,
+        "TuLector — Exam and answer-sheet grading"
+      ),
+      text: "{{accepted_by_email}} accepted the quiz {{quiz_title}}. They can now scan its sheets: {{quiz_link}}",
+    },
+    "pt-BR": {
+      subject: "Aceitaram seu simulado compartilhado no TuLector",
+      html: emailShell(
+        `
+          <p style="margin:0 0 26px; font-size:11px; font-weight:700; color:#8a8a83; text-transform:uppercase; letter-spacing:0.08em;">Simulado compartilhado</p>
+          <p style="margin:0 0 18px; font-size:16px; line-height:1.7; color:#0a0a0a;"><strong>{{accepted_by_email}}</strong> aceitou o simulado <strong>{{quiz_title}}</strong>. Já pode escanear folhas e os resultados aparecerão junto aos seus.</p>
+          <a href="{{quiz_link}}" style="display:inline-block; background-color:#0a0a0a; color:#ffffff; padding:14px 30px; text-decoration:none; font-weight:600; font-size:14px;">Abrir o simulado</a>
+        `,
+        "TuLector — Correção de provas e simulados"
+      ),
+      text: "{{accepted_by_email}} aceitou o simulado {{quiz_title}}. Já pode escanear suas folhas: {{quiz_link}}",
+    },
+  },
   quota_alert_90: {
     "es-CL": {
       subject: "Alerta de Cuota OMR: 90% consumido - TuLector",

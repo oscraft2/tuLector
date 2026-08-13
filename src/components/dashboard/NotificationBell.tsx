@@ -57,6 +57,7 @@ export function NotificationBell() {
     if (type === "quota") return "⚡";
     if (type === "scan") return "📄";
     if (type === "team") return "👥";
+    if (type === "share") return "🤝";
     return "🔔";
   };
 

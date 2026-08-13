@@ -10,7 +10,7 @@ type PageProps = { params: Promise<{ id: string }> };
 
 export default async function QuizEditPage({ params }: PageProps) {
   const { id } = await params;
-  const { supabase, school, isAdmin } = await getDashboardContext();
+  const { supabase, user, school, isAdmin } = await getDashboardContext();
 
   const [{ data: quiz }, { data: courses }, { count: papersCount }] = await Promise.all([
     supabase.from("quizzes").select("*").eq("id", id).eq("school_id", school.id).single(),
@@ -18,6 +18,23 @@ export default async function QuizEditPage({ params }: PageProps) {
     supabase.from("papers").select("id", { count: "exact", head: true }).eq("quiz_id", id),
   ]);
   if (!quiz) notFound();
+
+  // Un ensayo COMPARTIDO conmigo se ve y se escanea, pero su clave la mantiene
+  // quien lo creo (la policy shared_quizzes_read es solo lectura: guardar aca
+  // fallaria en la base). Se corta antes de pintar el formulario.
+  if (quiz.created_by && quiz.created_by !== user.id && !isAdmin) {
+    return (
+      <>
+        <PageHeader
+          title={`${quiz.title}`}
+          description="Este ensayo te lo compartió otro docente: puedes verlo y escanear sus hojas, pero su clave y su formato los mantiene quien lo creó."
+        />
+        <Link href={`/dashboard/quizzes/${id}`} className="inline-block rounded-md border border-[#cfd6df] px-4 py-2 text-sm font-semibold text-[#07305f] hover:bg-[#eef4ff]">
+          Volver al ensayo
+        </Link>
+      </>
+    );
+  }
 
   return (
     <>

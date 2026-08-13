@@ -3,6 +3,7 @@ import { getDashboardContext } from "@/lib/supabase_server";
 import { SignOutButton } from "@/components/native/SignOutButton";
 import { BillingHandoffLink } from "@/components/native/BillingHandoffLink";
 import { APP_VERSION } from "@/lib/version";
+import { countPendingShares } from "@/lib/quiz_shares";
 
 /**
  * Menú de la app (Capacitor). Server component: sin flash de "Cargando…" y
@@ -14,11 +15,17 @@ import { APP_VERSION } from "@/lib/version";
 export default async function AppMenuPage() {
   const { user, school, supabase } = await getDashboardContext();
 
-  const { count: pendingReview } = await supabase
-    .from("papers")
-    .select("id", { count: "exact", head: true })
-    .eq("school_id", school.id)
-    .eq("status", "manual_review");
+  const [{ count: pendingReview }, pendingShares] = await Promise.all([
+    supabase
+      .from("papers")
+      .select("id", { count: "exact", head: true })
+      .eq("school_id", school.id)
+      .eq("status", "manual_review"),
+    // Ensayos que un colega me compartio y aun no acepto. Hasta que responda,
+    // la RLS no me los muestra en ninguna parte — por eso se avisa en la
+    // portada y no solo en /app/compartidos.
+    countPendingShares(supabase, school.id, user.id),
+  ]);
 
   return (
     <main className="flex min-h-dvh flex-col bg-[#f5f6f8] text-[#0b1220]">
@@ -40,6 +47,22 @@ export default async function AppMenuPage() {
       </header>
 
       <section className="px-5 py-6">
+        {pendingShares > 0 && (
+          <Link
+            href="/app/compartidos"
+            className="mb-5 flex items-center gap-3 rounded-2xl border border-[#c7d7ee] bg-[#eef4ff] p-4 active:scale-[0.98]"
+          >
+            <span className="text-xl" aria-hidden="true">🤝</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-[#07305f]">
+                {pendingShares} ensayo{pendingShares === 1 ? "" : "s"} compartido{pendingShares === 1 ? "" : "s"} contigo
+              </p>
+              <p className="mt-0.5 text-xs text-[#07305f]/80">Acepta para verlos y escanear sus hojas.</p>
+            </div>
+            <svg className="h-5 w-5 shrink-0 text-[#07305f]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+          </Link>
+        )}
+
         <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7280]">Herramientas</p>
         <div className="grid gap-4">
           <Link

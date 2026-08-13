@@ -9,6 +9,7 @@ import { checkAndTriggerQuotaAlerts } from "@/lib/quota_alerts";
 import { levelOf } from "@/lib/item_analysis";
 import { QuizStats } from "@/components/dashboard/QuizStats";
 import { applyTeacherScope, fetchTeacherOptions, parseTeacherScope, quizIdsInScope, resolveScope } from "@/lib/teacher_scope";
+import { sharedQuizIdsFor } from "@/lib/quiz_shares";
 import { TeacherScopeFilter } from "@/components/dashboard/TeacherScopeFilter";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +65,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const requested = parseTeacherScope(sp, { userId: user.id, isAdmin, plan: school.plan });
   const teachers = requested.canSwitch ? await fetchTeacherOptions(supabase, school.id, user.id) : [];
   const scope = resolveScope(requested, teachers.length);
-  const scopedQuizIds = await quizIdsInScope(supabase, school.id, scope);
+  // Los ensayos que otros me compartieron y acepte cuentan como "mios" para el
+  // foco (quiz_shares): son ensayos en los que estoy trabajando.
+  const sharedQuizIds = await sharedQuizIdsFor(supabase, school.id, user.id);
+  const scopedQuizIds = await quizIdsInScope(supabase, school.id, scope, sharedQuizIds);
   const scopeDetail = scope.mode === "all" ? "hojas sincronizadas" : "hojas de estos ensayos";
   // Sin ensayos propios: `.in("quiz_id", [])` es invalido en PostgREST, se usa
   // un id imposible para que las consultas devuelvan vacio sin romperse.
@@ -81,10 +85,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   allSchoolPapersQuery = scopePapers(allSchoolPapersQuery);
 
   const [{ count: quizzesCount }, { count: studentsCount }, { data: papers }, { data: quizzes }, simceResult, allSchoolPapersResult] = await Promise.all([
-    applyTeacherScope(supabase.from("quizzes").select("id", { count: "exact", head: true }).is("archived_at", null), scope),
+    applyTeacherScope(supabase.from("quizzes").select("id", { count: "exact", head: true }).is("archived_at", null), scope, sharedQuizIds),
     supabase.from("students").select("id", { count: "exact", head: true }),
     scopePapers(supabase.from("papers").select("id, score, total, status, scanned_at, quiz_id").order("scanned_at", { ascending: false }).limit(5)),
-    applyTeacherScope(supabase.from("quizzes").select("id, title, subject, grade, created_at").is("archived_at", null).order("created_at", { ascending: false }).limit(5), scope),
+    applyTeacherScope(supabase.from("quizzes").select("id, title, subject, grade, created_at").is("archived_at", null).order("created_at", { ascending: false }).limit(5), scope, sharedQuizIds),
     school.rbd
       ? supabase.from("simce_resultados").select("agno, grado, asignatura, puntaje_promedio, nivel_insuficiente_pct, nivel_elemental_pct, nivel_adecuado_pct, alumnos_evaluados").eq("rbd", school.rbd).order("agno", { ascending: false })
       : Promise.resolve({ data: [] }),
