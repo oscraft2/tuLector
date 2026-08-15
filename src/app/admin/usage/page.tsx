@@ -3,8 +3,28 @@ import { requirePlatformContext } from "@/lib/supabaseAdmin";
 import { AdminShell } from "@/components/dashboard/AdminShell";
 import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 import { DataTable } from "@/components/dashboard/DataTable";
+import { SCAN_CODES, SCAN_MESSAGES } from "@/tulector/scanner_config";
+import { APP_VERSION } from "@/lib/version";
 
 export const dynamic = "force-dynamic";
+
+// Nombre legible por código de fallo (SCAN_CODES); usado cuando el log no trae
+// `result.reason` (BLANK_SHEET/OUT_OF_FOCUS/CURVE_FAIL rara vez lo traen, solo
+// WRONG_FORMAT lo hace hoy).
+const FAILURE_LABELS: Record<number, string> = {
+  [SCAN_CODES.BLANK_SHEET]: "Hoja en blanco",
+  [SCAN_CODES.OUT_OF_FOCUS]: "Sin respuestas legibles",
+  [SCAN_CODES.CURVE_FAIL]: "Respuestas repetidas (papel curvado)",
+  [SCAN_CODES.WRONG_FORMAT]: "Formato de hoja incorrecto",
+  [SCAN_CODES.BRIGHT]: SCAN_MESSAGES[SCAN_CODES.BRIGHT] ?? "Brillo/reflejo",
+};
+
+function failureLabel(code: number | undefined, reason: string | undefined): string {
+  if (reason) return reason;
+  if (code != null && FAILURE_LABELS[code]) return FAILURE_LABELS[code];
+  if (code != null && SCAN_MESSAGES[code]) return SCAN_MESSAGES[code];
+  return "Motivo no registrado";
+}
 
 export default async function UsageAdminPage() {
   const { admin } = await requirePlatformContext(["platform_admin", "support"]);
@@ -13,10 +33,25 @@ export default async function UsageAdminPage() {
   const [
     { count: scansCount },
     { count: failuresCount },
+    { data: validRutLogs },
+    { data: failureLogs },
     { data: recentLogs },
   ] = await Promise.all([
     admin.from("scan_logs").select("id", { count: "exact", head: true }),
     admin.from("scan_logs").select("id", { count: "exact", head: true }).eq("log->>type", "scan_fail"),
+    // Universo para "precisión estimada": escaneos válidos que trajeron un RUT
+    // (proxy real y medible hoy — cuántos de esos el DV verifica). No es lo
+    // mismo que acertar las respuestas (eso requiere el dataset etiquetado de
+    // /admin/dataset), así que se rotula explícitamente como identidad.
+    admin
+      .from("scan_logs")
+      .select("log")
+      .eq("log->>type", "scan")
+      .not("log->>rut", "is", null)
+      .neq("log->>rut", "")
+      .limit(2000),
+    // Para el desglose real de causas de fallo.
+    admin.from("scan_logs").select("log").eq("log->>type", "scan_fail").limit(2000),
     admin
       .from("scan_logs")
       .select("id, user_agent, log, created_at")
@@ -28,6 +63,27 @@ export default async function UsageAdminPage() {
   const totalFailures = failuresCount ?? 0;
   const failureRate = totalScans > 0 ? ((totalFailures / totalScans) * 100).toFixed(1) : "0.0";
   const successRate = totalScans > 0 ? (100 - parseFloat(failureRate)).toFixed(1) : "100.0";
+
+  const rutRows = (validRutLogs ?? []) as { log: { dvOk?: boolean } }[];
+  const dvOkRate = rutRows.length > 0
+    ? ((rutRows.filter((r) => r.log?.dvOk === true).length / rutRows.length) * 100).toFixed(1)
+    : "—";
+
+  const failureCounts = new Map<string, number>();
+  for (const row of (failureLogs ?? []) as { log: { result?: { code?: number; reason?: string } } }[]) {
+    const label = failureLabel(row.log?.result?.code, row.log?.result?.reason);
+    failureCounts.set(label, (failureCounts.get(label) ?? 0) + 1);
+  }
+  const topFailures = [...failureCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([label, count]) => ({
+      label,
+      count,
+      pct: totalScans > 0 ? ((count / totalScans) * 100).toFixed(1) : "0.0",
+    }));
+
+  const rejectionOk = parseFloat(failureRate) < 10;
 
   // Helper to extract clean device from User Agent
   const getDeviceFromUA = (ua: string | null) => {
@@ -53,7 +109,7 @@ export default async function UsageAdminPage() {
           <KPI label="Escaneos Totales" value={totalScans} detail="Todos los intentos" />
           <KPI label="Lecturas Fallidas" value={totalFailures} detail="Errores de alineación/foco" />
           <KPI label="Tasa de Éxito OMR" value={`${successRate}%`} detail="Escaneos válidos (Graded)" />
-          <KPI label="Precisión Estimada" value="98.4%" detail="Basado en ground truth v2" />
+          <KPI label="RUT con DV Verificado" value={typeof dvOkRate === "string" && dvOkRate !== "—" ? `${dvOkRate}%` : "—"} detail="Identidad, no precisión de respuestas" />
         </KPIGrid>
 
         {/* Quality Alerts */}
@@ -64,34 +120,29 @@ export default async function UsageAdminPage() {
               El motor rechaza automáticamente capturas con iluminación deficiente, desenfoque (error 1001) o distorsión severa de perspectiva (error 10). La tasa de rechazo recomendada en producción debe ser inferior al 10%.
             </p>
             <div className="mt-4 flex items-center gap-4">
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-green-700">
-                <span className="h-2 w-2 rounded-full bg-green-600"></span> Estabilidad: Óptima
+              <span className={`flex items-center gap-1.5 text-sm font-semibold ${rejectionOk ? "text-green-700" : "text-red-700"}`}>
+                <span className={`h-2 w-2 rounded-full ${rejectionOk ? "bg-green-600" : "bg-red-600"}`}></span>
+                Estabilidad: {rejectionOk ? "Óptima" : "Revisar"} ({failureRate}% rechazo)
               </span>
               <span className="flex items-center gap-1.5 text-sm font-semibold text-amber-700">
-                <span className="h-2 w-2 rounded-full bg-amber-500"></span> Calibración: v2.4 (baseline)
+                <span className="h-2 w-2 rounded-full bg-amber-500"></span> Build: {APP_VERSION}
               </span>
             </div>
           </div>
           <div className="rounded-md border border-[#e5e7eb] bg-white p-5">
             <h2 className="text-sm font-semibold text-[#07305f] uppercase tracking-wider">Top Fallos Reportados</h2>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-              <div className="bg-[#f8fafc] p-2 rounded">
-                <p className="text-[#6b7280]">CURVE_FAIL (10)</p>
-                <p className="text-sm font-semibold text-[#111827] mt-0.5">3.2% de total</p>
+            {topFailures.length === 0 ? (
+              <p className="mt-3 text-xs text-[#6b7280]">Sin fallas registradas todavía.</p>
+            ) : (
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                {topFailures.map((f) => (
+                  <div key={f.label} className="bg-[#f8fafc] p-2 rounded">
+                    <p className="text-[#6b7280]">{f.label}</p>
+                    <p className="text-sm font-semibold text-[#111827] mt-0.5">{f.count} · {f.pct}% de total</p>
+                  </div>
+                ))}
               </div>
-              <div className="bg-[#f8fafc] p-2 rounded">
-                <p className="text-[#6b7280]">WRONG_FORMAT (30)</p>
-                <p className="text-sm font-semibold text-[#111827] mt-0.5">1.8% de total</p>
-              </div>
-              <div className="bg-[#f8fafc] p-2 rounded">
-                <p className="text-[#6b7280]">OUT_OF_FOCUS (1001)</p>
-                <p className="text-sm font-semibold text-[#111827] mt-0.5">0.9% de total</p>
-              </div>
-              <div className="bg-[#f8fafc] p-2 rounded">
-                <p className="text-[#6b7280]">BRIGHT_FAIL (5)</p>
-                <p className="text-sm font-semibold text-[#111827] mt-0.5">0.2% de total</p>
-              </div>
-            </div>
+            )}
           </div>
         </section>
 
@@ -108,13 +159,13 @@ export default async function UsageAdminPage() {
               
               const isSuccess = payload.type === "scan";
               const code = payload.result?.code;
-              const reason = payload.result?.reason;
+              const reason = failureLabel(code, payload.result?.reason);
 
               let statusLabel = "VÁLIDO (Graded)";
               let statusClass = "bg-green-100 text-green-800 border-green-200";
 
               if (!isSuccess) {
-                statusLabel = `FALLO (Cod: ${code || "N/A"})`;
+                statusLabel = code != null ? `FALLO (Cod: ${code})` : "FALLO";
                 statusClass = "bg-red-100 text-red-800 border-red-200";
               }
 
