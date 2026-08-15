@@ -19,7 +19,6 @@ type Props = {
   children: ReactNode;
   userSchools?: UserSchool[];
   activeSchoolId?: string;
-  notifCount?: number;
 };
 
 export function DashboardLayoutShell({

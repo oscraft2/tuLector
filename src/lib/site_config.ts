@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { isMissingTableError } from "@/lib/supabase_errors";
 
@@ -55,8 +56,19 @@ async function readSiteConfig(key: string): Promise<{ enabled: boolean; payload:
   }
 }
 
+// This config is edited from the admin panel, but it does not need a database
+// round-trip on every public page render. A short TTL keeps changes responsive
+// while removing the repeated Supabase request from marketing navigation.
+function getCachedSiteConfig(key: string) {
+  return unstable_cache(
+    () => readSiteConfig(key),
+    ["site-config", key],
+    { revalidate: 60 },
+  )();
+}
+
 export async function getWhatsappButtonConfig(): Promise<WhatsappButtonConfig> {
-  const row = await readSiteConfig("whatsapp_button");
+  const row = await getCachedSiteConfig("whatsapp_button");
   if (!row) return DEFAULT_WHATSAPP;
   const payload = row.payload as Partial<WhatsappButtonConfig>;
   return {
