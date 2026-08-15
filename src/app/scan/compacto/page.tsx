@@ -3,7 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import * as C from "@/tulector/compact_layout";
-import { detectCompactBlock, warpCompactBlock, readCompactCode, gradeCompactBlock, scoreCompact } from "@/tulector/compact_block";
+import { detectCompactBlock } from "@/tulector/compact_block";
+import {
+  readCompactFrame, checkAgainstKey, tallyChecked, sameCompactGrid, describeCompactCfg,
+  type CheckedAnswer,
+} from "@/lib/compact_scan";
+import { CompactResultView } from "@/components/CompactResultView";
+import { compactModeIssue } from "@/lib/sheet_mode";
+import { parseOpenQuestions } from "@/lib/quiz_constraints";
 
 /**
  * Lector del BLOQUE OMR COMPACTO (Fase 3 de
@@ -33,10 +40,10 @@ type ActiveQuiz = {
 };
 
 type Outcome = {
-  answers: { q: number; a: string; s?: number[] }[];
+  checked: CheckedAnswer[];
   correct: number;
   totalKey: number;
-  warning: string | null;
+  warnings: string[];
   saved: null | { status: string; score: number; total: number; grade: number | null; studentName: string | null };
 };
 
@@ -55,6 +62,9 @@ export default function ScanCompactoPage() {
   const [error, setError] = useState("");
   const [detected, setDetected] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  // El ensayo activo no cabe en un bloque compacto: se avisa y no se lee, en vez
+  // de leer una grilla que no es la que esta impresa.
+  const [blocked, setBlocked] = useState(false);
 
   // Ensayo activo (cookie tulector_active_quiz, la pone "Abrir lector"). Sin
   // ensayo se puede leer igual, pero solo en pantalla: sin quizId no hay donde
@@ -65,8 +75,18 @@ export default function ScanCompactoPage() {
         const res = await fetch("/api/scan/active-quiz", { credentials: "include", cache: "no-store" });
         if (res.ok) {
           const q = await res.json();
-          const nq = Math.min(C.COMPACT_MAX_QUESTIONS, Math.max(1, Number(q.num_questions) || 20));
-          const no = Math.min(5, Math.max(2, Number(q.options_per_question) || 5));
+          // Valores REALES del ensayo: recortarlos en silencio (como se hacia
+          // antes con Math.min) hacia que un ensayo de 35 preguntas se leyera
+          // como uno de 30, con la clave corrida y sin ningun aviso.
+          const nq = Math.max(1, Number(q.num_questions) || 20);
+          const no = Math.max(2, Number(q.options_per_question) || 5);
+          const openCount = parseOpenQuestions(String(q.open_questions ?? ""), nq).length;
+          const issue = compactModeIssue(nq, no, openCount);
+          if (issue) {
+            setError(`${issue} No se puede leer este ensayo como bloque compacto.`);
+            setBlocked(true);
+            return;
+          }
           setQuiz({
             id: String(q.id),
             title: String(q.title ?? ""),
@@ -151,31 +171,33 @@ export default function ScanCompactoPage() {
     setError("");
     setStatus("processing");
     try {
-      const detection = detectCompactBlock(frame);
-      if (!detection) {
-        setError("No se encontró un bloque de TuLector en la foto. Acerca la cámara y cuida que las 4 marcas de las esquinas se vean completas.");
-        return;
-      }
+      // El pipeline lee el codigo ANTES de calificar: si el bloque declara su
+      // formato (codigo v3), esa grilla manda sobre la del ensayo activo.
+      const read = readCompactFrame(frame, cfg);
+      if (!read.ok) { setError(read.reason); return; }
+      const { results, warp, code: codeRead, selfDescribed } = read;
 
-      const warp = warpCompactBlock(frame, detection.corners);
-      const report = gradeCompactBlock(warp, cfg);
-      if (!report.valid) {
-        setError(`No se pudo leer el bloque: ${report.reason ?? "lectura inválida"}. Repite la foto con mejor luz y sin sombras.`);
-        return;
-      }
-
+      const warnings: string[] = [];
       // Codigo del bloque: AVISO SUAVE, nunca bloquea (mismo criterio que la
       // hoja completa en /scan) -- una lectura buena con codigo ilegible sigue
       // siendo una lectura buena.
-      const codeRead = readCompactCode(warp);
-      let warning: string | null = null;
-      if (quiz?.sheetCode != null && codeRead && codeRead.sheetId !== quiz.sheetCode) {
-        warning = `El bloque dice ser del ensayo #${codeRead.sheetId} y el ensayo activo es el #${quiz.sheetCode}. Revisa que sea la prueba correcta.`;
+      if (quiz?.sheetCode != null && codeRead && codeRead.sheetId > 0 && codeRead.sheetId !== quiz.sheetCode) {
+        warnings.push(`El bloque dice ser del ensayo #${codeRead.sheetId} y el ensayo activo es el #${quiz.sheetCode}. Revisa que sea la prueba correcta.`);
+      }
+      // La grilla impresa NO es la del ensayo: eso ya no es un aviso suave, el
+      // puntaje saldria de leer burbujas que no estan donde se cree.
+      if (selfDescribed && !sameCompactGrid(read.cfg, cfg)) {
+        setError(`El bloque impreso es de ${describeCompactCfg(read.cfg)} y el ensayo activo es de ${describeCompactCfg(cfg)}. Genera el bloque de este ensayo o cambia de ensayo activo.`);
+        return;
+      }
+      if (!selfDescribed) {
+        warnings.push("El bloque no declara su formato (versión antigua): se leyó con la grilla del ensayo activo. Si los resultados no calzan, vuelve a generar el bloque.");
       }
 
-      const answers = report.results.map((r) => ({ q: r.question, a: r.answer, s: r.scores }));
+      const answers = results.map((r) => ({ q: r.question, a: r.answer, s: r.scores }));
       const key = quiz ? quiz.answerKey.split("") : [];
-      const { correct, total: totalKey } = scoreCompact(report.results, key);
+      const checked = checkAgainstKey(results, key);
+      const { correct, total: totalKey } = tallyChecked(checked);
 
       let saved: Outcome["saved"] = null;
       if (quiz) {
@@ -196,7 +218,10 @@ export default function ScanCompactoPage() {
             answers,
             source: "compact",
             photo: warpUrl,
-            ...(codeRead ? { code: codeRead } : {}),
+            // sheetId 0 = bloque libre (no pertenece a ningun ensayo): mandarlo
+            // haria que el backend lo compare contra el sheet_code del ensayo y
+            // mande la hoja a revision manual por un desajuste inventado.
+            ...(codeRead && codeRead.sheetId > 0 ? { code: codeRead } : {}),
           }),
         });
         const payload = await res.json().catch(() => ({}));
@@ -210,7 +235,7 @@ export default function ScanCompactoPage() {
         };
       }
 
-      setOutcome({ answers, correct, totalKey, warning, saved });
+      setOutcome({ checked, correct, totalKey, warnings, saved });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al procesar el bloque.");
     } finally {
@@ -253,42 +278,31 @@ export default function ScanCompactoPage() {
   if (outcome) {
     const s = outcome.saved;
     return (
-      <div className="min-h-screen bg-black text-white flex flex-col">
-        <div className="p-3 flex items-center justify-between bg-zinc-900">
-          <span className="text-sm font-semibold">Resultado del bloque</span>
-          <Link href="/dashboard" className="text-xs text-zinc-400 underline">Ir al panel</Link>
-        </div>
-        <div className="flex-1 p-4 space-y-3 overflow-y-auto">
-          {outcome.warning && <p className="rounded-md border border-amber-700 bg-amber-950/40 p-3 text-sm text-amber-200">⚠ {outcome.warning}</p>}
-          <div className="rounded-md border border-zinc-700 p-4">
-            <p className="text-3xl font-bold">
-              {quiz ? `${s ? s.score : outcome.correct} / ${s ? s.total : outcome.totalKey}` : `${outcome.answers.filter((a) => a.a !== "-" && a.a !== "?").length} respuestas leídas`}
-            </p>
-            {s && (
-              <p className="mt-1 text-sm text-zinc-300">
-                {s.grade != null && <>Nota <strong>{s.grade.toFixed(1)}</strong> · </>}
-                {s.studentName ?? (studentId.trim() ? "Sin identificar" : "Sin identificación")}
-                {s.status === "manual_review" && <span className="text-amber-300"> · queda en revisión manual</span>}
-              </p>
-            )}
-            {!quiz && <p className="mt-1 text-sm text-amber-300">Sin ensayo activo: la lectura no se guardó. Abre el lector desde el ensayo para que se registre la nota.</p>}
-          </div>
-
-          <div className="grid grid-cols-5 gap-1.5 text-center text-xs">
-            {outcome.answers.map((a) => (
-              <div key={a.q} className="rounded-md border border-zinc-700 py-1.5">
-                <span className="block text-zinc-500">{a.q}</span>
-                <span className="block text-base font-bold">{a.a}</span>
-              </div>
-            ))}
-          </div>
-
-          <button onClick={() => { setOutcome(null); setStudentId(""); }}
-            className="w-full rounded-md bg-white text-black font-semibold py-3">
-            Escanear otro
-          </button>
-        </div>
-      </div>
+      <CompactResultView
+        checked={outcome.checked}
+        // Con ensayo manda lo que quedo GUARDADO (el backend puede haber
+        // re-enrutado la hoja a un ensayo hermano y recalculado el puntaje).
+        correct={s ? s.score : outcome.correct}
+        total={s ? s.total : outcome.totalKey}
+        title={`Resultado del bloque${quiz?.title ? ` · ${quiz.title}` : ""}`}
+        subtitle={
+          s ? (
+            <span>
+              {s.grade != null && <>Nota <strong className="text-white">{s.grade.toFixed(1)}</strong> · </>}
+              {s.studentName ?? (studentId.trim() ? "Sin identificar" : "Sin identificación")}
+              {s.status === "manual_review" && <span className="text-amber-300"> · queda en revisión manual</span>}
+            </span>
+          ) : (
+            <span className="text-amber-300">
+              Sin ensayo activo: la lectura no se guardó. Abre el lector desde el ensayo para que se registre la nota.
+            </span>
+          )
+        }
+        warnings={outcome.warnings}
+        nextLabel="Escanear siguiente"
+        onNext={() => { setOutcome(null); setStudentId(""); }}
+        secondary={{ label: "Ir al panel", onClick: () => { window.location.href = "/dashboard"; } }}
+      />
     );
   }
 
@@ -326,19 +340,23 @@ export default function ScanCompactoPage() {
           />
         </label>
         <p className="text-[11px] text-zinc-500">
-          {cfg.numQuestions} preguntas · {cfg.numOptions} opciones{quiz ? "" : " (config del último bloque generado)"}
+          {describeCompactCfg(cfg)}{quiz ? "" : " (config del último bloque generado)"} — si el bloque trae su formato impreso, manda el papel.
         </p>
         <button
           onClick={capture}
-          disabled={status === "processing"}
-          className="w-full rounded-md bg-white text-black font-semibold py-3 disabled:opacity-50"
+          disabled={status === "processing" || blocked}
+          className="w-full rounded-xl bg-white text-black text-lg font-bold py-4 disabled:opacity-50"
         >
           {status === "processing" ? "Procesando…" : "Capturar"}
         </button>
-        <label className="block text-center text-xs text-zinc-400 underline cursor-pointer">
+        <label className={`block text-center text-xs underline cursor-pointer ${blocked ? "text-zinc-600 pointer-events-none" : "text-zinc-400"}`}>
           o sube una foto del bloque
-          <input type="file" accept="image/*" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
+          <input type="file" accept="image/*" className="hidden" disabled={blocked} onChange={(e) => onFile(e.target.files?.[0])} />
         </label>
+        <p className="text-center text-[11px] text-zinc-500">
+          ¿Corregir sin alumnos, solo en pantalla?{" "}
+          <Link href="/scan/rapido" className="underline">Corrección rápida</Link>
+        </p>
       </div>
     </div>
   );

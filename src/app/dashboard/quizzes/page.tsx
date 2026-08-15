@@ -166,6 +166,16 @@ export default async function QuizzesPage({ searchParams }: { searchParams?: Pro
         </p>
       )}
 
+      {/* Camino corto para quien corrige una prueba propia (con un bloque
+          compacto pegado) y no necesita ensayo, alumnos ni notas guardadas. */}
+      <p className="mb-5 rounded-md border border-[#e6e8eb] bg-white px-4 py-3 text-sm text-[#5b6472]">
+        ¿Solo quieres corregir una prueba tuya sin crear el ensayo?{" "}
+        <Link href="/bloque" className="font-semibold text-[#07305f] hover:underline">Genera un bloque compacto</Link>,
+        pégalo en tu documento y usa la{" "}
+        <Link href="/scan/rapido" className="font-semibold text-[#07305f] hover:underline">corrección rápida</Link>:
+        ingresas la pauta una vez y escaneas hoja tras hoja, sin identificar alumnos.
+      </p>
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,450px)_minmax(0,1fr)] xl:gap-6">
 
         {/* Left Column: Create Quiz Form (cliente: toast + estado "Creando…") */}

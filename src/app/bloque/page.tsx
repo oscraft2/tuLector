@@ -61,9 +61,16 @@ export default function BloqueCompactoPage() {
   // verdad: si las pedidas no alcanzan, sube solas (compactQuestionLayout).
   const ql = C.compactQuestionLayout(cfg);
   const countryIdx = Math.max(0, SHEET_COUNTRY_CODES.indexOf(countryCode as (typeof SHEET_COUNTRY_CODES)[number]));
-  const code: SheetCodeData | undefined = quizInfo && quizInfo.sheetCode != null
+  // El bloque SIEMPRE lleva codigo, tenga ensayo o no: en el layout v3 el codigo
+  // es lo que hace al papel autodescriptivo (preguntas/opciones/columnas), asi el
+  // lector no depende de que el ensayo activo o el localStorage coincidan con lo
+  // impreso. sheetId 0 = bloque libre.
+  const codeV3 = C.compactCodeFor(cfg, { sheetId: quizInfo?.sheetCode ?? 0, country: countryIdx });
+  // Degradacion (sheetId por encima de los 15 bits de v3): se vuelve al codigo v2
+  // de siempre, que ata el bloque al ensayo pero no describe la grilla.
+  const code: SheetCodeData | undefined = codeV3 ?? (quizInfo?.sheetCode != null
     ? { version: SHEET_CODE_VERSION, country: countryIdx, sheetId: quizInfo.sheetCode, page: 1, pagesTotal: 1 }
-    : undefined;
+    : undefined);
 
   // Respuestas de muestra SOLO para la vista previa (nunca se exportan): sirven
   // para que el profesor vea como se ve una burbuja marcada antes de imprimir.
@@ -292,8 +299,10 @@ export default function BloqueCompactoPage() {
           <section className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-2 text-xs text-zinc-300">
             <h3 className="font-bold text-white text-sm">Qué trae el bloque</h3>
             <p>• Tres marcas de localización tipo QR + una de alineación: el lector lo encuentra dentro de tu hoja aunque tenga texto, tablas o logos alrededor.</p>
-            <p>• {code ? <>Código del ensayo <strong className="text-white">#{quizInfo?.sheetCode}</strong> impreso arriba: el lector avisa si escaneas la prueba equivocada.</> : "Sin código de ensayo (bloque libre): el lector no puede verificar a qué prueba pertenece."}</p>
-            <p>• <strong>No incluye identificación del alumno.</strong> El resultado queda como &ldquo;Sin RUT&rdquo; y lo asignas después desde el panel, o escribes el nombre en tu propia prueba.</p>
+            <p>• {codeV3
+              ? <>Código impreso arriba con el <strong className="text-white">formato del bloque</strong> ({ql.numQuestions} preguntas · {ql.numOptions} opciones · {ql.numColumns} columna{ql.numColumns > 1 ? "s" : ""}): el lector se configura solo desde el papel, aunque lo pegues en otra prueba.{quizInfo?.sheetCode != null && <> Además lleva el código del ensayo <strong className="text-white">#{quizInfo.sheetCode}</strong> y avisa si escaneas la prueba equivocada.</>}</>
+              : <>Código del ensayo <strong className="text-white">#{quizInfo?.sheetCode}</strong> impreso arriba: el lector avisa si escaneas la prueba equivocada, pero no puede verificar la grilla.</>}</p>
+            <p>• <strong>No incluye identificación del alumno.</strong> Con un ensayo activo el resultado queda como &ldquo;Sin RUT&rdquo; y lo asignas después desde el panel; para corregir sin alumnos usa la <Link href="/scan/rapido" className="underline">corrección rápida</Link>.</p>
           </section>
         </div>
       </main>

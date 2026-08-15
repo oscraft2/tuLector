@@ -13,9 +13,13 @@ import { createCanvas, loadImage, ImageData as CanvasImageData } from "canvas";
 import { drawCompactBlock } from "./src/tulector/compact_render";
 import { detectCompactBlock, warpCompactBlock, readCompactCode, gradeCompactBlock, scoreCompact } from "./src/tulector/compact_block";
 import * as C from "./src/tulector/compact_layout";
-import { type SheetCodeData } from "./src/tulector/sheet_code";
+import {
+  encodeSheetCode, decodeSheetCode, crc8, COMPACT_CODE_VERSION, SHEET_CODE_CELLS,
+  type SheetCodeData,
+} from "./src/tulector/sheet_code";
 import { drawCompactBlockSheet, pngWithDpi, readPngDpi } from "./src/lib/compact_block_generator";
 import { compactModeIssue } from "./src/lib/sheet_mode";
+import { readCompactFrame, checkAgainstKey, tallyChecked, sameCompactGrid } from "./src/lib/compact_scan";
 
 (globalThis as unknown as { ImageData: typeof CanvasImageData }).ImageData = CanvasImageData;
 
@@ -588,6 +592,139 @@ async function faseExportacion(): Promise<void> {
   console.log("  ✓ zonas de texto fuera del aislamiento de las 4 marcas y dentro del bloque");
 }
 
+/**
+ * Fase 4 — el bloque se describe a si mismo (codigo v3).
+ *
+ * El bug que cierra esta fase: la grilla con la que se LEE no salia del papel,
+ * salia del ensayo activo o de localStorage. Un bloque impreso en 2 columnas
+ * leido con la grilla de 1 devuelve todas las respuestas corridas y sin ningun
+ * sintoma — ni el CRC ni las anclas se quejan, porque el bloque esta perfecto:
+ * lo que estaba mal era la suposicion del lector. Por eso el formato viaja
+ * IMPRESO y esta fase lo verifica de punta a punta.
+ */
+function renderBlockConCodigo(cfg: C.CompactConfig, answers: number[], code: SheetCodeData): ImageData {
+  const canvas = createCanvas(C.BLOCK_W, C.BLOCK_H);
+  const ctx = canvas.getContext("2d");
+  drawCompactBlock(ctx as unknown as Parameters<typeof drawCompactBlock>[0], {
+    answers, filled: true, code,
+  }, cfg);
+  return ctx.getImageData(0, 0, C.BLOCK_W, C.BLOCK_H) as unknown as ImageData;
+}
+
+function faseCodigoAutodescriptivo(): void {
+  console.log("\nFase 4 — codigo v3 autodescriptivo");
+
+  // 1. Round-trip sobre TODO el rango que el bloque puede dibujar.
+  let combos = 0;
+  for (let q = 1; q <= C.COMPACT_MAX_QUESTIONS; q++) {
+    for (let o = 2; o <= 5; o++) {
+      for (let col = 1; col <= 3; col++) {
+        if (Math.ceil(q / col) > C.MAX_ROWS) continue;
+        for (const sheetId of [0, 1, 4242, 32767]) {
+          const data: SheetCodeData = {
+            version: COMPACT_CODE_VERSION, country: 3, sheetId,
+            page: 1, pagesTotal: 1, questions: q, options: o, columns: col,
+          };
+          const bits = encodeSheetCode(data);
+          if (bits.length !== SHEET_CODE_CELLS) fail(`v3 ${q}/${o}/${col}: ${bits.length} celdas`);
+          const back = decodeSheetCode(bits);
+          if (!back) fail(`v3 ${q}/${o}/${col}/#${sheetId}: no decodifica`);
+          if (back.version !== COMPACT_CODE_VERSION || back.country !== 3 || back.sheetId !== sheetId
+            || back.questions !== q || back.options !== o || back.columns !== col) {
+            fail(`v3 round-trip distinto: ${JSON.stringify(back)} != ${JSON.stringify(data)}`);
+          }
+          combos++;
+        }
+      }
+    }
+  }
+  console.log(`  ✓ round-trip v3 en ${combos} combinaciones (preguntas x opciones x columnas x sheetId)`);
+
+  // 2. Compat: v1 y v2 siguen decodificando EXACTO igual que antes.
+  const v1: SheetCodeData = { version: 1, sheetId: 999999, page: 2, pagesTotal: 3 };
+  const v1Back = decodeSheetCode(encodeSheetCode(v1));
+  if (!v1Back || v1Back.sheetId !== 999999 || v1Back.page !== 2 || v1Back.pagesTotal !== 3) {
+    fail(`v1 dejo de decodificar igual: ${JSON.stringify(v1Back)}`);
+  }
+  const v2Back = decodeSheetCode(encodeSheetCode(CODE));
+  if (JSON.stringify(v2Back) !== JSON.stringify(CODE)) fail(`v2 dejo de decodificar igual: ${JSON.stringify(v2Back)}`);
+  console.log("  ✓ compat v1/v2 intacta (hojas ya impresas siguen leyendose)");
+
+  // 3. Una version que no existe no se interpreta como si fuera otra, aunque el
+  //    CRC valide: leer bits con un significado inventado es peor que no leer.
+  const futuro = [1, 0, 1];
+  const dataBits: number[] = [];
+  for (let i = 3; i >= 0; i--) dataBits.push((7 >> i) & 1);   // version 7
+  while (dataBits.length < 32) dataBits.push(0);
+  const crc = crc8(dataBits);
+  const crcBits: number[] = [];
+  for (let i = 7; i >= 0; i--) crcBits.push((crc >> i) & 1);
+  if (decodeSheetCode([...futuro, ...dataBits, ...crcBits, ...futuro]) !== null) {
+    fail("una version desconocida con CRC valido no deberia decodificarse");
+  }
+  console.log("  ✓ version desconocida → null (no se reinterpreta como v2)");
+
+  // 4. compactConfigFromCode rechaza lo que el bloque no puede dibujar.
+  if (C.compactConfigFromCode(CODE) !== null) fail("un codigo v2 no declara grilla: deberia dar null");
+  if (C.compactConfigFromCode({
+    version: COMPACT_CODE_VERSION, country: 0, sheetId: 1, page: 1, pagesTotal: 1,
+    questions: 30, options: 5, columns: 1,
+  }) !== null) fail("30 preguntas en 1 columna no caben: deberia dar null");
+  console.log("  ✓ configuraciones imposibles rechazadas aunque el CRC valide");
+
+  // 5. REGRESION DEL BUG: bloque de 12 preguntas impreso en 2 columnas, leido
+  //    con la config equivocada que el lector habria asumido (minColumnsFor(12)
+  //    = 1 columna). Con el codigo v3 la grilla la declara el papel y la lectura
+  //    sale exacta; sin el, salia corrida.
+  const cfgImpreso: C.CompactConfig = { numQuestions: 12, numOptions: 4, numColumns: 2 };
+  if (C.minColumnsFor(12) !== 1) fail("el caso de regresion asume que 12 preguntas caben en 1 columna");
+  const respuestas = Array.from({ length: 12 }, (_, i) => i % 4);
+  const esperadas = respuestas.map((a) => C.OPTION_LABELS[a]);
+  const codeV3 = C.compactCodeFor(cfgImpreso, { sheetId: 77, country: 0 });
+  if (!codeV3) fail("compactCodeFor devolvio null para un caso valido");
+  const bloque = renderBlockConCodigo(cfgImpreso, respuestas, codeV3);
+  const { page } = pasteBlock(PAGE_W, PAGE_H, placedQuad(280, 850, 0.92), cfgImpreso, respuestas, bloque);
+
+  // La config de respaldo es la EQUIVOCADA a proposito: es la que el lector
+  // habria deducido del ensayo activo antes de este arreglo.
+  const cfgEquivocada: C.CompactConfig = { numQuestions: 12, numOptions: 4 };
+  const lectura = readCompactFrame(page, cfgEquivocada);
+  if (!lectura.ok) fail(`regresion de columnas: no se pudo leer (${lectura.reason})`);
+  if (!lectura.selfDescribed) fail("regresion de columnas: el bloque deberia declarar su formato");
+  if (lectura.cfg.numColumns !== 2) fail(`regresion de columnas: se leyo con ${lectura.cfg.numColumns} columnas`);
+  if (sameCompactGrid(cfgEquivocada, lectura.cfg)) fail("el caso de regresion no esta probando nada: las dos grillas coinciden");
+  const malas = lectura.results.filter((r, i) => r.answer !== esperadas[i]);
+  if (malas.length) fail(`regresion de columnas: ${malas.length} respuesta(s) mal pese al codigo v3`);
+
+  // 6. El cruce con la pauta: buenas, malas y en blanco.
+  const pauta = [...esperadas];
+  pauta[3] = C.OPTION_LABELS[(respuestas[3] + 1) % 4];   // una que el alumno fallo
+  const checked = checkAgainstKey(lectura.results, pauta);
+  const { correct, total } = tallyChecked(checked);
+  if (total !== 12) fail(`la pauta deberia puntuar 12 preguntas, puntuo ${total}`);
+  if (correct !== 11) fail(`esperaba 11/12 correctas, dio ${correct}/${total}`);
+  if (checked[3].state !== "wrong" || checked[3].expected !== pauta[3]) {
+    fail(`la pregunta 4 deberia salir incorrecta con su letra esperada: ${JSON.stringify(checked[3])}`);
+  }
+  console.log(`  ✓ bloque 12q/2col leido con la config equivocada → ${correct}/${total} (la grilla la declaro el papel)`);
+
+  // 7. El bloque v3 sobrevive las mismas degradaciones que el resto de la suite.
+  const casos: { nombre: string; img: ImageData }[] = [
+    { nombre: "nitido", img: page },
+    { nombre: "blur 2px", img: blur(page, 2) },
+    { nombre: "ruido", img: noise(page, 18) },
+    { nombre: "sombra", img: shade(page, 0.55) },
+  ];
+  for (const caso of casos) {
+    const res = readCompactFrame(caso.img, cfgEquivocada);
+    if (!res.ok) fail(`v3 degradado (${caso.nombre}): ${res.reason}`);
+    if (!res.selfDescribed) fail(`v3 degradado (${caso.nombre}): el codigo no se leyo, la grilla quedo adivinada`);
+    const mal = res.results.filter((r, i) => r.answer !== esperadas[i]).length;
+    if (mal) fail(`v3 degradado (${caso.nombre}): ${mal} respuesta(s) mal`);
+  }
+  console.log(`  ✓ codigo v3 legible tras ${casos.length} degradaciones (nitido, blur, ruido, sombra)`);
+}
+
 async function main() {
   let okCount = 0;
   const fallos: string[] = [];
@@ -649,8 +786,9 @@ async function main() {
   barridoDeConfiguraciones();
   await faseExportacion();
   faseModoDeHoja();
+  faseCodigoAutodescriptivo();
 
-  console.log("\nSub-motor compacto (Fases 0, 0.5, 1, 1.5 y 2) OK");
+  console.log("\nSub-motor compacto (Fases 0, 0.5, 1, 1.5, 2 y 4) OK");
 }
 
 main().catch((e) => { console.error(e.message); process.exit(1); });

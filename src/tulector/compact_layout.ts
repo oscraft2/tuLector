@@ -25,6 +25,8 @@
  * (compact_render.ts), el sub-motor (compact_block.ts) y los tests.
  */
 
+import { COMPACT_CODE_VERSION, COMPACT_MAX_SHEET_ID, type SheetCodeData } from "./sheet_code";
+
 // ─── Canvas canonico ───────────────────────────────────────────
 // Tamaño fijo. A 300 DPI son 98.2 x 76.2 mm: aprox. media pagina de ancho y un
 // cuarto de alto, que es lo que cabe comodo pegado en una prueba de Word.
@@ -209,6 +211,57 @@ export interface CompactQLayout {
   rowCY(row: number): number;
   optX(o: number, col?: number): number;
   qnumX(col: number): number;
+}
+
+// ─── El bloque se describe a si mismo (codigo v3) ──────────────
+// El papel puede terminar pegado en cualquier prueba, fotocopiado y separado de
+// todo contexto: si el lector tuviera que adivinar la grilla desde el ensayo
+// activo o desde localStorage, bastaria un bloque impreso en 2 columnas y un
+// ensayo que "cabe" en 1 para leer todas las respuestas corridas sin aviso. Por
+// eso el formato viaja IMPRESO en la franja del codigo (layout v3 de
+// sheet_code.ts) y el lector se configura desde ahi.
+
+/**
+ * Codigo v3 que corresponde a `cfg`. Usa el layout REAL (compactQuestionLayout),
+ * no lo pedido: si las columnas pedidas no alcanzaban, el codigo dice las que se
+ * dibujaron de verdad.
+ *
+ * `sheetId` 0 = bloque libre (sin ensayo). Devuelve null si el sheetId no cabe en
+ * los 15 bits del layout v3; el generador degrada a v2 en ese caso.
+ */
+export function compactCodeFor(
+  cfg: CompactConfig,
+  opts: { sheetId?: number; country?: number } = {},
+): SheetCodeData | null {
+  const sheetId = opts.sheetId ?? 0;
+  if (sheetId < 0 || sheetId > COMPACT_MAX_SHEET_ID) return null;
+  const ql = compactQuestionLayout(cfg);
+  return {
+    version: COMPACT_CODE_VERSION,
+    country: opts.country ?? 0,
+    sheetId,
+    page: 1,
+    pagesTotal: 1,
+    questions: ql.numQuestions,
+    options: ql.numOptions,
+    columns: ql.numColumns,
+  };
+}
+
+/**
+ * Config de lectura declarada por el papel, o null si el codigo no es v3 (bloque
+ * viejo, hoja completa) o si trae valores fuera de lo que el bloque puede
+ * dibujar — un CRC valido no vuelve razonable a un formato imposible.
+ */
+export function compactConfigFromCode(code: SheetCodeData | null | undefined): CompactConfig | null {
+  if (!code || code.version !== COMPACT_CODE_VERSION) return null;
+  const { questions, options, columns } = code;
+  if (!questions || !options || !columns) return null;
+  if (questions < 1 || questions > COMPACT_MAX_QUESTIONS) return null;
+  if (options < 2 || options > OPTION_LABELS.length) return null;
+  if (columns < 1 || columns > 3) return null;
+  if (Math.ceil(questions / columns) > MAX_ROWS) return null;
+  return { numQuestions: questions, numOptions: options, numColumns: columns };
 }
 
 /** Layout de la grilla de preguntas del bloque, calculado desde el config. */

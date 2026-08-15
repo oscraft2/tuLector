@@ -7,6 +7,7 @@
  *
  *   v1 (hojas ya impresas, SIN pais): SHEET_ID(20) + PAGE(4) + PAGES_TOTAL(4)
  *   v2 (multi-pais, Fase 1):          COUNTRY(4) + SHEET_ID(16) + PAGE(4) + PAGES_TOTAL(4)
+ *   v3 (BLOQUE COMPACTO):             COUNTRY(4) + QUESTIONS(5) + OPTIONS(2) + COLUMNS(2) + SHEET_ID(15)
  *
  * v2 le resta 4 bits al SHEET_ID (20→16, sigue siendo 65.535 hojas — de sobra)
  * para financiar el campo COUNTRY sin agregar celdas ni tocar la geometria. El
@@ -14,6 +15,13 @@
  * campo VERSION (los primeros 4 bits, leidos ANTES de interpretar el resto) es
  * lo que decide como parsear — hojas v1 existentes siguen decodificando exacto
  * igual que antes (compat total, sin re-imprimir nada).
+ *
+ * v3 lo emite SOLO el bloque compacto (la hoja completa sigue en v2) y es la que
+ * hace al bloque AUTODESCRIPTIVO: lleva impreso su propio formato de grilla, asi
+ * el lector no depende de que el ensayo activo o el localStorage digan la verdad
+ * sobre el papel que tiene delante. Financia esos 9 bits sacrificando PAGE y
+ * PAGES_TOTAL —el bloque nunca es multipagina— y 1 bit de SHEET_ID (16→15 =
+ * 32.767 ensayos por colegio, cuando el correlativo real va en decenas).
  *
  * Fuente de verdad compartida: la usan el render (sheet_render) y el motor (omr).
  */
@@ -34,12 +42,25 @@ const N_DATA = 32;             // VERSION(4) + 28 bits de payload (v1 o v2, mism
 const OFF_CRC = OFF_DATA + N_DATA; // 35
 const OFF_STOP = OFF_CRC + 8;      // 43
 
+/** Version del codigo que imprime el BLOQUE COMPACTO (layout autodescriptivo). */
+export const COMPACT_CODE_VERSION = 3;
+
+/** Maximo sheetId que cabe en el SHEET_ID de 15 bits del layout v3. */
+export const COMPACT_MAX_SHEET_ID = 0x7fff;
+
 export interface SheetCodeData {
   version: number;      // 0..15
   country?: number;     // 0..15, indice en SHEET_COUNTRY_CODES (solo v2+; ausente en v1 = CL implicito)
-  sheetId: number;      // v1: 0..1.048.575 (20 bits) — v2: 0..65.535 (16 bits)
-  page: number;         // 1..16 (se guarda 0..15)
-  pagesTotal: number;   // 1..16 (se guarda 0..15)
+  sheetId: number;      // v1: 0..1.048.575 (20 bits) — v2: 0..65.535 (16 bits) — v3: 0..32.767 (0 = bloque libre)
+  page: number;         // 1..16 (se guarda 0..15). En v3 siempre 1: el bloque no es multipagina.
+  pagesTotal: number;   // 1..16 (se guarda 0..15). En v3 siempre 1.
+  // ── Solo v3 (bloque compacto). Ausentes en v1/v2 ──
+  /** Preguntas impresas en el bloque (1..32). */
+  questions?: number;
+  /** Opciones por pregunta (2..5). */
+  options?: number;
+  /** Columnas de la grilla (1..4). */
+  columns?: number;
 }
 
 /** CRC-8 (poly 0x07, init 0x00, MSB-first) sobre un arreglo de bits. */
@@ -65,9 +86,33 @@ function readBits(bits: number[], start: number, n: number): number {
 
 /** Codifica los datos a las 46 celdas (incluye guias y CRC). Lanza si fuera de rango. */
 export function encodeSheetCode(data: SheetCodeData): number[] {
+  if (data.version < 0 || data.version > 15) throw new Error("version fuera de rango (0..15)");
+
+  if (data.version === COMPACT_CODE_VERSION) {
+    // Layout v3 (bloque compacto): el papel lleva su propia grilla, sin PAGE.
+    const country = data.country ?? 0;
+    const q = data.questions ?? 0, o = data.options ?? 0, c = data.columns ?? 0;
+    if (country < 0 || country > 15) throw new Error("country fuera de rango (0..15)");
+    if (data.sheetId < 0 || data.sheetId > COMPACT_MAX_SHEET_ID) throw new Error("sheetId fuera de rango (0..32767)");
+    if (q < 1 || q > 32) throw new Error("questions fuera de rango (1..32)");
+    if (o < 2 || o > 5) throw new Error("options fuera de rango (2..5)");
+    if (c < 1 || c > 4) throw new Error("columns fuera de rango (1..4)");
+
+    const dataBits: number[] = [];
+    pushBits(dataBits, data.version, 4);
+    pushBits(dataBits, country, 4);
+    pushBits(dataBits, q - 1, 5);
+    pushBits(dataBits, o - 2, 2);
+    pushBits(dataBits, c - 1, 2);
+    pushBits(dataBits, data.sheetId, 15);
+
+    const crcBits: number[] = [];
+    pushBits(crcBits, crc8(dataBits), 8);
+    return [...GUARD, ...dataBits, ...crcBits, ...GUARD];
+  }
+
   const page0 = data.page - 1;
   const total0 = data.pagesTotal - 1;
-  if (data.version < 0 || data.version > 15) throw new Error("version fuera de rango (0..15)");
   if (page0 < 0 || page0 > 15) throw new Error("page fuera de rango (1..16)");
   if (total0 < 0 || total0 > 15) throw new Error("pagesTotal fuera de rango (1..16)");
 
@@ -117,12 +162,32 @@ export function decodeSheetCode(bits: number[]): SheetCodeData | null {
       pagesTotal: readBits(bits, OFF_DATA + 28, 4) + 1,
     };
   }
-  // Layout v2+: VERSION(4)+COUNTRY(4)+SHEET_ID(16)+PAGE(4)+PAGES_TOTAL(4).
-  return {
-    version,
-    country: readBits(bits, OFF_DATA + 4, 4),
-    sheetId: readBits(bits, OFF_DATA + 8, 16),
-    page: readBits(bits, OFF_DATA + 24, 4) + 1,
-    pagesTotal: readBits(bits, OFF_DATA + 28, 4) + 1,
-  };
+  if (version === 2) {
+    // Layout v2: VERSION(4)+COUNTRY(4)+SHEET_ID(16)+PAGE(4)+PAGES_TOTAL(4).
+    return {
+      version,
+      country: readBits(bits, OFF_DATA + 4, 4),
+      sheetId: readBits(bits, OFF_DATA + 8, 16),
+      page: readBits(bits, OFF_DATA + 24, 4) + 1,
+      pagesTotal: readBits(bits, OFF_DATA + 28, 4) + 1,
+    };
+  }
+  if (version === COMPACT_CODE_VERSION) {
+    // Layout v3 (bloque compacto): VERSION(4)+COUNTRY(4)+QUESTIONS(5)+OPTIONS(2)+COLUMNS(2)+SHEET_ID(15).
+    // page/pagesTotal se devuelven en 1/1 para que los consumidores de
+    // SheetCodeData (que asumen esos campos) sigan funcionando sin ramas nuevas.
+    return {
+      version,
+      country: readBits(bits, OFF_DATA + 4, 4),
+      questions: readBits(bits, OFF_DATA + 8, 5) + 1,
+      options: readBits(bits, OFF_DATA + 13, 2) + 2,
+      columns: readBits(bits, OFF_DATA + 15, 2) + 1,
+      sheetId: readBits(bits, OFF_DATA + 17, 15),
+      page: 1,
+      pagesTotal: 1,
+    };
+  }
+  // Version desconocida (nunca emitida): un CRC valido no alcanza para
+  // interpretar bits cuyo significado no existe todavia.
+  return null;
 }
