@@ -82,7 +82,12 @@ function AuthForm() {
   }, [email, password]);
 
   const passwordScore = passwordAnalysis?.score ?? 0;
-  const passwordStrongEnough = password.length >= PASSWORD_MIN_LENGTH && passwordScore >= 2;
+  // Con el minimo en 6 (antes 12), exigir score>=2 de zxcvbn dejaba el boton
+  // deshabilitado para casi cualquier contrasena corta tipica (una palabra +
+  // numero rara vez pasa de score 1 en 6 caracteres) -- score>=1 sigue
+  // bloqueando lo mas trivial (ej. "123456", "aaaaaa", score 0) sin exigir
+  // una fuerza que 6 caracteres no puede alcanzar de forma realista.
+  const passwordStrongEnough = password.length >= PASSWORD_MIN_LENGTH && passwordScore >= 1;
   const passwordsMatch = !confirmPassword || password === confirmPassword;
   const busy = loading || oauthLoading !== null;
 
