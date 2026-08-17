@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { fetchScanLogs } from "@/lib/scan_log";
 import { type GroundTruthEntry } from "@/lib/sheet_generator";
-import { buildReport, type TestReport } from "@/lib/test_report";
+import { buildReport, type TestReport, type SheetResult } from "@/lib/test_report";
 import { analyzeTruthHeadless } from "@/lib/headless_analyze";
 import { type SheetConfig } from "@/lib/sheet_layout";
 
@@ -165,19 +165,7 @@ export default function PruebasPage() {
                   <tr><th className="px-3 py-2">#</th><th className="px-3 py-2">RUT</th><th className="px-3 py-2">Estado</th><th className="px-3 py-2">Correctas</th><th className="px-3 py-2">Erradas</th></tr>
                 </thead>
                 <tbody>
-                  {report.sheets.map((s) => (
-                    <tr key={s.index} className="border-b border-zinc-800/50">
-                      <td className="px-3 py-2 text-zinc-500">{s.index}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{s.rut}</td>
-                      <td className="px-3 py-2">
-                        {!s.matched ? <span className="text-red-400">no escaneada / RUT mal</span>
-                          : s.wrong.length === 0 ? <span className="text-green-400">✓ perfecta</span>
-                          : <span className="text-amber-400">{s.wrong.length} errada(s)</span>}
-                      </td>
-                      <td className="px-3 py-2">{s.matched ? `${s.correct}/${s.total}` : "—"}</td>
-                      <td className="px-3 py-2 text-xs text-zinc-400">{s.wrong.join(", ")}</td>
-                    </tr>
-                  ))}
+                  {report.sheets.map((s) => <SheetRow key={s.index} s={s} />)}
                 </tbody>
               </table>
             </section>
@@ -185,5 +173,56 @@ export default function PruebasPage() {
         )}
       </main>
     </div>
+  );
+}
+
+/** Fila de la tabla. Si la hoja no matcheó, es expandible: muestra el motivo
+ *  del fallo y lo que se alcanzó a leer por pregunta antes de fallar -- sin
+ *  esto una hoja fallida no dejaba ningún rastro en la auditoría. */
+function SheetRow({ s }: { s: SheetResult }) {
+  const [open, setOpen] = useState(false);
+  const expandable = !s.matched && (s.reason || (s.readAnswers && s.readAnswers.length > 0));
+  return (
+    <>
+      <tr
+        className={`border-b border-zinc-800/50 ${expandable ? "cursor-pointer hover:bg-zinc-800/40" : ""}`}
+        onClick={() => expandable && setOpen((v) => !v)}
+      >
+        <td className="px-3 py-2 text-zinc-500">{s.index}</td>
+        <td className="px-3 py-2 font-mono text-xs">{s.rut}</td>
+        <td className="px-3 py-2">
+          {!s.matched ? (
+            <span className="text-red-400">
+              {s.reason ?? "no escaneada / RUT mal"}
+              {expandable && <span className="ml-1 text-zinc-600">{open ? "▲" : "▼"}</span>}
+            </span>
+          ) : s.wrong.length === 0 ? (
+            <span className="text-green-400">✓ perfecta</span>
+          ) : (
+            <span className="text-amber-400">{s.wrong.length} errada(s)</span>
+          )}
+        </td>
+        <td className="px-3 py-2">{s.matched ? `${s.correct}/${s.total}` : "—"}</td>
+        <td className="px-3 py-2 text-xs text-zinc-400">{s.wrong.join(", ")}</td>
+      </tr>
+      {open && expandable && (
+        <tr className="border-b border-zinc-800/50 bg-zinc-950/60">
+          <td colSpan={5} className="px-3 py-2">
+            {s.readAnswers && s.readAnswers.length > 0 ? (
+              <div className="grid grid-cols-10 gap-1">
+                {s.readAnswers.map((a) => (
+                  <div key={a.q} className="text-center bg-zinc-800 rounded p-1">
+                    <div className="text-[8px] text-zinc-500">{a.q}</div>
+                    <div className="text-[11px] font-bold font-mono text-zinc-200">{a.a}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-500">No se alcanzó a leer ninguna respuesta antes de fallar.</p>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
   );
 }

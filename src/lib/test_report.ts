@@ -14,6 +14,8 @@ export interface SheetResult {
   correct: number;
   total: number;
   wrong: number[];    // nº de pregunta erradas
+  reason?: string;                              // motivo del fallo, si no matched
+  readAnswers?: { q: number; a: string }[];      // lo que se alcanzó a leer, si no matched
 }
 
 export interface TestReport {
@@ -35,11 +37,21 @@ function normRut(r: string): string {
 export function buildReport(truth: GroundTruthEntry[], logs: ScanLogRow[]): TestReport {
   // Índice del escaneo MÁS RECIENTE por RUT (logs vienen desc por fecha).
   const byRut = new Map<string, ScanLogPayload>();
+  // Hojas que fallaron: por RUT (si se alcanzó a leer) y por índice de la
+  // verdad-terreno (análisis headless, id = "headless-<index>", RUT vacío
+  // cuando ni siquiera se detectaron las esquinas). Sin esto, una hoja que no
+  // matchea no deja ningún rastro de por qué -- justo lo que se pidió mostrar.
+  const failByRut = new Map<string, ScanLogPayload>();
+  const failByIndex = new Map<number, ScanLogPayload>();
   for (const row of logs) {
     const p = row.log;
     if (p?.type === "scan" && p.rut) {
       const key = normRut(p.rut);
       if (!byRut.has(key)) byRut.set(key, p);
+    } else if (p?.type === "scan_fail") {
+      if (p.rut) failByRut.set(normRut(p.rut), p);
+      const m = /^headless-(\d+)$/.exec(row.id);
+      if (m) failByIndex.set(Number(m[1]), p);
     }
   }
 
@@ -47,7 +59,12 @@ export function buildReport(truth: GroundTruthEntry[], logs: ScanLogRow[]): Test
   const sheets: SheetResult[] = truth.map((t) => {
     const scan = byRut.get(normRut(t.rut));
     if (!scan) {
-      return { index: t.index, rut: t.rut, matched: false, correct: 0, total: t.answers.length, wrong: [] };
+      const fail = failByIndex.get(t.index) ?? failByRut.get(normRut(t.rut));
+      return {
+        index: t.index, rut: t.rut, matched: false, correct: 0, total: t.answers.length, wrong: [],
+        reason: fail?.result?.reason,
+        readAnswers: fail?.answers?.map((a) => ({ q: a.q, a: a.a })),
+      };
     }
     matched++;
     const ansMap = new Map((scan.answers ?? []).map((a) => [a.q, a.a]));

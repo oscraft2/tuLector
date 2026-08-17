@@ -58,33 +58,64 @@ export async function analyzeTruthHeadless(
 
   for (let i = 0; i < truth.length; i++) {
     const t = truth[i];
-    // Re-render determinista con la MISMA geometría que se imprimió.
-    ctx.clearRect(0, 0, SHEET_W, SHEET_H);
-    renderSheet(ctx, { rut: t.rut, answers: lettersToIdx(t.answers), filled: true }, cfg, branding);
-    const frame = ctx.getImageData(0, 0, SHEET_W, SHEET_H);
+    // Cada hoja aislada: una excepcion puntual (ej. geometria degenerada de
+    // ESA hoja) no debe tirar el lote completo -- antes un solo throw abortaba
+    // analyzeTruthHeadless entero y el catch de arriba (pruebas/page.tsx)
+    // descartaba TODAS las filas ya calculadas, dejando el analisis "cortado"
+    // a mitad de camino sin ningun rastro de por que.
+    try {
+      // Re-render determinista con la MISMA geometría que se imprimió.
+      ctx.clearRect(0, 0, SHEET_W, SHEET_H);
+      renderSheet(ctx, { rut: t.rut, answers: lettersToIdx(t.answers), filled: true }, cfg, branding);
+      const frame = ctx.getImageData(0, 0, SHEET_W, SHEET_H);
 
-    const corners = findCorners(frame, config);
-    if (corners) {
-      const warped = warpSheet(frame, corners, config);
-      const report = gradeBubbles(warped, config, corners);
-      const rutR = readRut(warped, config);
-      if (report.valid) {
+      const corners = findCorners(frame, config);
+      if (!corners) {
         rows.push({
           id: `headless-${t.index}`,
           user_agent: "headless",
           created_at: now,
           log: {
-            v: 1,
-            type: "scan",
-            source: "upload",
-            sheet: "v2",
-            ts: now,
-            rut: rutR.rut || "",
-            dvOk: rutR.dvOk,
-            answers: (report.results ?? []).map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
+            v: 1, type: "scan_fail", source: "upload", sheet: "v2", ts: now,
+            rut: "", result: { valid: false, reason: "Esquinas no detectadas" },
           },
         });
+        onProgress?.(i + 1, truth.length);
+        continue;
       }
+
+      const warped = warpSheet(frame, corners, config);
+      const report = gradeBubbles(warped, config, corners);
+      const rutR = readRut(warped, config);
+      // Fila SIEMPRE (antes: el push solo ocurria si report.valid, y una hoja
+      // invalida desaparecia sin dejar motivo ni lo que se alcanzo a leer --
+      // la mitad de "hay hojas que no se leen" en la auditoria era esto).
+      rows.push({
+        id: `headless-${t.index}`,
+        user_agent: "headless",
+        created_at: now,
+        log: {
+          v: 1,
+          type: report.valid ? "scan" : "scan_fail",
+          source: "upload",
+          sheet: "v2",
+          ts: now,
+          rut: rutR.rut || "",
+          dvOk: rutR.dvOk,
+          result: { valid: report.valid, reason: report.reason },
+          answers: (report.results ?? []).map((r) => ({ q: r.question, a: r.answer, s: r.scores })),
+        },
+      });
+    } catch (e) {
+      rows.push({
+        id: `headless-${t.index}`,
+        user_agent: "headless",
+        created_at: now,
+        log: {
+          v: 1, type: "scan_fail", source: "upload", sheet: "v2", ts: now,
+          rut: "", result: { valid: false, reason: `Excepcion: ${(e as Error).message}` },
+        },
+      });
     }
 
     onProgress?.(i + 1, truth.length);

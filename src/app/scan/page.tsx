@@ -246,6 +246,10 @@ export default function ScanPage() {
  const wasDetectedRef = useRef(false);
  const [debugLog, setDebugLog] = useState<string[]>([]);
  const [showDebug, setShowDebug] = useState(false);
+ // Ventana "ver lectura": reabre el detalle por pregunta de la ULTIMA hoja
+ // mientras el HUD sigue en pantalla (o recien cerrado) -- sin esto, en modo
+ // rafaga el detalle se ve unos segundos y desaparece con el auto-dismiss.
+ const [showReadDetail, setShowReadDetail] = useState(false);
  const [lastDiag, setLastDiag] = useState<FrameDiag | null>(null);
  const [warpedThumb, setWarpedThumb] = useState<string | null>(null);
  const [capturing, setCapturing] = useState(false);
@@ -1461,6 +1465,7 @@ export default function ScanPage() {
   setHudMessage(null);
   setSheetWarn(null);
   setVoteProgress(0);
+  setShowReadDetail(false);
   stableFrames.current = 0;
   lastCornersRef.current = null;
   capturedCornersRef.current = null;
@@ -2089,16 +2094,65 @@ export default function ScanPage() {
      const tone = hudKind === "success" ? "border-green-500/50 bg-green-950/70 text-green-100"
       : hudKind === "warning" ? "border-amber-500/50 bg-amber-950/70 text-amber-100"
       : "border-red-500/50 bg-red-950/70 text-red-100";
+
+     // Hoja repetida / en blanco: son decisiones del profesor, no un resultado
+     // mas -- antes vivian como tarjeta chica abajo (facil de no ver escaneando
+     // rapido). Superposicion grande y centrada, a proposito mas dificil de
+     // pasar por alto que el HUD normal.
+     if (dupPending || blankPending) {
+      const isDup = !!dupPending;
+      return (
+       <div className="absolute inset-0 z-40 flex items-center justify-center p-6 bg-black/70 backdrop-blur-sm animate-in fade-in zoom-in duration-150">
+        <div className={`w-full max-w-xs rounded-3xl border-2 p-6 text-center shadow-2xl ${isDup ? "border-sky-500/60 bg-sky-950/95" : "border-amber-500/60 bg-amber-950/95"}`}>
+         <div className={`mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full text-2xl ${isDup ? "bg-sky-500/20 text-sky-300" : "bg-amber-500/20 text-amber-300"}`}>
+          {isDup ? "↻" : "␣"}
+         </div>
+         <h2 className={`text-lg font-black uppercase tracking-wide ${isDup ? "text-sky-100" : "text-amber-100"}`}>
+          {isDup ? "Ya escaneaste a este alumno" : "Hoja en blanco"}
+         </h2>
+         <p className={`mt-2 text-sm font-bold ${isDup ? "text-sky-200" : "text-amber-200"}`}>
+          {isDup ? dupPending!.name : blankPending!.rut ? blankPending!.rut : "Sin ID legible"}
+         </p>
+         <p className={`mt-2 text-xs ${isDup ? "text-sky-200/80" : "text-amber-200/80"}`}>
+          {isDup
+           ? `Si continúas, esta lectura reemplaza la anterior de ${dupPending!.rut}.`
+           : "Se reconoció la hoja pero no tiene ninguna marca. Si el alumno entregó sin responder, guárdala para que quede registrado."}
+         </p>
+         <div className="mt-5 flex flex-col gap-2">
+          {isDup ? (
+           <button
+            onClick={replaceDuplicate}
+            className="w-full rounded-2xl bg-sky-500 py-3.5 text-sm font-black uppercase tracking-widest text-black active:scale-95 transition"
+           >
+            Reemplazar
+           </button>
+          ) : (
+           <button
+            onClick={saveBlankSheet}
+            disabled={blankSaving}
+            className="w-full rounded-2xl bg-amber-500 py-3.5 text-sm font-black uppercase tracking-widest text-black active:scale-95 transition disabled:opacity-50"
+           >
+            {blankSaving ? "Guardando…" : "Guardar en blanco"}
+           </button>
+          )}
+          <button
+           onClick={dismissAndWaitForNextSheet}
+           className="w-full rounded-2xl border border-white/30 py-3 text-sm font-black uppercase tracking-widest text-white/80 active:scale-95 transition"
+          >
+           {isDup ? "Omitir" : "Descartar"}
+          </button>
+         </div>
+        </div>
+       </div>
+      );
+     }
+
      return (
       <div className="absolute bottom-28 left-4 right-4 z-30 pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-150">
        <div className={`rounded-2xl border backdrop-blur-md px-4 py-3 shadow-2xl ${tone}`}>
         <div className="flex items-center justify-between gap-3">
          <div className="min-w-0">
-          {dupPending ? (
-           <div className="text-sm font-black uppercase leading-tight tracking-wide">Hoja repetida</div>
-          ) : blankPending ? (
-           <div className="text-sm font-black uppercase leading-tight tracking-wide">Hoja en blanco</div>
-          ) : hudKind !== "error" && hasAnswerKey ? (
+          {hudKind !== "error" && hasAnswerKey ? (
            <div className="text-lg font-black leading-tight">
             {correct}<span className="opacity-60 text-sm font-bold">/{config.numQuestions - openCount}</span>
            </div>
@@ -2108,16 +2162,14 @@ export default function ScanPage() {
            <div className="text-xs font-black uppercase tracking-wide">Hoja no leída</div>
           )}
           <div className="text-[10px] font-bold truncate opacity-90">
-           {dupPending
-            ? `Ya escaneaste a ${dupPending.name} en esta sesión`
-            : hudKind !== "error"
+           {hudKind !== "error"
             ? `RUT ${studentId.join("") || "???"}${studentName ? ` · ${studentName}` : ""}`
             : hudMessage}
           </div>
           {/* Estado REAL del guardado (llega después del HUD) + cuadre de la
               sesión: es lo que hace visible al instante un "escaneé 20 y
               subieron 12". */}
-          {!dupPending && !blankPending && syncState !== "idle" && (
+          {syncState !== "idle" && (
            <div className={`mt-0.5 text-[9px] font-bold ${
             syncState === "saved" ? "text-emerald-300"
             : syncState === "queued" ? "text-orange-300"
@@ -2151,6 +2203,16 @@ export default function ScanPage() {
           <div className={`text-[9px] font-bold uppercase tracking-widest ${phase === "clearing" && clearingStuck ? "text-amber-300" : "opacity-70"}`}>
            {phase === "clearing" ? (clearingStuck ? "↑ Retira la hoja para seguir" : "Retira la hoja") : "Escaneo " + scanCount}
           </div>
+          {/* A pedido: reabre el detalle por pregunta de esta hoja antes de que
+              el HUD se autodescarte -- sin frenar la rafaga si no se toca. */}
+          {hudKind !== "error" && results.length > 0 && (
+           <button
+            onClick={() => setShowReadDetail(true)}
+            className="pointer-events-auto rounded-full border border-white/40 bg-white/15 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest"
+           >
+            Ver lectura
+           </button>
+          )}
           {/* Cuadre de la sesión, siempre a la vista. */}
           <div className="text-[9px] font-bold tracking-wide opacity-70">
            {scanCount} leídas · {savedCount} guardadas
@@ -2159,39 +2221,6 @@ export default function ScanPage() {
           </div>
           {/* El HUD entero es pointer-events-none (no debe bloquear el re-encuadre):
               este enlace reactiva los eventos solo en su propia caja. */}
-          {dupPending && (
-           <div className="pointer-events-auto flex flex-col items-end gap-1">
-            <button
-             onClick={replaceDuplicate}
-             className="rounded-full border border-white/40 bg-white/15 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest"
-            >
-             Reemplazar
-            </button>
-            <button
-             onClick={dismissAndWaitForNextSheet}
-             className="text-[9px] font-bold uppercase tracking-widest underline opacity-70"
-            >
-             Omitir
-            </button>
-           </div>
-          )}
-          {blankPending && (
-           <div className="pointer-events-auto flex flex-col items-end gap-1">
-            <button
-             onClick={saveBlankSheet}
-             disabled={blankSaving}
-             className="rounded-full border border-white/40 bg-white/15 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest disabled:opacity-50"
-            >
-             {blankSaving ? "Guardando…" : "Guardar en blanco"}
-            </button>
-            <button
-             onClick={dismissAndWaitForNextSheet}
-             className="text-[9px] font-bold uppercase tracking-widest underline opacity-70"
-            >
-             Descartar
-            </button>
-           </div>
-          )}
           {assignPaperId && (
            <button
             onClick={() => setShowAssign(true)}
@@ -2214,6 +2243,50 @@ export default function ScanPage() {
       </div>
      );
     })()}
+
+    {/* ─── Ventana "ver lectura": a pedido, detalle por pregunta de la última
+        hoja -- no pausa la rafaga, se cierra sola con el toque afuera o el
+        boton, y no compite con el auto-dismiss del HUD (ese sigue su curso
+        aunque esta ventana este abierta). ─── */}
+    {showReadDetail && results.length > 0 && (
+     <div
+      className="absolute inset-0 z-40 flex items-center justify-center p-6 bg-black/70 backdrop-blur-sm animate-in fade-in zoom-in duration-150"
+      onClick={() => setShowReadDetail(false)}
+     >
+      <div
+       className="w-full max-w-xs max-h-[80vh] overflow-y-auto rounded-3xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl"
+       onClick={(e) => e.stopPropagation()}
+      >
+       <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+         <div className="text-sm font-black text-white">RUT {studentId.join("") || "???"}</div>
+         {studentName && <div className="text-[10px] font-bold text-zinc-400">{studentName}</div>}
+        </div>
+        <button onClick={() => setShowReadDetail(false)} className="text-xs font-bold text-zinc-500">
+         CERRAR
+        </button>
+       </div>
+       <div className="grid grid-cols-5 gap-1.5">
+        {results.map((r, i) => {
+         const expected = answerKey[i];
+         const isOpen = r.flag === "abierta";
+         const isCorrect = !isOpen && r.answer !== "-" && r.answer === expected;
+         const isWrong = !isOpen && r.answer !== "-" && r.answer !== expected;
+         return (
+          <div key={r.question} className={`rounded-lg flex flex-col items-center justify-center py-1 text-[9px] font-bold gap-0.5
+           ${isOpen ? "bg-sky-500/10 text-sky-300 border border-sky-500/30"
+           : isCorrect ? "bg-green-500/20 text-green-400 border border-green-500/30"
+           : isWrong ? "bg-red-500/20 text-red-400 border border-red-500/30"
+           : "bg-zinc-800 text-zinc-600"}`}>
+           <span className="text-[8px] opacity-60">{r.question}</span>
+           <span className="text-[10px]">{isOpen ? "✎" : r.answer !== "-" ? r.answer : "–"}</span>
+          </div>
+         );
+        })}
+       </div>
+      </div>
+     </div>
+    )}
 
     {/* ─── Drawer "Asignar alumno": el escaneo quedó sin dueño (RUT no leído o
         sin alumno que calce). Buscador liviano sobre la cámara — el escaneo YA
