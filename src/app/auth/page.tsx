@@ -60,6 +60,11 @@ function AuthForm() {
   const [inviteInfo, setInviteInfo] = useState<{ valid: boolean; email?: string; role?: string; schoolName?: string } | null>(null);
   const [existingSessionEmail, setExistingSessionEmail] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+  // Sesion activa que YA es la del correo invitado (ver el efecto de abajo):
+  // no hay nada que decidir, se vincula sola y se redirige -- sin esto se
+  // mostraba "cierra sesion" aunque la sesion abierta fuera exactamente la
+  // cuenta correcta.
+  const [autoLinking, setAutoLinking] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -154,13 +159,46 @@ function AuthForm() {
         // hace click puede ya tener sesion abierta (con otro correo, o el
         // mismo admin probando el link) -- se avisa en vez de sacarlo del
         // flujo sin explicacion (ver estado existingSessionEmail).
+        //
+        // Pero si esa sesion abierta YA es la del correo invitado (caso
+        // reportado: j.riveros@ispm.cl ya tenia cuenta y ya habia iniciado
+        // sesion antes de abrir el link), pedirle "cierra sesion" es un
+        // paso inutil -- no hay nada que decidir, se vincula sola. Para esto
+        // hay que esperar a que inviteInfo (el correo de la invitacion) ya
+        // haya resuelto; si no ha llegado todavia, este efecto se vuelve a
+        // correr solo cuando inviteInfo cambie (esta en las deps).
+        if (!inviteInfo) return;
+        const sameEmail = inviteInfo.valid && inviteInfo.email && session.user.email
+          && inviteInfo.email.toLowerCase() === session.user.email.toLowerCase();
+        if (sameEmail) {
+          setAutoLinking(true);
+          fetch("/api/invitations/link", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ inviteId }),
+          })
+            .then(async (res) => {
+              if (!res.ok) {
+                const json = await res.json().catch(() => ({}));
+                setMessage(json.error || "No se pudo vincular tu cuenta al colegio.");
+                setAutoLinking(false);
+                return;
+              }
+              router.replace(postAuthPath ?? homeAfterAuth());
+            })
+            .catch(() => {
+              setMessage("No se pudo vincular tu cuenta al colegio.");
+              setAutoLinking(false);
+            });
+          return;
+        }
         setExistingSessionEmail(session.user.email ?? "tu cuenta actual");
         return;
       }
       router.replace(postAuthPath ?? homeAfterAuth());
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, inviteId]);
+  }, [client, inviteId, inviteInfo]);
 
   // Boton visible "Iniciar sesion con huella": el BiometricGate ya lo pide
   // automaticamente al abrir la app, pero si el usuario lo cancela (o
@@ -479,7 +517,11 @@ function AuthForm() {
 
           {inviteInfo ? <InviteBanner inviteInfo={inviteInfo} /> : null}
 
-          {existingSessionEmail ? (
+          {autoLinking ? (
+            <p className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-[#07305f]">
+              Vinculando tu cuenta al colegio…
+            </p>
+          ) : existingSessionEmail ? (
             <AlreadyLoggedInNotice email={existingSessionEmail} inviteEmail={inviteInfo?.email} signingOut={signingOut} onSignOut={handleSignOutForInvite} />
           ) : (
           <form onSubmit={handleAuth} className="space-y-3">
@@ -622,7 +664,11 @@ function AuthForm() {
 
           {inviteInfo ? <InviteBanner inviteInfo={inviteInfo} /> : null}
 
-          {existingSessionEmail ? (
+          {autoLinking ? (
+            <p className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-[#07305f]">
+              Vinculando tu cuenta al colegio…
+            </p>
+          ) : existingSessionEmail ? (
             <AlreadyLoggedInNotice email={existingSessionEmail} inviteEmail={inviteInfo?.email} signingOut={signingOut} onSignOut={handleSignOutForInvite} />
           ) : (
           <>
