@@ -21,7 +21,7 @@ const passwordEstimator = new ZxcvbnFactory({
   graphs: adjacencyGraphs,
 });
 
-const PASSWORD_MIN_LENGTH = 12;
+const PASSWORD_MIN_LENGTH = 6;
 
 type OAuthProvider = "google" | "apple";
 
