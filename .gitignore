@@ -53,4 +53,7 @@ SECURITY_PROMPT.md
 SECURITY_PROMPT_APK.md
 SEO_PROMPT.md
 
+# dataset exportado de scan_logs reales (scripts/export_dataset.ts) — no commitear
+dataset.json
+
 .env*
