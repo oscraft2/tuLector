@@ -139,6 +139,10 @@ export default function ScanPage() {
  // tenerlos en su dependencia (evita remount del loop en cada transición de fase).
  const phaseRef = useRef<ScanPhase>("detecting");
  const lastScanRef = useRef(0);
+ // Espeja showAssign: el drawer "Asignar alumno" es un overlay que NO cambia
+ // `phase`, asi que sin este ref el loop de abajo no tiene forma de saber que
+ // debe congelarse mientras el profesor esta asignando (se colgaba el celular).
+ const showAssignRef = useRef(false);
  // Sello del escaneo en pantalla. `syncResult` corre sin await, asi que la
  // respuesta de una hoja puede llegar cuando el profesor ya capturo la
  // siguiente: sin este sello, ese payload tardio pintaba el nombre (o el curso,
@@ -229,6 +233,7 @@ export default function ScanPage() {
 
  useEffect(() => { let a = true; Promise.resolve().then(() => { if (a) setNative(isNativeApp()); }); return () => { a = false; }; }, []);
  useEffect(() => { phaseRef.current = phase; }, [phase]);
+ useEffect(() => { showAssignRef.current = showAssign; }, [showAssign]);
  useEffect(() => { lastScanRef.current = lastScan; }, [lastScan]);
  // AudioContext queda "suspended" hasta un gesto real del usuario (iOS/Chrome).
  // Se desbloquea con el primer toque en cualquier control de la pantalla.
@@ -1411,7 +1416,11 @@ export default function ScanPage() {
 
    // Modal clásico bloqueante (ráfaga apagada): tapa toda la pantalla, no hay
    // nada que dibujar ni detectar debajo -- mismo ahorro que el "result" original.
-   if (phaseRef.current === "review") { animId = requestAnimationFrame(loop); return; }
+   // Mismo criterio para el drawer "Asignar alumno": es un overlay que no cambia
+   // `phase`, pero mientras esta abierto tampoco hay nada que detectar debajo
+   // -- sin este freeze el loop seguia full-speed y podia disparar una captura
+   // nueva mientras se confirmaba la asignación, colgando el celular.
+   if (phaseRef.current === "review" || showAssignRef.current) { animId = requestAnimationFrame(loop); return; }
 
    // Detección en canvas reducido (~4x menos píxeles): el warp/calificación real
    // (runVotingScan/processScan) sigue leyendo el video a resolución completa
