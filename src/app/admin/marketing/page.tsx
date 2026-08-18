@@ -38,8 +38,12 @@ export default async function MarketingAdminPage({ searchParams }: PageProps) {
     leadsQuery = leadsQuery.eq("status", statusFilter);
   }
 
+  // Listado liviano: el editor (TemplateForm) necesita el HTML/texto completo
+  // de la plantilla, pero la tabla de abajo solo pinta llave/idioma/asunto/
+  // fecha -- pedir "*" traia el cuerpo entero (varios KB por plantilla) de
+  // TODAS las plantillas solo para listar 4 campos chicos de cada una.
   const [{ data: templates }, { data: campaigns }, { data: leads }, { count: totalLeads }, { count: newLeads }, { count: contactedLeads }, { count: qualifiedLeads }] = await Promise.all([
-    admin.from("email_templates").select("*").order("key"),
+    admin.from("email_templates").select("id,key,locale,subject,updated_at,created_at").order("key"),
     admin.from("email_campaigns").select("*").order("created_at", { ascending: false }),
     leadsQuery,
     admin.from("contact_leads").select("id", { count: "exact", head: true }),
@@ -48,7 +52,9 @@ export default async function MarketingAdminPage({ searchParams }: PageProps) {
     admin.from("contact_leads").select("id", { count: "exact", head: true }).eq("status", "qualified"),
   ]);
 
-  const editTemplate = editKey ? templates?.find((t) => t.key === editKey) : null;
+  const editTemplate = editKey
+    ? (await admin.from("email_templates").select("*").eq("key", editKey).maybeSingle()).data
+    : null;
   const isResendConfigured = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_API_KEY !== "re_...");
 
   return (

@@ -9,8 +9,17 @@ export const dynamic = "force-dynamic";
 export default async function BillingAdminPage() {
   const { admin } = await requirePlatformContext(["platform_admin", "finance"]);
 
-  // Fetch all orders with school details and subscriptions
-  const [{ data: orders }, { count: activeSubs }] = await Promise.all([
+  // Dos consultas separadas a `orders`, a proposito: los totales de ingresos
+  // (KPIs, abajo) tienen que ser de TODAS las ordenes historicas -- ponerles
+  // un .limit() les mentiria a los KPIs financieros apenas se pasara el tope.
+  // Pero la tabla de "ultimas transacciones" solo necesita mostrar recientes,
+  // asi que va aparte, acotada y con el join a schools que la primera no
+  // necesita (los totales no muestran nombre de colegio). Antes una sola
+  // consulta sin limite traia id+join+8 columnas de CADA orden que haya
+  // existido para calcular 4 numeros -- la separacion achica lo que se
+  // transfiere sin sacrificar exactitud en los totales.
+  const [{ data: allOrders }, { data: recentOrders }, { count: activeSubs }] = await Promise.all([
+    admin.from("orders").select("status,amount_cents,currency,gateway"),
     admin
       .from("orders")
       .select(`
@@ -28,17 +37,19 @@ export default async function BillingAdminPage() {
           name
         )
       `)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(200),
     admin
       .from("subscriptions")
       .select("id", { count: "exact", head: true })
       .eq("status", "active"),
   ]);
 
-  // Calculations for dashboard
-  const paidOrders = orders?.filter((o) => o.status === "paid") ?? [];
-  const totalOrdersCount = orders?.length ?? 0;
+  // Calculations for dashboard (sobre TODAS las ordenes, no solo las 200 recientes)
+  const paidOrders = allOrders?.filter((o) => o.status === "paid") ?? [];
+  const totalOrdersCount = allOrders?.length ?? 0;
   const paidOrdersCount = paidOrders.length;
+  const orders = recentOrders; // la tabla de abajo sigue mostrando las recientes
 
   const GATEWAY_LABELS: Record<string, string> = {
     flow: "Flow (Chile)",

@@ -5,6 +5,7 @@ import { AdminShell } from "@/components/dashboard/AdminShell";
 import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 import { DataTable } from "@/components/dashboard/DataTable";
 import { countryProfiles } from "@/lib/country_profiles";
+import { fetchUserEmails } from "@/lib/quiz_shares";
 import {
   impersonateSchool,
   updateSchoolPlan,
@@ -47,18 +48,11 @@ export default async function SchoolDetailPage({ params }: PageProps) {
   ]);
   if (!school) notFound();
 
-  const members = await Promise.all(
-    (memberRows ?? []).map(async (m) => {
-      let email = m.user_id;
-      try {
-        const { data } = await admin.auth.admin.getUserById(m.user_id);
-        if (data?.user?.email) email = data.user.email;
-      } catch {
-        // usuario ya no existe en auth -- se muestra el id crudo
-      }
-      return { ...m, email };
-    })
-  );
+  // fetchUserEmails ya resuelve esto mismo (Promise.all sobre getUserById --
+  // la API de Auth no ofrece un lookup en lote) en teacher_scope.ts y
+  // quiz_shares.ts; se reusa en vez de duplicar el patron por tercera vez.
+  const emails = await fetchUserEmails((memberRows ?? []).map((m) => m.user_id));
+  const members = (memberRows ?? []).map((m) => ({ ...m, email: emails.get(m.user_id) ?? m.user_id }));
   await writeAuditLog({ actorUserId: user.id, actorRole: role, schoolId: id, targetType: "school", targetId: id, action: "school.view", reason: "Vista detalle admin plataforma" });
   const currentStatus = school.status ?? "active";
   return (
