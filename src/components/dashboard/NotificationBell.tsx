@@ -52,9 +52,20 @@ export function NotificationBell() {
       setNow(Date.now());
       if (document.visibilityState === "visible") load();
     }, 60000);
+    // Movil (web, no APK): al cambiar de app y volver, el navegador suele
+    // suspender/throttlear el setInterval de arriba -- el contador se quedaba
+    // pegado en lo que habia al cargar la pagina hasta que el intervalo
+    // volviera a caer (podia tardar minutos, o nunca si la pestaña seguia en
+    // segundo plano). Se agrega un refresco inmediato al volver a primer
+    // plano, sin esperar el proximo tick.
+    const onVisible = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
       alive = false;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, []);
 
