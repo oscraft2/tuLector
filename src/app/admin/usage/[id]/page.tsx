@@ -4,6 +4,8 @@ import { requirePlatformContext, writeAuditLog } from "@/lib/supabaseAdmin";
 import { AdminShell } from "@/components/dashboard/AdminShell";
 import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 import { OMRVisualDebugger } from "@/components/dashboard/OMRVisualDebugger";
+import { OMRReanalyzePanel } from "@/components/dashboard/OMRReanalyzePanel";
+import { ScanLogCorrectionPanel } from "@/components/dashboard/ScanLogCorrectionPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +42,9 @@ export default async function OMRLogDetailPage({ params }: PageProps) {
   const answers = payload.answers || [];
   const corners = payload.corners || null;
   const diag = payload.diag || {};
+  const corrected = (payload.corrected || null) as { q: number; a: string }[] | null;
+  const verified = Boolean(payload.verified);
+  const rutTrue = (payload.rutTrue || null) as string | null;
 
   return (
     <AdminShell
@@ -139,6 +144,17 @@ export default async function OMRLogDetailPage({ params }: PageProps) {
             </div>
           </div>
         </div>
+
+        <OMRReanalyzePanel photo={payload.photo ?? null} savedAnswers={answers} savedRut={payload.rut} />
+
+        <ScanLogCorrectionPanel
+          scanLogId={id}
+          answers={answers}
+          rut={payload.rut ?? null}
+          corrected={corrected}
+          verified={verified}
+          rutTrue={rutTrue}
+        />
       </div>
     </AdminShell>
   );

@@ -672,3 +672,54 @@ export async function replySupportTicket(formData: FormData) {
   revalidatePath("/admin/support");
 }
 
+/**
+ * Correccion manual (ground truth) de un scan_log: el staff marca lo que la
+ * hoja REALMENTE dice, pregunta por pregunta, y el RUT real si difiere.
+ * Escribe en los mismos campos que ya usa "Confirmar lectura" en /scan
+ * (corrected/verified/rutTrue, ver src/tulector/scan_log.ts) para alimentar
+ * el mismo dataset etiquetado en vez de crear un camino paralelo.
+ */
+export async function correctScanLog(formData: FormData) {
+  const { user, role, admin } = await requirePlatformContext(["platform_admin", "support"]);
+  const scanLogId = String(formData.get("scan_log_id") ?? "");
+  if (!scanLogId) throw new Error("Falta el log de escaneo.");
+
+  const { data: row, error: fetchError } = await admin
+    .from("scan_logs")
+    .select("log")
+    .eq("id", scanLogId)
+    .single();
+  if (fetchError || !row) throw new Error("No se encontro el log de escaneo.");
+
+  const corrected: { q: number; a: string }[] = [];
+  for (const [key, value] of formData.entries()) {
+    const m = /^ans_(\d+)$/.exec(key);
+    if (!m) continue;
+    const a = String(value).trim().toUpperCase();
+    if (!a) continue;
+    corrected.push({ q: Number(m[1]), a });
+  }
+  const rutTrue = String(formData.get("rut_true") ?? "").trim();
+
+  const nextLog = {
+    ...(row.log as Record<string, unknown>),
+    corrected,
+    verified: true,
+    ...(rutTrue ? { rutTrue } : {}),
+  };
+  const { error } = await admin.from("scan_logs").update({ log: nextLog }).eq("id", scanLogId);
+  if (error) throw new Error(`No se pudo guardar la correccion: ${error.message}`);
+
+  await writeAuditLog({
+    actorUserId: user.id,
+    actorRole: role,
+    targetType: "scan_log",
+    targetId: scanLogId,
+    action: "scan_log.correct",
+    reason: "Correccion manual de lectura OMR (ground truth)",
+    metadata: { questions: corrected.length, rutTrue: rutTrue || undefined },
+  });
+
+  revalidatePath(`/admin/usage/${scanLogId}`);
+}
+
