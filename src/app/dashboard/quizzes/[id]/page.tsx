@@ -369,6 +369,12 @@ export default async function QuizDetailPage({ params }: PageProps) {
             <div className="mb-3 flex items-center gap-3">
               <h2 className="whitespace-nowrap text-[12.5px] font-semibold uppercase tracking-[0.1em] text-[#6b7280]">Preguntas de desarrollo — sugerencias IA</h2>
               <span className="h-px flex-1 bg-[#e6e8eb]" />
+              <Link
+                href={`/dashboard/quizzes/${quiz.id}/abiertas`}
+                className="whitespace-nowrap rounded-md border border-[#07305f] px-2.5 py-1 text-xs font-semibold text-[#07305f] hover:bg-[#eef2f7]"
+              >
+                Calificación rápida por curso →
+              </Link>
             </div>
             {openAnswers.length === 0 ? (
               <p className="text-sm text-[#6b7280]">
@@ -407,7 +413,7 @@ export default async function QuizDetailPage({ params }: PageProps) {
                               <input type="hidden" name="quiz_id" value={quiz.id} />
                               <input
                                 type="number" name="points" step={0.5} min={0} max={oa.max_points ?? undefined}
-                                defaultValue={oa.puntaje ?? 0}
+                                defaultValue={0}
                                 className="w-14 rounded border border-[#cfd6df] px-1.5 py-1 text-sm"
                               />
                               <button className="rounded border border-[#0f766e] px-2 py-1 text-xs font-semibold text-[#0f766e] hover:bg-[#f0fdfa]">
@@ -423,9 +429,9 @@ export default async function QuizDetailPage({ params }: PageProps) {
               </div>
             )}
             <p className="mt-2 text-xs text-[#8a93a1]">
-              La IA sugiere — el puntaje no cuenta para la nota hasta que lo confirmes (el número
-              ya viene precargado con la sugerencia; ajústalo si no estás de acuerdo antes de
-              confirmar).
+              La IA sugiere — el puntaje no cuenta para la nota hasta que lo confirmes. El número
+              parte SIEMPRE en 0: solo súbelo si el alumno realmente respondió, mirando la
+              transcripción y la sugerencia de la IA como referencia.
             </p>
           </section>
         )}

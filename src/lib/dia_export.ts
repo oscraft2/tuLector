@@ -6,12 +6,18 @@ import { normalizarCursoDIA } from "@/lib/dia_curso";
 // seccion 8.1); el RUT con guion es como la plataforma lo expone
 // (`usuario.rutCompleto`, seccion 6.bis).
 import { celdaRespuesta, celdaMultiSelect, formatRutConGuion, answersByQuestion } from "@/lib/export_columns";
+import { diaCodigoParaAbierta, type DiaCodigoOpenAnswer } from "@/lib/dia_codigo";
 
 export type ExportPaper = {
+  /** Necesario para cruzar con open_answers (paper_id+question). Sin id, una
+   *  pregunta abierta exporta codigo 0 (mismo resultado que "sin respuesta"). */
+  id?: string;
   student_name: string | null;
   student_rut_norm: string | null;
   answers: unknown;
 };
+
+export type ExportOpenAnswer = DiaCodigoOpenAnswer & { paper_id: string; question: number };
 
 function csvEscape(value: string): string {
   return /[",\n;]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
@@ -29,14 +35,16 @@ export function buildDiaCsv({
   grade,
   openQuestions = [],
   multiSelectQuestions = [],
+  openAnswers = [],
 }: {
   papers: ExportPaper[];
   numQuestions: number;
   subject: string | null;
   grade: string | null;
-  /** Preguntas de desarrollo (1-indexadas): su celda va SIEMPRE vacia ("No
-   *  Responde"), aunque el motor haya leido ruido — la extension dia-bot ya
-   *  salta las preguntas no-SELECCION_UNICA_SIMPLE al ingresar. */
+  /** Preguntas de desarrollo (1-indexadas): su celda lleva el "codigo" DIA
+   *  (0/1/2, ver dia_codigo.ts) segun lo que haya en `openAnswers` para ese
+   *  paper+pregunta -- 0 si el alumno no escribio nada o si el profesor
+   *  todavia no confirmo un puntaje. */
   openQuestions?: number[];
   /** Preguntas de seleccion MULTIPLE (1-indexadas, ej. "marca todas las
    *  correctas"): su celda lleva las etiquetas marcadas tal cual las entrega
@@ -44,6 +52,9 @@ export function buildDiaCsv({
    *  largo>1 a "NULA" -- correcto para una doble marca en seleccion unica,
    *  incorrecto aca donde varias marcas son la respuesta normal). */
   multiSelectQuestions?: number[];
+  /** Filas de open_answers ya calificadas/confirmadas del ensayo, para armar
+   *  el codigo de cada pregunta abierta (docs/plan-dia-abiertas.md Fase C). */
+  openAnswers?: ExportOpenAnswer[];
 }): string {
   const headers = [
     "rut",
@@ -55,11 +66,17 @@ export function buildDiaCsv({
 
   const openSet = new Set(openQuestions);
   const multiSet = new Set(multiSelectQuestions);
+  const openAnswersByPaperQuestion = new Map<string, ExportOpenAnswer>();
+  for (const oa of openAnswers) openAnswersByPaperQuestion.set(`${oa.paper_id}:${oa.question}`, oa);
+
   const rows = papers.map((paper) => {
     const porPregunta = answersByQuestion(paper.answers);
     const celdas = Array.from({ length: numQuestions }, (_, i) => {
       const qNum = i + 1;
-      if (openSet.has(qNum)) return "";
+      if (openSet.has(qNum)) {
+        const oa = paper.id ? openAnswersByPaperQuestion.get(`${paper.id}:${qNum}`) : undefined;
+        return String(diaCodigoParaAbierta(oa ?? null));
+      }
       if (multiSet.has(qNum)) return celdaMultiSelect(porPregunta.get(qNum));
       return celdaRespuesta(porPregunta.get(qNum));
     });
