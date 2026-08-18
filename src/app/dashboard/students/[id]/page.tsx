@@ -40,6 +40,7 @@ type StudentMetadata = { quiz_id: string; question_number: number; axis_name: st
 type StudentGradeRecord = {
   id: string;
   quiz_id: string;
+  paper_id: string | null;
   raw_score: number | null;
   total_questions: number | null;
   calculated_grade: number | string | null;
@@ -100,10 +101,19 @@ export default async function StudentProfilePage({ params }: PageProps) {
   }
   const papersRaw = [...papersById.values()].sort((a, b) => new Date(a.scanned_at ?? 0).getTime() - new Date(b.scanned_at ?? 0).getTime());
 
+  // Un alumno tiene a lo mas UN paper activo por ensayo (reasignar anula/borra
+  // el anterior, ver paper_assign.ts) -- respaldo para grade_records viejos que
+  // no tengan `paper_id` resuelto todavia.
+  const paperIdByQuiz = new Map<string, string>();
+  for (const p of papersRaw) {
+    const quizId = (p.quizzes?.id ?? p.quiz_id) as string | null | undefined;
+    if (quizId) paperIdByQuiz.set(quizId, String(p.id));
+  }
+
   const { data: gradeRecordsRaw } = studentRutNorm
     ? await supabase
         .from("grade_records")
-        .select("id, quiz_id, raw_score, total_questions, calculated_grade, passing, graded_at, quizzes(title)")
+        .select("id, quiz_id, paper_id, raw_score, total_questions, calculated_grade, passing, graded_at, quizzes(title)")
         .eq("school_id", school.id)
         .eq("student_code", studentRutNorm)
         .order("graded_at", { ascending: false })
@@ -114,6 +124,7 @@ export default async function StudentProfilePage({ params }: PageProps) {
     return {
       id: record.id,
       quizId: record.quiz_id,
+      paperId: record.paper_id ?? paperIdByQuiz.get(record.quiz_id) ?? null,
       title: quiz?.title ?? "Ensayo",
       score: record.raw_score ?? 0,
       total: record.total_questions ?? 0,
@@ -277,7 +288,7 @@ export default async function StudentProfilePage({ params }: PageProps) {
           {/* Historial */}
           <section className="mt-4 rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
             <h2 className="text-base font-semibold text-[#111827]">Historial de evaluaciones</h2>
-            <p className="mt-1 text-xs text-[#5b6472]">Notas consolidadas desde grade_records. Pincha para ver la estadística global.</p>
+            <p className="mt-1 text-xs text-[#5b6472]">Notas consolidadas desde grade_records. Pincha para ver el detalle de esta hoja.</p>
             {gradeHistory.length === 0 ? (
               <p className="mt-4 rounded-lg bg-[#f8fafc] px-4 py-5 text-center text-sm text-[#6b7280]">Aún no rinde evaluaciones.</p>
             ) : (
@@ -296,7 +307,7 @@ export default async function StudentProfilePage({ params }: PageProps) {
                     <tbody className="divide-y divide-[#eef0f3]">
                       {gradeHistory.map((record) => (
                         <tr key={record.id} className="text-sm hover:bg-gray-50">
-                          <td className="py-3 pr-2 font-semibold"><Link href={`/dashboard/quizzes/${record.quizId}`} className="text-[#07305f] hover:underline">{record.title}</Link></td>
+                          <td className="py-3 pr-2 font-semibold"><Link href={record.paperId ? `/dashboard/papers/${record.paperId}` : `/dashboard/quizzes/${record.quizId}`} className="text-[#07305f] hover:underline">{record.title}</Link></td>
                           <td className="py-3 pr-2 font-mono">{record.score}/{record.total}</td>
                           <td className={`py-3 pr-2 text-right text-base font-bold ${notaColor(record.grade)}`}>{record.grade.toFixed(1)}</td>
                           <td className="py-3 pr-2"><ApprovedPill passing={record.passing} /></td>
@@ -308,7 +319,7 @@ export default async function StudentProfilePage({ params }: PageProps) {
                 </div>
                 <div className="mt-4 grid gap-3 md:hidden">
                   {gradeHistory.map((record) => (
-                    <Link key={record.id} href={`/dashboard/quizzes/${record.quizId}`} className="block rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
+                    <Link key={record.id} href={record.paperId ? `/dashboard/papers/${record.paperId}` : `/dashboard/quizzes/${record.quizId}`} className="block rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-[#111827]">{record.title}</p>

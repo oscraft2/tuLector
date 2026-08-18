@@ -5,6 +5,9 @@
 // descartarlo correria el indice de todo lo que viene despues de un hueco
 // (mismo criterio que answerKeyAt en grading.ts).
 
+import { parseOpenQuestions, parseMultiSelectQuestions } from "@/lib/quiz_constraints";
+import { answerKeyAt } from "@/lib/quiz_score";
+
 export type ItemStat = {
   q: number; // 1-based
   correct: string; // letra correcta ("" si la clave no la define)
@@ -218,4 +221,74 @@ export function computeAxisMastery(papers: AxisMasteryPaper[]): AxisStat[] {
       return { axis, pct, count: stat.total, level: levelOf(pct) };
     })
     .sort((a, b) => a.pct - b.pct || a.axis.localeCompare(b.axis));
+}
+
+export type PaperQuestionBreakdownRow = {
+  q: number; // 1-based
+  axis: string | null;
+  skill: string | null;
+  isOpen: boolean; // pregunta de desarrollo: solo lectura, tiene su propio flujo (confirmOpenAnswer)
+  isMultiSelect: boolean; // seleccion multiple: solo lectura por ahora (ver plan de correccion)
+  studentAnswer: string; // letra o "-" (en blanco / sin leer)
+  correctAnswer: string; // letra correcta, "" si la clave no la define en esta posicion
+  hasKey: boolean; // false si correctAnswer === "" (clave "-" en esta posicion)
+  correct: boolean;
+};
+
+/**
+ * Desglose pregunta-por-pregunta de UNA hoja: lo que el alumno marco vs. la
+ * clave del ensayo. A diferencia de computeItemAnalysis (agregado entre MUCHAS
+ * hojas, con distractores/discriminacion), esto es "una hoja, una fila por
+ * pregunta" -- la forma que necesita el detalle de /dashboard/papers/[id].
+ * Espeja el manejo de "-"/limpieza de letra de computeAxisMastery arriba para
+ * no divergir de lo que el resto del perfil del alumno ya muestra.
+ */
+export function buildPaperQuestionBreakdown(
+  paper: { answers: unknown },
+  quiz: {
+    answer_key: string | null | undefined;
+    num_questions: number | null | undefined;
+    open_questions?: string | null;
+    multi_select_questions?: string | null;
+  },
+  metadata: MetaRow[] = [],
+): PaperQuestionBreakdownRow[] {
+  const rawKey = String(quiz.answer_key ?? "");
+  const cleanedKey = rawKey.replace(/[^A-Za-z-]/g, "").toUpperCase();
+  const nQ = Math.max(0, Number(quiz.num_questions) || cleanedKey.length || 0);
+  const open = new Set(parseOpenQuestions(quiz.open_questions ?? "", nQ));
+  const multi = new Set(parseMultiSelectQuestions(quiz.multi_select_questions ?? "", nQ));
+
+  const metaByQ = new Map<number, { axis: string | null; skill: string | null }>();
+  for (const m of metadata ?? []) {
+    metaByQ.set(Number(m.question_number), { axis: m.axis_name ?? null, skill: m.skill_name ?? null });
+  }
+
+  const answerByQ = new Map<number, string>();
+  const answers = Array.isArray(paper.answers) ? (paper.answers as Array<{ q?: unknown; a?: unknown }>) : [];
+  for (const item of answers) {
+    const q = Number(item?.q);
+    if (!Number.isInteger(q) || q < 1 || q > nQ) continue;
+    answerByQ.set(q, String(item?.a ?? "-").trim().toUpperCase());
+  }
+
+  const rows: PaperQuestionBreakdownRow[] = [];
+  for (let q = 1; q <= nQ; q++) {
+    const keyLetter = answerKeyAt(rawKey, q - 1);
+    const hasKey = keyLetter !== "" && keyLetter !== "-";
+    const studentAnswer = answerByQ.get(q) ?? "-";
+    const meta = metaByQ.get(q);
+    rows.push({
+      q,
+      axis: meta?.axis ?? null,
+      skill: meta?.skill ?? null,
+      isOpen: open.has(q),
+      isMultiSelect: multi.has(q),
+      studentAnswer,
+      correctAnswer: hasKey ? keyLetter : "",
+      hasKey,
+      correct: hasKey && studentAnswer !== "-" && studentAnswer === keyLetter,
+    });
+  }
+  return rows;
 }

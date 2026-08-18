@@ -24,6 +24,7 @@ import { calculateGrade } from "@/lib/latam";
 import { normalizeRut } from "@/lib/rut";
 import { resolveNationalId } from "@/lib/national_id";
 import { isMissingColumnError } from "@/lib/supabase_errors";
+import { computeQuizScore, type ScoreableQuiz } from "@/lib/grading";
 
 type MinimalClient = Pick<SupabaseClient, "from">;
 
@@ -314,6 +315,105 @@ export async function upsertGradeRecord(
     },
     { onConflict: "school_id,student_code,quiz_id" },
   );
+}
+
+type ScoredResult = ReturnType<typeof computeQuizScore>;
+
+/**
+ * Escribe el resultado de una hoja re-corregida. `points`/`points_total` son de
+ * la migracion quiz_points: si la BD no las tiene, se guarda igual sin ellas
+ * (la nota, que es lo que el profesor ve, ya viaja en `grade`).
+ *
+ * Compartida entre la re-correccion masiva de `updateQuiz` (dashboard/actions.ts,
+ * itera N hojas de un ensayo) y `regradeSinglePaper` de aca abajo (una hoja).
+ */
+export async function updatePaperScores(
+  supabase: MinimalClient,
+  paperId: string,
+  result: ScoredResult,
+): Promise<void> {
+  const base = { score: result.score, total: result.total, grade: result.grade, equivalent_score: result.equivalentScore };
+  const { error } = await supabase
+    .from("papers")
+    .update({ ...base, points: result.points, points_total: result.pointsTotal })
+    .eq("id", paperId);
+  if (error && (isMissingColumnError(error, "points") || isMissingColumnError(error, "points_total"))) {
+    await supabase.from("papers").update(base).eq("id", paperId);
+  }
+}
+
+/**
+ * Puntajes de desarrollo YA confirmados, agrupados por hoja. Devuelve un mapa
+ * vacio si el ensayo no puntua las abiertas (no hace ni la consulta) o si la
+ * tabla `open_answers` todavia no existe -- el puntaje de las cerradas nunca
+ * puede quedar bloqueado por esto.
+ */
+export async function fetchConfirmedOpenAnswers(
+  supabase: MinimalClient,
+  enabled: boolean,
+  paperIds: string[],
+): Promise<Map<string, { question: number; confirmed_points: number | null }[]>> {
+  const byPaper = new Map<string, { question: number; confirmed_points: number | null }[]>();
+  if (!enabled || paperIds.length === 0) return byPaper;
+  const { data, error } = await supabase
+    .from("open_answers")
+    .select("paper_id,question,confirmed_points")
+    .in("paper_id", paperIds);
+  if (error || !data) return byPaper;
+  for (const row of data) {
+    const paperId = String(row.paper_id);
+    const list = byPaper.get(paperId) ?? [];
+    list.push({ question: Number(row.question), confirmed_points: row.confirmed_points as number | null });
+    byPaper.set(paperId, list);
+  }
+  return byPaper;
+}
+
+/**
+ * Recalcula y escribe UNA hoja (papers.score/total/points/points_total/grade
+ * + grade_records), a partir de sus `answers` YA actualizadas en la BD. Fuente
+ * unica para "una hoja cambio, hay que recorregirla" -- la usan tanto la
+ * confirmacion de una pregunta de desarrollo (regradePaperAfterOpenAnswer en
+ * dashboard/actions.ts) como la correccion manual de una respuesta mal leida
+ * (updatePaperAnswerAction en dashboard/papers/actions.ts), para que no existan
+ * dos formulas de "recalcular una hoja" que puedan divergir.
+ */
+export async function regradeSinglePaper(
+  supabase: MinimalClient,
+  school: DashboardSchool,
+  args: { quizId: string; paperId: string },
+): Promise<ScoredResult | null> {
+  const { data: quiz, error: quizError } = await supabase.from("quizzes").select("*").eq("id", args.quizId).single();
+  if (quizError || !quiz) return null;
+
+  const { data: paper } = await supabase
+    .from("papers")
+    .select("id, answers, student_rut_norm")
+    .eq("id", args.paperId)
+    .eq("school_id", school.id)
+    .single();
+  if (!paper) return null;
+
+  const openByPaper = await fetchConfirmedOpenAnswers(
+    supabase, (quiz as { score_open_questions?: boolean }).score_open_questions === true, [args.paperId],
+  );
+  const answers = Array.isArray(paper.answers) ? (paper.answers as { q: number; a: string }[]) : [];
+  const result = computeQuizScore(
+    quiz as unknown as ScoreableQuiz, answers, school, school.country_code ?? "CL", openByPaper.get(args.paperId) ?? [],
+  );
+  await updatePaperScores(supabase, args.paperId, result);
+
+  if (paper.student_rut_norm) {
+    await upsertGradeRecord(supabase, school, {
+      quizId: args.quizId,
+      paperId: args.paperId,
+      studentCode: paper.student_rut_norm as string,
+      score: result.score,
+      total: result.total,
+    });
+  }
+
+  return result;
 }
 
 /** Puntaje ya calculado de una hoja. Devuelve null si la BD todavia no tiene

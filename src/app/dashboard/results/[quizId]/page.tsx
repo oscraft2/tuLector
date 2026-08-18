@@ -111,12 +111,17 @@ export default async function ResultsPage({ params, searchParams }: PageProps) {
           renderRow={(paper) => (
             <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0">
               <td className="px-5 py-4 font-semibold">
-                {/* Sin dueño: se entra a identificar (foto del nombre + buscador). */}
+                {/* Sin dueño: se entra a identificar (foto del nombre + buscador).
+                    Con dueño: al detalle de la hoja (respuesta por pregunta + corregir). */}
                 {paper.status === "manual_review" ? (
                   <Link href={`/dashboard/papers/${paper.id}`} className="text-[#9a3412] underline decoration-dotted hover:text-[#7c2d12]">
                     {paper.student_name ?? paper.student_id ?? "Sin identificar"} · identificar
                   </Link>
-                ) : (paper.student_name ?? paper.student_id ?? "Sin identificar")}
+                ) : (
+                  <Link href={`/dashboard/papers/${paper.id}`} className="text-[#111827] hover:text-[#07305f] hover:underline">
+                    {paper.student_name ?? paper.student_id ?? "Sin identificar"}
+                  </Link>
+                )}
               </td>
               <td className="px-5 py-4">{paper.score ?? "-"}/{paper.total ?? quiz.num_questions}</td>
               <td className="px-5 py-4 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
@@ -132,7 +137,9 @@ export default async function ResultsPage({ params, searchParams }: PageProps) {
                     {paper.student_name ?? paper.student_id ?? "Sin identificar"} · identificar
                   </Link>
                 ) : (
-                  <p className="min-w-0 truncate text-base font-semibold text-[#111827]">{paper.student_name ?? paper.student_id ?? "Sin identificar"}</p>
+                  <Link href={`/dashboard/papers/${paper.id}`} className="min-w-0 truncate text-base font-semibold text-[#111827] hover:text-[#07305f]">
+                    {paper.student_name ?? paper.student_id ?? "Sin identificar"}
+                  </Link>
                 )}
                 <span className="shrink-0 rounded bg-[#eef4ff] px-2 py-1 text-xs font-bold text-[#07305f]">{paper.total ? Math.round(((paper.score ?? 0) / paper.total) * 100) : 0}%</span>
               </div>

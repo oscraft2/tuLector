@@ -34,7 +34,7 @@ import { suggestColumns, OPEN_BOXES_PER_PAGE } from "@/lib/sheet_generator";
 import { parseSheetMode, compactModeIssue } from "@/lib/sheet_mode";
 import { sendTemplatedEmail } from "@/lib/email";
 import { computeQuizScore } from "@/lib/grading";
-import { upsertGradeRecord } from "@/lib/paper_assign";
+import { upsertGradeRecord, updatePaperScores, fetchConfirmedOpenAnswers, regradeSinglePaper } from "@/lib/paper_assign";
 import {
   readQuizScoringFields, quizScoringIssue, hasScoringConfig,
   QUIZ_POINTS_COLUMNS, QUIZ_GRADE_SCALE_COLUMNS,
@@ -683,55 +683,6 @@ function withoutColumns(payload: Record<string, unknown>, columns: readonly stri
   return rest;
 }
 
-type ScoredResult = ReturnType<typeof computeQuizScore>;
-
-/**
- * Escribe el resultado de una hoja re-corregida. `points`/`points_total` son de
- * la migracion quiz_points: si la BD no las tiene, se guarda igual sin ellas
- * (la nota, que es lo que el profesor ve, ya viaja en `grade`).
- */
-async function updatePaperScores(
-  supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"],
-  paperId: string,
-  result: ScoredResult,
-): Promise<void> {
-  const base = { score: result.score, total: result.total, grade: result.grade, equivalent_score: result.equivalentScore };
-  const { error } = await supabase
-    .from("papers")
-    .update({ ...base, points: result.points, points_total: result.pointsTotal })
-    .eq("id", paperId);
-  if (error && (isMissingColumnError(error, "points") || isMissingColumnError(error, "points_total"))) {
-    await supabase.from("papers").update(base).eq("id", paperId);
-  }
-}
-
-/**
- * Puntajes de desarrollo YA confirmados, agrupados por hoja. Devuelve un mapa
- * vacio si el ensayo no puntua las abiertas (no hace ni la consulta) o si la
- * tabla `open_answers` todavia no existe -- el puntaje de las cerradas nunca
- * puede quedar bloqueado por esto.
- */
-async function fetchConfirmedOpenAnswers(
-  supabase: Awaited<ReturnType<typeof getDashboardContext>>["supabase"],
-  enabled: boolean,
-  paperIds: string[],
-): Promise<Map<string, { question: number; confirmed_points: number | null }[]>> {
-  const byPaper = new Map<string, { question: number; confirmed_points: number | null }[]>();
-  if (!enabled || paperIds.length === 0) return byPaper;
-  const { data, error } = await supabase
-    .from("open_answers")
-    .select("paper_id,question,confirmed_points")
-    .in("paper_id", paperIds);
-  if (error || !data) return byPaper;
-  for (const row of data) {
-    const paperId = String(row.paper_id);
-    const list = byPaper.get(paperId) ?? [];
-    list.push({ question: Number(row.question), confirmed_points: row.confirmed_points as number | null });
-    byPaper.set(paperId, list);
-  }
-  return byPaper;
-}
-
 function withoutBatchId<T extends { batch_id?: unknown }>(payload: T) {
   const { batch_id: _batchId, ...rest } = payload;
   void _batchId;
@@ -1183,37 +1134,14 @@ async function regradePaperAfterOpenAnswer(
   quizId: string,
   paperId: string,
 ): Promise<void> {
-  const { data: quiz, error: quizError } = await supabase.from("quizzes").select("*").eq("id", quizId).single();
   // Sin la migracion de puntaje la columna no existe y `score_open_questions`
   // llega undefined: no hay nada que recalcular, se sale igual que siempre.
+  // (regradeSinglePaper trae el quiz solo; se chequea aca para no cargarlo dos veces
+  // ni recalcular puntaje/grade_records cuando el ensayo no puntua las abiertas.)
+  const { data: quiz, error: quizError } = await supabase.from("quizzes").select("score_open_questions").eq("id", quizId).maybeSingle();
   if (quizError || !quiz || quiz.score_open_questions !== true) return;
 
-  const { data: paper } = await supabase
-    .from("papers")
-    .select("id, answers, student_rut_norm")
-    .eq("id", paperId)
-    .eq("school_id", school.id)
-    .single();
-  if (!paper) return;
-
-  const openByPaper = await fetchConfirmedOpenAnswers(supabase, true, [paperId]);
-  const answers = Array.isArray(paper.answers) ? (paper.answers as { q: number; a: string }[]) : [];
-  const result = computeQuizScore(quiz, answers, school, school.country_code ?? "CL", openByPaper.get(paperId) ?? []);
-  await updatePaperScores(supabase, paperId, result);
-
-  if (paper.student_rut_norm) {
-    await supabase.from("grade_records").upsert({
-      school_id: school.id,
-      student_code: paper.student_rut_norm,
-      quiz_id: quizId,
-      paper_id: paperId,
-      raw_score: result.points,
-      total_questions: result.pointsTotal,
-      calculated_grade: result.grade,
-      passing: result.passing,
-      graded_at: new Date().toISOString(),
-    }, { onConflict: "school_id,student_code,quiz_id" });
-  }
+  await regradeSinglePaper(supabase, school, { quizId, paperId });
 }
 
 /**
