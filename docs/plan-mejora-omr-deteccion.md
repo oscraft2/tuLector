@@ -41,12 +41,19 @@ leer) contra la tabla "Datos de Lectura OMR" del mismo registro en `/admin/usage
   reporta esto como si estuviera todo bien (`Estado: VÁLIDO`, no rechazado), confirmando que el
   bug no es un rechazo — es una lectura "exitosa" con las filas contadas mal desde el principio.
 
-**Hipótesis de la causa raíz** (a confirmar por quien lo implemente, revisando
-`readTimingRows`/`rowsFromTiming` y el fallback `findGridOffset` en `src/tulector/omr.ts`): en esta
-plantilla de hoja, el bloque RUT está ubicado verticalmente al lado de donde empiezan las
-preguntas, y el motor no está descontando/saltando las filas que corresponden al bloque RUT antes
-de empezar a numerar preguntas — cuenta 18 marcas de tiempo pero las asigna desde arriba del todo,
-incluyendo filas que en realidad pertenecen al RUT.
+**Hipótesis de la causa raíz — EN DUDA, refutada parcialmente por el usuario (2026-08-19).** El
+usuario observa que otras hojas de la MISMA plantilla, con mejor calidad de marca, se leen
+correctamente — así que no es un bug permanente de esta plantilla (el motor no confunde el bloque
+RUT con preguntas siempre). Hipótesis revisada: es probable que solo pase cuando la pista de
+temporización (timing track) no se lee completa en esa hoja puntual — el KPI del registro
+`7033cb37` mostraba **"18 marcas de tiempo leídas"**, y si el número real de filas de pregunta es
+mayor, eso sugiere que la lectura de timing track falló parcialmente en ESTE escaneo (probablemente
+por la calidad/ángulo de la foto, no por la plantilla), y el motor cayó a un método de fallback
+(`findGridOffset` u otro conteo aproximado) que ahí sí se confunde con el bloque RUT. **Pendiente de
+verificar antes de tocar código**: comparar este registro contra otro escaneo bueno del MISMO
+instrumento en `/admin/usage` y confirmar cuántas marcas de temporización se esperan v/s se leyeron
+en cada caso — recién con eso se puede aislar si el bug está en el fallback (probable) o en otro
+lado.
 
 ## Por qué nadie lo había visto (gap en el sistema de auditoría, no solo en el motor)
 
@@ -71,16 +78,22 @@ ejemplo, >70-80% de preguntas en blanco, mostrado como categoría separada (no m
 "Lecturas Fallidas") para que estos casos salten a la vista sin depender de que un profesor lo note
 por casualidad al revisar notas raras.
 
-**3. Activar el clasificador entrenado ya construido pero apagado.**
+**3. Activar el clasificador entrenado ya construido pero apagado — INTENTADO 2026-08-19, TODAVÍA
+NO ES SEGURO, confirmado en la práctica (no solo en teoría).**
 `src/tulector/classifier.ts` tiene un clasificador logístico ya armado
-(`CLASSIFIER: {w,b} | null`) que hoy está en `null` — "el motor usa la heurística actual, cero
-cambio. Solo se activa cuando haya datos reales suficientes y pase el test" (comentario del propio
-archivo). Esto es casi seguro **"el sistema que podía mejorar"** que el usuario recordaba. El
-pipeline para entrenarlo ya existe (`scripts/export_dataset.ts` + `scripts/train_classifier.ts`,
-alimentado por las correcciones manuales que ya se guardan en `scan_logs` vía el panel de auditoría
-/ "Confirmar lectura" de `/scan`). No resuelve el bug de filas de este caso puntual, pero es la vía
-ya construida para que el motor aprenda de casos reales difíciles (letra tenue, marcas parciales)
-en vez de depender solo de umbrales fijos.
+(`CLASSIFIER: {w,b} | null`), apagado por defecto. Se corrió el pipeline completo:
+`export_dataset.ts` → **32 escaneos etiquetados, sin cambio desde el intento anterior del
+2026-08-17** (último "Confirmar lectura" real: 2026-07-22 — casi un mes sin datos nuevos) →
+`train_classifier.ts` → mismos pesos/accuracy que antes (95.5%, dataset idéntico) → pegados en
+`classifier.ts` → `npm run test:omr` → **se rompe exactamente igual que la vez pasada**: guardia de
+4 columnas falla (`q100 leyó "AB" esperaba "B"`). Revertido a `CLASSIFIER = null` de inmediato, 28
+guardias verdes de nuevo, working tree limpio.
+
+Causa confirmada del bloqueo: el dataset etiquetado nunca superó 40 preguntas / 2 columnas por
+escaneo (máximo observado en los 32 ejemplos) — no cubre layouts densos (3-4 columnas, ~75-100
+preguntas), que es justo donde el guardia rompe. **No es seguro reintentar esto hasta juntar
+"Confirmar lectura" de hojas reales con 3-4 columnas** — la funcionalidad de "Confirmar lectura" ya
+existe (`/scan` y el panel de auditoría), solo falta que se use en hojas de ese formato.
 
 **4. Ampliar las pruebas del motor con casos reales degradados, no solo sintéticos.**
 `test_omr_real.ts` ya prueba sombra/bajo-contraste/foto lavada, pero con ruido **sintético
