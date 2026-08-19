@@ -701,8 +701,18 @@ export async function correctScanLog(formData: FormData) {
   }
   const rutTrue = String(formData.get("rut_true") ?? "").trim();
 
+  // BUG REAL encontrado en vivo (2026-08-19): esto guardaba `corrected`/
+  // `verified` pero nunca tocaba `type` -- si el scan_log original no era
+  // type:"label" (el caso normal: la app movil solo lo marca "label" cuando
+  // el profesor toca "Confirmar lectura" en el modal de revision, que el
+  // modo rafaga se salta por diseno), export_dataset.ts jamas lo veia
+  // (filtra `.eq("log->>type","label")`). Resultado: corregir aca a mano
+  // NUNCA alimentaba el dataset de entrenamiento, aunque pareciera guardar
+  // bien. Fix: forzar type:"label" al confirmar/corregir desde auditoria,
+  // igual que ya hace /scan (src/app/scan/page.tsx confirmRead()).
   const nextLog = {
     ...(row.log as Record<string, unknown>),
+    type: "label",
     corrected,
     verified: true,
     ...(rutTrue ? { rutTrue } : {}),

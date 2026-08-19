@@ -32,8 +32,10 @@ export function ScanLogCorrectionPanel({ scanLogId, answers, rut, corrected, ver
         )}
       </div>
       <p className="text-sm text-[#5b6472]">
-        Marca lo que la hoja REALMENTE dice por pregunta. Se guarda en los mismos campos que usa &quot;Confirmar lectura&quot;
-        en /scan (alimenta el mismo dataset etiquetado), y queda visible el contraste contra lo que leyó el motor.
+        Marca lo que la hoja REALMENTE dice por pregunta (si el motor ya leyó todo bien, no cambies nada y solo confirma).
+        Este es el equivalente en auditoría de &quot;Confirmar lectura&quot; en /scan — necesario porque el modo ráfaga del
+        celular se salta ese paso por diseño. Alimenta el mismo dataset etiquetado que entrena el clasificador, y queda
+        visible el contraste contra lo que leyó el motor.
       </p>
 
       <form action={correctScanLog} className="space-y-4">
@@ -69,7 +71,7 @@ export function ScanLogCorrectionPanel({ scanLogId, answers, rut, corrected, ver
         </div>
 
         <button className="rounded-md bg-[#07305f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0b3f78]">
-          Guardar corrección
+          Confirmar lectura / guardar corrección
         </button>
       </form>
     </div>
