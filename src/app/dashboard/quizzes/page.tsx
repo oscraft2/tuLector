@@ -35,6 +35,20 @@ function ExportDiaLink({ quizId, hasPapers, mobile = false }: { quizId: string; 
   );
 }
 
+/** Descarga rapida de RUT + Alumno + Correctas en Excel, sin entrar al detalle
+ *  del ensayo a tildar columnas -- reusa tal cual /api/export/results/[quizId]
+ *  (mismo catalogo de columnas que el panel "Exportar resultados" del
+ *  detalle, ExportPanel.tsx). Requiere admin porque la ruta ya lo exige. */
+function ExportExcelLink({ quizId, hasPapers, mobile = false }: { quizId: string; hasPapers: boolean; mobile?: boolean }) {
+  const cls = hasPapers ? (mobile ? EXPORT_CLS_M : EXPORT_CLS) : (mobile ? EXPORT_CLS_DISABLED_M : EXPORT_CLS_DISABLED);
+  const href = `/api/export/results/${quizId}?cols=rut,student_name,correct&fmt=xlsx`;
+  return (
+    <a href={hasPapers ? href : undefined} aria-disabled={!hasPapers} className={cls}>
+      RUT/Nombre/Correctas (Excel)
+    </a>
+  );
+}
+
 type QuizRow = {
   id: string;
   title: string;
@@ -226,6 +240,7 @@ export default async function QuizzesPage({ searchParams }: { searchParams?: Pro
                     </button>
                   </form>
                   <ExportDiaLink quizId={quiz.id} hasPapers={(papersCountByQuiz.get(quiz.id) ?? 0) > 0} />
+                  {isAdmin && <ExportExcelLink quizId={quiz.id} hasPapers={(papersCountByQuiz.get(quiz.id) ?? 0) > 0} />}
                   {/* Duplicar y archivar son del dueño: sobre un ensayo ajeno
                       la RLS los rechazaria (archivar) o crearia una copia que
                       parte la base en dos (duplicar), que es justo lo que esta
@@ -276,6 +291,7 @@ export default async function QuizzesPage({ searchParams }: { searchParams?: Pro
                 <Link href={sheetHref(quiz)} className="rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold hover:bg-gray-50">{sheetLabel(quiz)}</Link>
                 <form action={startScanForQuiz}><input type="hidden" name="quiz_id" value={quiz.id} /><button className="rounded-md border border-[#cfd6df] px-3 py-2 text-xs font-semibold hover:bg-gray-50">Escanear</button></form>
                 <ExportDiaLink quizId={quiz.id} hasPapers={(papersCountByQuiz.get(quiz.id) ?? 0) > 0} mobile />
+                {isAdmin && <ExportExcelLink quizId={quiz.id} hasPapers={(papersCountByQuiz.get(quiz.id) ?? 0) > 0} mobile />}
                 {!isSharedWithMe(quiz) && (
                   <>
                     <ActionButton action={duplicateQuiz} fields={{ id: quiz.id }} label="Duplicar" pendingLabel="Duplicando…" className={DUP_CLS_M} />
