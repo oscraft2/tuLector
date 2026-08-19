@@ -1101,6 +1101,17 @@ export async function logExport(formData: FormData) {
  * plan: la IA sugiere, el profesor decide -- este es el ÚNICO lugar donde
  * `confirmed_points` se escribe; hasta que esto corre, el puntaje de la IA
  * no cuenta para nada (computeQuizScore sigue excluyendo las abiertas).
+ *
+ * BUG REAL encontrado en vivo (2026-08-19): esto era un `.update()`. Para un
+ * alumno que nunca paso por la correccion con IA (reverso no escaneado, o la
+ * pantalla nueva de calificacion rapida en quizzes/[id]/abiertas, que
+ * renderiza una celda por cada pregunta abierta AUNQUE no exista fila en
+ * open_answers todavia) no hay fila que actualizar -- un UPDATE sobre 0 filas
+ * no tira error en Supabase, asi que el boton "parecia" guardar (sin error) y
+ * el valor se perdia al recargar. Fix: upsert por (paper_id, question) --
+ * inserta la fila si no existe, actualiza si ya existe (sin pisar
+ * transcripcion/puntaje/confianza que ya haya puesto la IA, porque el upsert
+ * de supabase-js solo hace SET de las columnas que se le pasan).
  */
 export async function confirmOpenAnswer(formData: FormData) {
   const { supabase, school } = await getDashboardContext();
@@ -1109,12 +1120,26 @@ export async function confirmOpenAnswer(formData: FormData) {
   const quizId = String(formData.get("quiz_id") ?? "");
   const points = Number(formData.get("points"));
   if (!paperId || !Number.isInteger(question) || !Number.isFinite(points)) throw new Error("Datos invalidos.");
+
+  // max_points solo viene de la pantalla nueva (OpenAnswerCell, que ya sabe
+  // el maximo de la rubrica) -- la tabla plana vieja no lo manda, y no
+  // conviene pisar con null el max_points que ya haya puesto la IA en una
+  // fila existente.
+  const maxPointsRaw = formData.get("max_points");
+  const maxPoints = maxPointsRaw != null && maxPointsRaw !== "" ? Number(maxPointsRaw) : null;
+
+  const payload: Record<string, unknown> = {
+    paper_id: paperId,
+    question,
+    school_id: school.id,
+    confirmed_points: Math.max(0, points),
+    confirmed_at: new Date().toISOString(),
+  };
+  if (maxPoints != null && Number.isFinite(maxPoints)) payload.max_points = maxPoints;
+
   const { error } = await supabase
     .from("open_answers")
-    .update({ confirmed_points: Math.max(0, points), confirmed_at: new Date().toISOString() })
-    .eq("paper_id", paperId)
-    .eq("question", question)
-    .eq("school_id", school.id);
+    .upsert(payload, { onConflict: "paper_id,question" });
   if (error) throw new Error(error.message);
   // Si el ensayo puntua las abiertas, confirmar SUBE la nota en el acto. Sin
   // esto el numero confirmado se quedaba guardado sin llegar nunca a la nota.

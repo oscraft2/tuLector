@@ -42,6 +42,7 @@ export function OpenAnswerCell({ paperId, question, quizId, maxPoints, initialCo
     fd.set("question", String(question));
     fd.set("quiz_id", quizId);
     fd.set("points", String(clamped));
+    if (maxPoints != null) fd.set("max_points", String(maxPoints));
     startTransition(async () => {
       try {
         await confirmOpenAnswer(fd);

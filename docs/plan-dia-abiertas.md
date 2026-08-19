@@ -1,9 +1,9 @@
 # Cargar preguntas abiertas a DIA + finalizar el instrumento completo
 
-Estado: **Fases 0-D CERRADAS (2026-08-18/19)**. Falta solo Fase E (finalizar el instrumento
-completo). Copiado del plan de sesión para que sobreviva entre conversaciones (ver
-`feedback_plan_file_reuse` en memoria: el archivo de plan de sesión se reusa entre tareas
-distintas).
+Estado: **Fases 0-E construidas (2026-08-19)**. Falta probar Fase E (finalizar) en vivo contra un
+alumno de prueba, y la prueba E2E real de todo el flujo contra un curso completo. Copiado del plan
+de sesión para que sobreviva entre conversaciones (ver `feedback_plan_file_reuse` en memoria: el
+archivo de plan de sesión se reusa entre tareas distintas).
 
 ## Contexto
 
@@ -79,9 +79,12 @@ pregunta. Se hace una vez que ese alumno tiene alternativas + abiertas ya cargad
   automático hoy escribe el mismo 0/1/2 en el casillero numérico, NO la respuesta real transcrita
   — hay que revisarlas/corregirlas a mano en DIA antes de finalizar si importa el valor exacto
   (afecta la autocorrección de DIA para esas 2 preguntas puntuales).
-- **Fase E — Finalizar instrumento completo (pendiente, opcional).** Retomar F2/F3 de
-  `dia-bot-extension/docs/PLAN_FINALIZAR_Y_ABIERTAS.md` (ya diseñadas, nada implementado) — recién
-  después de probar B-D en vivo con un curso real.
+- **Fase E — Finalizar instrumento completo — IMPLEMENTADA (2026-08-19), sin probar en vivo
+  todavía.** `dia-bot-extension`: `lib/dia_client.js` + `background.js` (mensaje de puerto
+  `"finalizar"` separado, nunca automático) + `popup.js`/`popup.html` (paso aparte con doble
+  confirmación, solo ofrece alumnos "completos" de la corrida real). Detalle en
+  `dia-bot-extension/docs/PLAN_FINALIZAR_Y_ABIERTAS.md`. Falta correrlo de verdad contra 1 alumno
+  de prueba antes de usarlo sobre un curso completo.
 
 ## Verificación
 
