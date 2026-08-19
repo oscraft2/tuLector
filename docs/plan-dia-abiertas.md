@@ -1,8 +1,9 @@
 # Cargar preguntas abiertas a DIA + finalizar el instrumento completo
 
-Estado: **EN CONSTRUCCIÓN** (2026-08-17). Copiado del plan de sesión para que sobreviva entre
-conversaciones (ver `feedback_plan_file_reuse` en memoria: el archivo de plan de sesión se reusa
-entre tareas distintas).
+Estado: **Fases 0-D CERRADAS (2026-08-18/19)**. Falta solo Fase E (finalizar el instrumento
+completo). Copiado del plan de sesión para que sobreviva entre conversaciones (ver
+`feedback_plan_file_reuse` en memoria: el archivo de plan de sesión se reusa entre tareas
+distintas).
 
 ## Contexto
 
@@ -52,22 +53,43 @@ pregunta. Se hace una vez que ese alumno tiene alternativas + abiertas ya cargad
 
 ## Plan de trabajo
 
-- **Fase 0 — Captura real del payload** (bloqueante para Fase D, la ejecuta el profesor en vivo):
-  entrar en DIA a un alumno con pregunta abierta real, escribir un valor de prueba + código, usar
-  "GUARDAR Y VOLVER" (nunca "FINALIZAR"), y copiar la captura técnica del popup de la extensión.
-- **Fase B — Mapeo de código en tuLector** (`src/lib/dia_codigo.ts`, construida en esta sesión):
-  `open_answers` → código DIA (0/1/2), usando solo `confirmed_points`.
-- **Fase C — Exportar código en `export-dia`**: `src/lib/dia_export.ts` deja de forzar `""` en
-  preguntas abiertas, hace join con `open_answers` y aplica el mapeo de Fase B.
-- **Fase D — Extensión: enviar abiertas a DIA** (depende de Fase 0): `lib/answer_payload.js` +
-  `lib/csv.js` en `dia-bot-extension`.
-- **Fase E — Finalizar instrumento completo** (opcional, después de B-D probadas en vivo): retomar
-  F2/F3 de `dia-bot-extension/docs/PLAN_FINALIZAR_Y_ABIERTAS.md` (ya diseñadas, nada implementado).
+- **Fase 0 — Captura real del payload — CERRADA (2026-08-18/19).** Confirmado en vivo para los 3
+  subtipos reales de la prueba de referencia (P27/P29/P33):
+  - `ABIERTA_SIMPLE` (P29): el código (0/1/2, mismo rango que `pregunta.tipoPregunta.puntajes`) va
+    en **`puntajePapel`** (número). `respuestaAbierta` queda `null` aunque no se escriba texto —
+    no hace falta para que el guardado sea aceptado. `estado` pasa a `"RESPONDIDA"`.
+  - `ABIERTA_ENTERO_DECIMAL` (P33): el valor va en **`respuestas[0].respuestaEscalar`** (string),
+    comparado por DIA contra `pregunta.escalares[0].valorCorrecto` (autocorrección). `puntajePapel`
+    queda `null` — la UI real de DIA para este tipo ni siquiera tiene el selector de código.
+  - `ABIERTA_PAR_ORDENADO` (P27): misma familia que `ENTERO_DECIMAL` pero con 2 casilleros
+    (`respuestas[]` con `orden:1`/`orden:2`, cada uno con su propio `respuestaEscalar`) — inferido
+    por la forma de la pauta y la estructura del payload, no se llegó a guardar un valor real de
+    prueba para confirmarlo al 100%.
+- **Fase B — Mapeo de código en tuLector — CERRADA.** `src/lib/dia_codigo.ts`: `open_answers` →
+  código DIA (0/1/2), usando solo `confirmed_points`.
+- **Fase C — Exportar código en `export-dia` — CERRADA.** `src/lib/dia_export.ts` hace join con
+  `open_answers` y aplica el mapeo de Fase B a toda pregunta abierta configurada en el ensayo.
+- **Fase D — Extensión: enviar abiertas a DIA — CERRADA (2026-08-19).**
+  `dia-bot-extension/lib/answer_payload.js` (`aplicarAbierta()`) ya sube las 3: `ABIERTA_SIMPLE`
+  vía `puntajePapel`, `ABIERTA_PAR_ORDENADO`/`ABIERTA_ENTERO_DECIMAL` vía `respuestaEscalar`.
+  **Decisión explícita del usuario** (no la propuesta original de este doc): en vez de dejar
+  par-ordenado/entero-decimal para carga manual, se sube el mismo valor de la columna del CSV
+  (0 por defecto) también ahí — aunque semánticamente sea un "código" y esos tipos en realidad
+  quieran el número literal que escribió el alumno. Es decir: para esos 2 tipos, el envío
+  automático hoy escribe el mismo 0/1/2 en el casillero numérico, NO la respuesta real transcrita
+  — hay que revisarlas/corregirlas a mano en DIA antes de finalizar si importa el valor exacto
+  (afecta la autocorrección de DIA para esas 2 preguntas puntuales).
+- **Fase E — Finalizar instrumento completo (pendiente, opcional).** Retomar F2/F3 de
+  `dia-bot-extension/docs/PLAN_FINALIZAR_Y_ABIERTAS.md` (ya diseñadas, nada implementado) — recién
+  después de probar B-D en vivo con un curso real.
 
 ## Verificación
 
-- Fase B: `src/lib/dia_codigo.test.ts` (casos borde: sin respuesta, parcial, perfecta, incorrecta
-  con texto, sin confirmar todavía).
-- Fase C: comparar el CSV exportado contra un ensayo con abiertas ya calificadas/confirmadas.
-- Fase D/E: nunca ejecutar el modo real contra DIA sin confirmación explícita en el momento —
-  escribe en una plataforma de gobierno en vivo.
+- Fase B: `src/lib/dia_codigo.test.ts` (9 casos, todos verdes).
+- Fase C: `src/lib/dia_export.test.ts` (4 casos, todos verdes).
+- Fase D: `dia-bot-extension/lib/answer_payload.test.js` (18 casos incl. los 3 subtipos abiertos,
+  todos verdes).
+- Falta la prueba E2E real: correr el flujo completo (tuLector calificado → CSV → extensión →
+  DIA) sobre un curso de II medio real y comparar contra lo esperado antes de dar por cerrado.
+- Fase E: nunca ejecutar el modo real de finalizar sin confirmación explícita en el momento —
+  escribe en una plataforma de gobierno en vivo y es irreversible.
