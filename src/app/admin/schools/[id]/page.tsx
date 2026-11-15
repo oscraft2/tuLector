@@ -56,7 +56,7 @@ export default async function SchoolDetailPage({ params }: PageProps) {
   await writeAuditLog({ actorUserId: user.id, actorRole: role, schoolId: id, targetType: "school", targetId: id, action: "school.view", reason: "Vista detalle admin plataforma" });
   const currentStatus = school.status ?? "active";
   return (
-    <AdminShell active="/admin/schools" title={school.name} description="Vista 360 del cliente: plan, estado de cuenta, pagos y actividad. Cualquier impersonacion, acceso a fotos o accion destructiva requiere motivo, 2FA y audit_log.">
+    <AdminShell active="/admin/schools" title={school.name} description="Vista 360 del cliente: plan, estado de cuenta, pagos y actividad. Las acciones estan restringidas por rol y se registran en el historial.">
       <div className="space-y-6">
         <section className="rounded-md border border-[#f59e0b] bg-[#fffbeb] p-4 text-sm text-[#92400e]">Visto por staff {user.email}. Motivo registrado: Vista detalle admin plataforma.</section>
 
@@ -90,7 +90,7 @@ export default async function SchoolDetailPage({ params }: PageProps) {
           <div>
             <h2 className="text-base font-semibold text-[#111827]">Cambiar plan</h2>
             <p className="mt-1 text-sm text-[#5b6472] mb-3">Plan actual: <span className="font-semibold">{school.plan}</span>.</p>
-            <form action={updateSchoolPlan} className="flex flex-col gap-2">
+            {role === "platform_admin" || role === "finance" ? (<form action={updateSchoolPlan} className="flex flex-col gap-2">
               <input type="hidden" name="school_id" value={id} />
               <select name="plan" defaultValue={school.plan} className="rounded border border-[#cfd6df] px-3 py-2 text-sm outline-none">
                 <option value="starter">gratis</option>
@@ -99,7 +99,7 @@ export default async function SchoolDetailPage({ params }: PageProps) {
               </select>
               <input type="text" name="reason" required placeholder="Motivo del cambio de plan..." className="rounded border border-[#cfd6df] px-3 py-2 text-sm outline-none" />
               <button className="rounded bg-[#111827] px-3 py-2 text-sm font-semibold text-white hover:bg-[#07305f]">Guardar plan</button>
-            </form>
+            </form>) : <span className="text-sm text-[#5b6472]">Solicita el cambio al equipo de finanzas.</span>}
           </div>
           <div>
             <h2 className="text-base font-semibold text-[#111827]">Estado de la cuenta</h2>

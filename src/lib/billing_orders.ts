@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import type { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { resolveLocaleForCountry } from "@/lib/country_profiles";
 
@@ -50,39 +51,6 @@ type PaidOrderOptions = {
   billingPeriodMonths?: number;
 };
 
-async function upsertSchoolSubscription(
-  admin: AdminClient,
-  input: { schoolId: string; plan: string; currency: string; amountCents: number },
-) {
-  const payload = {
-    school_id: input.schoolId,
-    plan: input.plan,
-    status: "active",
-    currency: input.currency,
-    amount_cents: input.amountCents,
-    current_period_start: new Date().toISOString(),
-    current_period_end: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-
-  const { data: existing, error: existingError } = await admin
-    .from("subscriptions")
-    .select("id")
-    .eq("school_id", input.schoolId)
-    .maybeSingle();
-
-  if (existingError) throw existingError;
-
-  if (existing?.id) {
-    const { error } = await admin.from("subscriptions").update(payload).eq("id", existing.id);
-    if (error) throw error;
-    return;
-  }
-
-  const { error } = await admin.from("subscriptions").insert({ ...payload, created_at: new Date().toISOString() });
-  if (error) throw error;
-}
-
 function buildReceiptNumber(receiptSeq: number | null | undefined) {
   const seq = typeof receiptSeq === "number" ? receiptSeq : 0;
   return `TL-${String(seq).padStart(8, "0")}`;
@@ -92,95 +60,29 @@ export function formatReceiptNumber(order: { receipt_seq: number | null }) {
   return buildReceiptNumber(order.receipt_seq);
 }
 
-export async function markOrderPaidAndApplyEntitlement(admin: AdminClient, orderId: string, options: PaidOrderOptions = {}): Promise<PaidOrderResult> {
-  const { data: orderData, error: orderError } = await admin
-    .from("orders")
-    .select("*")
-    .eq("id", orderId)
-    .single();
-
-  if (orderError || !orderData) throw new Error("Orden no encontrada");
-
-  const order = orderData as BillingOrder;
-
-  if (options.expectedAmountCents !== undefined && Number(order.amount_cents ?? 0) !== options.expectedAmountCents) {
-    throw new Error("El monto pagado no coincide con la orden");
+/**
+ * One database transaction owns the order, quota and subscription.
+ * A failed call rolls everything back; duplicate callbacks are safe to retry.
+ */
+export async function markOrderPaidAndApplyEntitlement(
+  admin: AdminClient,
+  orderId: string,
+  options: PaidOrderOptions,
+): Promise<PaidOrderResult> {
+  if (!Number.isSafeInteger(options.expectedAmountCents) || options.expectedAmountCents! <= 0
+    || !options.expectedCurrency || !options.gateway || !options.gatewayPaymentId) {
+    throw new Error("Faltan datos verificados de la pasarela");
   }
-
-  if (options.expectedCurrency && String(order.currency || "").toLowerCase() !== options.expectedCurrency.toLowerCase()) {
-    throw new Error("La moneda pagada no coincide con la orden");
-  }
-
-  const { data: school, error: schoolError } = await admin
-    .from("schools")
-    .select("id, name, scans_limit, plan, country_code")
-    .eq("id", order.school_id)
-    .single();
-
-  if (schoolError || !school) throw new Error("Colegio no encontrado");
-
-  if (order.status === "paid") {
-    const extraScans = Number(order.scans_added ?? 0);
-    const targetPlan = order.type === "plan" ? (extraScans >= 10000 ? "school" : "pro") : school.plan;
-    return { alreadyProcessed: true, order, school, extraScans, targetPlan };
-  }
-
-  if (order.status !== "pending") throw new Error("La orden no esta pendiente");
-
-  const now = new Date();
-  const periodMonths = options.billingPeriodMonths ?? (order.type === "plan" ? 12 : 0);
-  const periodEnd = periodMonths > 0 ? new Date(now.getTime() + periodMonths * 30 * 24 * 60 * 60 * 1000).toISOString() : null;
-
-  const { data: paidOrderData, error: updateOrderError } = await admin
-    .from("orders")
-    .update({
-      status: "paid",
-      paid_at: now.toISOString(),
-      gateway: options.gateway ?? order.gateway ?? "flow",
-      gateway_payment_id: options.gatewayPaymentId ?? order.gateway_payment_id ?? null,
-      billing_period_start: order.billing_period_start ?? now.toISOString(),
-      billing_period_end: periodEnd ?? order.billing_period_end,
-    })
-    .eq("id", orderId)
-    .eq("status", "pending")
-    .select("*")
-    .maybeSingle();
-
-  if (updateOrderError) throw updateOrderError;
-  if (!paidOrderData) {
-    return { alreadyProcessed: true, order, school, extraScans: Number(order.scans_added ?? 0), targetPlan: school.plan };
-  }
-
-  const paidOrder = paidOrderData as BillingOrder;
-
-  const extraScans = Number(paidOrder.scans_added ?? 0);
-  const targetPlan = paidOrder.type === "plan" ? (extraScans >= 10000 ? "school" : "pro") : school.plan;
-  const newScansLimit = paidOrder.type === "plan" ? extraScans : (school.scans_limit ?? 0) + extraScans;
-  const schoolUpdate: { scans_limit: number; updated_at: string; plan?: string; scans_used?: number } = {
-    scans_limit: newScansLimit,
-    updated_at: new Date().toISOString(),
-  };
-
-  if (targetPlan) schoolUpdate.plan = targetPlan;
-  if (paidOrder.type === "plan") schoolUpdate.scans_used = 0;
-
-  const { error: updateSchoolError } = await admin
-    .from("schools")
-    .update(schoolUpdate)
-    .eq("id", school.id);
-
-  if (updateSchoolError) throw updateSchoolError;
-
-  if (paidOrder.type === "plan") {
-    await upsertSchoolSubscription(admin, {
-      schoolId: school.id,
-      plan: targetPlan,
-      currency: paidOrder.currency || "clp",
-      amountCents: Number(paidOrder.amount_cents ?? 0),
-    });
-  }
-
-  return { alreadyProcessed: false, order: paidOrder, school, extraScans, targetPlan };
+  const { data, error } = await admin.rpc("apply_paid_order", {
+    p_order_id: orderId,
+    p_amount_cents: options.expectedAmountCents,
+    p_currency: options.expectedCurrency.toLowerCase(),
+    p_gateway: options.gateway,
+    p_payment_id: options.gatewayPaymentId,
+  });
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("No se pudo confirmar la orden");
+  return data as PaidOrderResult;
 }
 
 export type ReceiptSendResult = { sent: boolean; receiptNumber: string; alreadySent: boolean; error?: string };
@@ -254,6 +156,7 @@ export async function sendOrderReceiptIfNeeded(
   planOrPack: string,
   gatewayLabel: string,
   siteUrl: string,
+  resendKey?: string,
 ): Promise<ReceiptSendResult> {
   const { data: orderData, error: orderError } = await admin
     .from("orders")
@@ -279,7 +182,7 @@ export async function sendOrderReceiptIfNeeded(
 
   const receiptNumber = formatReceiptNumber(order);
 
-  if (order.receipt_sent_at) {
+  if (order.receipt_sent_at && !resendKey) {
     return { sent: true, receiptNumber, alreadySent: true };
   }
 
@@ -299,10 +202,10 @@ export async function sendOrderReceiptIfNeeded(
   }
 
   const adminUserIds = members.map((m) => m.user_id);
-  const { data: usersData } = await admin.auth.admin.listUsers();
-  const emails = (usersData?.users ?? [])
-    .filter((u) => adminUserIds.includes(u.id) && u.email)
-    .map((u) => u.email!);
+  const userResults = await Promise.all(adminUserIds.map((id) => admin.auth.admin.getUserById(id)));
+  const lookupError = userResults.find((result) => result.error)?.error;
+  if (lookupError) throw new Error("No se pudieron consultar los destinatarios");
+  const emails = Array.from(new Set(userResults.flatMap((result) => result.data.user?.email ? [result.data.user.email] : [])));
 
   if (emails.length === 0) {
     return { sent: false, receiptNumber, alreadySent: false, error: "No hay correos de administradores" };
@@ -316,6 +219,7 @@ export async function sendOrderReceiptIfNeeded(
     const result = await sendTemplatedEmail({
       to: email,
       templateKey: "order_receipt",
+      idempotencyKey: `order-receipt/${orderId}/${resendKey || "original"}/${createHash("sha256").update(email).digest("hex").slice(0, 24)}`,
       locale,
       variables: variables as unknown as Record<string, string | number>,
     });
@@ -373,6 +277,7 @@ export async function notifyPaymentFailed(
 
   type OrderSchool = { name: string; country_code: string | null };
   const order = orderData as BillingOrder & { schools: OrderSchool | OrderSchool[] | null };
+  if (order.status !== "failed") return { sent: false, error: "La orden no esta rechazada" };
   const schoolRow = Array.isArray(order.schools) ? order.schools[0] : order.schools;
   if (!schoolRow?.name) {
     return { sent: false, error: "Colegio no encontrado" };
@@ -389,10 +294,10 @@ export async function notifyPaymentFailed(
   }
 
   const adminUserIds = members.map((m) => m.user_id);
-  const { data: usersData } = await admin.auth.admin.listUsers();
-  const emails = (usersData?.users ?? [])
-    .filter((u) => adminUserIds.includes(u.id) && u.email)
-    .map((u) => u.email!);
+  const userResults = await Promise.all(adminUserIds.map((id) => admin.auth.admin.getUserById(id)));
+  const lookupError = userResults.find((result) => result.error)?.error;
+  if (lookupError) throw new Error("No se pudieron consultar los destinatarios");
+  const emails = Array.from(new Set(userResults.flatMap((result) => result.data.user?.email ? [result.data.user.email] : [])));
 
   if (emails.length === 0) {
     return { sent: false, error: "No hay correos de administradores" };
@@ -409,6 +314,7 @@ export async function notifyPaymentFailed(
     const result = await sendTemplatedEmail({
       to: email,
       templateKey: "payment_failed",
+      idempotencyKey: `payment-failed/${orderId}/${createHash("sha256").update(email).digest("hex").slice(0, 24)}`,
       locale,
       variables: {
         school_name: schoolRow.name,

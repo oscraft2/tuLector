@@ -11,7 +11,7 @@ const PAGE_SIZE = 30;
 type PageProps = { searchParams?: Promise<{ page?: string; q?: string }> };
 
 export default async function AdminSchoolsPage({ searchParams }: PageProps) {
-  const { admin } = await requirePlatformContext(["platform_admin", "support", "finance"]);
+  const { admin, role } = await requirePlatformContext(["platform_admin", "support", "finance"]);
   const sp = (await searchParams) ?? {};
   const q = (sp.q ?? "").trim();
   const currentPage = Math.max(1, Number(sp.page) || 1);
@@ -47,7 +47,7 @@ export default async function AdminSchoolsPage({ searchParams }: PageProps) {
       <DataTable columns={["Colegio", "Pais", "Plan", "Cuota", "Estado", "Acciones"]} rows={schools ?? []} empty={q ? "Sin resultados para esa busqueda." : "No hay tenants."} renderRow={(school) => (
         <tr key={school.id} className="border-b border-[#eef0f3] last:border-0">
           <td className="px-5 py-4 font-semibold"><Link href={`/admin/schools/${school.id}`} className="hover:underline">{school.name}</Link></td><td className="px-5 py-4">{school.country_code}</td><td className="px-5 py-4">{school.plan}</td><td className="px-5 py-4">{school.scans_used}/{school.scans_limit}</td><td className="px-5 py-4">{school.status ?? "active"}</td>
-          <td className="px-5 py-4"><form action={updateSchoolPlan} className="flex gap-2"><input type="hidden" name="school_id" value={school.id} /><input type="hidden" name="reason" value="Ajuste manual desde admin" /><select name="plan" defaultValue={school.plan} className="rounded border border-[#cfd6df] px-2 py-1 text-xs"><option value="starter">gratis</option><option value="pro">pro</option><option value="school">school</option></select><button className="rounded border border-[#cfd6df] px-2 py-1 text-xs font-semibold">Guardar</button></form></td>
+          <td className="px-5 py-4">{role === "platform_admin" || role === "finance" ? (<form action={updateSchoolPlan} className="flex gap-2"><input type="hidden" name="school_id" value={school.id} /><input type="hidden" name="reason" value="Ajuste manual desde admin" /><select name="plan" defaultValue={school.plan} className="rounded border border-[#cfd6df] px-2 py-1 text-xs"><option value="starter">gratis</option><option value="pro">pro</option><option value="school">school</option></select><button className="rounded border border-[#cfd6df] px-2 py-1 text-xs font-semibold">Guardar</button></form>) : <span className="text-sm text-[#5b6472]">Solo lectura</span>}</td>
         </tr>
       )} />
 

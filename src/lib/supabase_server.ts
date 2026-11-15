@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
 import type { DashboardLocale } from "@/locales";
 import { resolveCountryProfile } from "@/lib/country_profiles";
+import { effectiveEntitlement } from "@/lib/billing_entitlement";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -15,6 +16,7 @@ export type DashboardSchool = {
   name: string;
   subdomain: string | null;
   plan: "starter" | "pro" | "school";
+  status: string | null;
   country_code: string | null;
   region: string | null;
   city: string | null;
@@ -217,6 +219,13 @@ export const getDashboardContext = cache(async function getDashboardContext() {
     role: m.role,
   }));
 
+  const { data: subscription, error: subscriptionError } = await supabase
+    .from("subscriptions")
+    .select("plan,status,current_period_end")
+    .eq("school_id", school.id)
+    .maybeSingle();
+  if (subscriptionError) throw new Error("No se pudo validar la vigencia del plan.");
+  school = { ...school, ...effectiveEntitlement(school, subscription) };
   const countryProfile = resolveCountryProfile((school as DashboardSchool).country_code);
 
   return {

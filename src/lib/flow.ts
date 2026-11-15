@@ -23,14 +23,14 @@ export function getFlowConfig() {
  * y calculando el HMAC-SHA256 con el Secret Key.
  */
 export function signFlowParameters(params: Record<string, string | number>, secretKey: string): string {
-  const sortedKeys = Object.keys(params).sort();
+  const sortedKeys = Object.keys(params).filter((key) => key !== "s").sort();
   const pairs: string[] = [];
 
   for (const key of sortedKeys) {
-    pairs.push(`${key}=${params[key]}`);
+    pairs.push(`${key}${params[key]}`);
   }
 
-  const baseString = pairs.join("&");
+  const baseString = pairs.join("");
   return crypto.createHmac("sha256", secretKey).update(baseString).digest("hex");
 }
 
@@ -106,6 +106,7 @@ export async function getFlowPaymentStatus(token: string): Promise<{
   status: number;
   amount: number;
   commerceOrder: string;
+  currency: string;
   paymentData: Record<string, unknown>;
 }> {
   const config = getFlowConfig();
@@ -120,6 +121,7 @@ export async function getFlowPaymentStatus(token: string): Promise<{
       return {
         status: 2, // Pagado
         amount: 19990,
+        currency: "clp",
         commerceOrder: token.split("_orderId_")[1] || "mock_order",
         paymentData: { method: "mock_webpay" },
       };
@@ -152,6 +154,7 @@ export async function getFlowPaymentStatus(token: string): Promise<{
     return {
       status: Number(json.status), // 1: pendiente, 2: pagado, 3: rechazado, 4: anulado
       amount: Number(json.amount),
+      currency: String(json.currency || "").toLowerCase(),
       commerceOrder: json.commerceOrder,
       paymentData: json,
     };

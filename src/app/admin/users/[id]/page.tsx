@@ -101,7 +101,7 @@ export default async function UserDetailPage({ params }: PageProps) {
                         <Link href={`/admin/schools/${m.school_id}`} className="hover:underline">{schoolName}</Link>
                       </td>
                       <td className="px-5 py-4">
-                        <form action={updateSchoolPlan} className="flex gap-2">
+                        {actorRole === "platform_admin" ? (<form action={updateSchoolPlan} className="flex gap-2">
                           <input type="hidden" name="school_id" value={m.school_id} />
                           <input type="hidden" name="reason" value={`Cambio de plan desde ficha de usuario (${id})`} />
                           <select name="plan" defaultValue={school?.plan ?? "starter"} className="rounded border border-[#cfd6df] px-2 py-1 text-xs">
@@ -110,7 +110,7 @@ export default async function UserDetailPage({ params }: PageProps) {
                             <option value="school">school</option>
                           </select>
                           <button className="rounded border border-[#cfd6df] px-2 py-1 text-xs font-semibold">Guardar</button>
-                        </form>
+                        </form>) : <span className="text-sm text-[#5b6472]">Plan: {school?.plan ?? "starter"}</span>}
                       </td>
                       <td className="px-5 py-4">
                         <form action={updateUserSchoolRole} className="flex gap-2">

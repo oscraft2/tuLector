@@ -1,63 +1,29 @@
 import { NextResponse } from "next/server";
-import { redirect } from "next/navigation";
+import { getDashboardContext, assertSchoolAdmin } from "@/lib/supabase_server";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
 import { markOrderPaidAndApplyEntitlement } from "@/lib/billing_orders";
-import { getSiteUrl } from "@/lib/site_url";
 
 export async function GET(request: Request) {
-  if (process.env.NODE_ENV === "production") {
-    return NextResponse.json({ error: "Mock payments are disabled in production" }, { status: 404 });
-  }
-
-  const url = new URL(request.url);
-  const gateway = url.searchParams.get("gateway");
-  const token = url.searchParams.get("token") || "";
-  const orderId = url.searchParams.get("orderId") || "";
-
-  const siteUrl = getSiteUrl();
-
+  if (process.env.NODE_ENV === "production") return NextResponse.json({ error: "Not found" }, { status: 404 });
   try {
-    if (gateway === "flow") {
-      // Trigger our own Flow webhook locally
-      const tokenWithOrderId = `${token}_orderId_${orderId}`;
-      const body = new URLSearchParams();
-      body.append("token", tokenWithOrderId);
-
-      await fetch(`${siteUrl}/api/billing/webhook/flow`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body,
-      });
-    } else if (gateway === "mercadopago") {
-      // Trigger our own MercadoPago webhook locally
-      const paymentId = `mock_mp_payment_orderId_${orderId}`;
-      const query = new URLSearchParams({
-        topic: "payment",
-        id: paymentId,
-      });
-
-      await fetch(`${siteUrl}/api/billing/webhook/mercadopago?${query.toString()}`, {
-        method: "POST",
-      });
-    } else if (gateway === "dlocal") {
-      // Trigger our own dLocal webhook locally
-      const paymentId = `${token}_orderId_${orderId}`;
-      await fetch(`${siteUrl}/api/billing/webhook/dlocal`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: paymentId }),
-      });
-    } else {
-      const admin = createSupabaseAdminClient();
-      await markOrderPaidAndApplyEntitlement(admin, orderId);
-      if (token) {
-        await admin.from("orders").update({ stripe_checkout_session_id: token }).eq("id", orderId);
-      }
+    const { school, isAdmin } = await getDashboardContext();
+    assertSchoolAdmin(isAdmin);
+    const url = new URL(request.url);
+    const orderId = url.searchParams.get("orderId") || "";
+    const token = url.searchParams.get("token") || "";
+    const admin = createSupabaseAdminClient();
+    const { data: order, error } = await admin.from("orders").select("*")
+      .eq("id", orderId).eq("school_id", school.id).single();
+    if (error || !order || !token.startsWith("mock_") || order.stripe_checkout_session_id !== token) {
+      return NextResponse.json({ error: "Orden de prueba no disponible" }, { status: 404 });
     }
+    await markOrderPaidAndApplyEntitlement(admin, order.id, {
+      expectedAmountCents: order.amount_cents, expectedCurrency: order.currency,
+      gateway: order.gateway, gatewayPaymentId: token,
+    });
+    return NextResponse.redirect(new URL("/dashboard/billing?order_id=" + encodeURIComponent(order.id), request.url), 303);
   } catch (error) {
-    console.error("[mock_payment] error during mock processing:", error);
+    console.error("[mock_payment]", error);
+    return NextResponse.json({ error: "No se pudo procesar el pago de prueba." }, { status: 500 });
   }
-
-  // Redirect user back to billing dashboard with success status
-  redirect(`/dashboard/billing?status=success&order_id=${orderId}`);
 }

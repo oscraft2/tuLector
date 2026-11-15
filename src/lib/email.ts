@@ -5,6 +5,7 @@ export interface SendEmailOptions {
   subject: string;
   html: string;
   text?: string;
+  idempotencyKey?: string;
 }
 
 export interface TemplatedEmailOptions {
@@ -12,6 +13,7 @@ export interface TemplatedEmailOptions {
   templateKey: string;
   locale: string;
   variables: Record<string, string | number>;
+  idempotencyKey?: string;
 }
 
 /**
@@ -499,12 +501,15 @@ const STATIC_TEMPLATES: Record<
  * Envia un correo utilizando la API REST de Resend.
  * Si no está configurada la API KEY de Resend, cae a loguear por consola en desarrollo.
  */
-export async function sendEmail({ to, subject, html, text }: SendEmailOptions): Promise<{ success: boolean; id?: string; error?: string }> {
+export async function sendEmail({ to, subject, html, text, idempotencyKey }: SendEmailOptions): Promise<{ success: boolean; id?: string; error?: string }> {
   const apiKey = process.env.RESEND_API_KEY;
   const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
   const toAddresses = Array.isArray(to) ? to : [to];
 
   if (!apiKey || apiKey === "re_...") {
+    if (process.env.NODE_ENV === "production") {
+      return { success: false, error: "Resend no esta configurado; no se envio el correo." };
+    }
     console.log("==================================================");
     console.log(`[EMAIL DEV LOG] Para: ${toAddresses.join(", ")}`);
     console.log(`[EMAIL DEV LOG] Asunto: ${subject}`);
@@ -520,6 +525,7 @@ export async function sendEmail({ to, subject, html, text }: SendEmailOptions): 
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -575,6 +581,7 @@ export async function sendTemplatedEmail({
   templateKey,
   locale = "es-CL",
   variables,
+  idempotencyKey,
 }: TemplatedEmailOptions): Promise<{ success: boolean; id?: string; error?: string }> {
   let subject = "";
   let html = "";
@@ -633,5 +640,6 @@ export async function sendTemplatedEmail({
     subject: compiledSubject,
     html: compiledHtml,
     text: compiledText,
+    idempotencyKey,
   });
 }

@@ -1,190 +1,125 @@
+import Link from "next/link";
 import { requirePlatformContext } from "@/lib/supabaseAdmin";
 import { AdminShell } from "@/components/dashboard/AdminShell";
 import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 import { DataTable } from "@/components/dashboard/DataTable";
-import { refundOrVoidOrder } from "@/app/admin/actions";
+import { recordExternalRefund, resendAdminReceipt } from "@/app/admin/actions";
+import { getFlowConfig } from "@/lib/flow";
+import { getDlocalConfig } from "@/lib/dlocal";
 
 export const dynamic = "force-dynamic";
+const PAGE_SIZE = 50;
+const STATUSES = ["pending", "paid", "refunded", "void", "failed", "manual_review"];
+const GATEWAYS = ["flow", "dlocal", "mercadopago", "stripe"];
+const LABELS: Record<string, string> = {
+  pending: "Pendiente", paid: "Pagado", refunded: "Devolucion registrada",
+  void: "Anulado", failed: "Fallido", manual_review: "Revision manual",
+};
+type BillingSummary = {
+  order_count: number; paid_count: number; pending_count: number; refunded_count: number;
+  active_subscriptions: number;
+  revenue_by_currency: Record<string, number>; paid_by_gateway: Record<string, number>;
+};
+const money = (amount: number, currency: string) =>
+  new Intl.NumberFormat("es-CL", { style: "currency", currency,
+    maximumFractionDigits: ["CLP", "COP"].includes(currency) ? 0 : 2 }).format(amount);
 
-export default async function BillingAdminPage() {
+export default async function BillingAdminPage({
+  searchParams,
+}: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { admin } = await requirePlatformContext(["platform_admin", "finance"]);
-
-  // Dos consultas separadas a `orders`, a proposito: los totales de ingresos
-  // (KPIs, abajo) tienen que ser de TODAS las ordenes historicas -- ponerles
-  // un .limit() les mentiria a los KPIs financieros apenas se pasara el tope.
-  // Pero la tabla de "ultimas transacciones" solo necesita mostrar recientes,
-  // asi que va aparte, acotada y con el join a schools que la primera no
-  // necesita (los totales no muestran nombre de colegio). Antes una sola
-  // consulta sin limite traia id+join+8 columnas de CADA orden que haya
-  // existido para calcular 4 numeros -- la separacion achica lo que se
-  // transfiere sin sacrificar exactitud en los totales.
-  const [{ data: allOrders }, { data: recentOrders }, { count: activeSubs }] = await Promise.all([
-    admin.from("orders").select("status,amount_cents,currency,gateway"),
-    admin
-      .from("orders")
-      .select(`
-        id,
-        type,
-        status,
-        scans_added,
-        amount_cents,
-        currency,
-        gateway,
-        paid_at,
-        created_at,
-        school_id,
-        schools (
-          name
-        )
-      `)
-      .order("created_at", { ascending: false })
-      .limit(200),
-    admin
-      .from("subscriptions")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "active"),
+  const sp = await searchParams;
+  const status = typeof sp.status === "string" && STATUSES.includes(sp.status) ? sp.status : "";
+  const gateway = typeof sp.gateway === "string" && GATEWAYS.includes(sp.gateway) ? sp.gateway : "";
+  const page = Math.max(1, Math.floor(Number(sp.page) || 1));
+  let query = admin.from("orders").select(
+    "id,type,status,scans_added,amount_cents,currency,gateway,created_at,school_id,receipt_sent_at,refund_reference,refund_access_review_required,schools(name)",
+    { count: "exact" }).order("created_at", { ascending: false });
+  if (status) query = query.eq("status", status);
+  if (gateway) query = query.eq("gateway", gateway);
+  const [summaryResult, orderResult] = await Promise.all([
+    admin.rpc("billing_summary"), query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1),
   ]);
+  if (summaryResult.error || orderResult.error) throw new Error("No se pudieron cargar los datos financieros.");
+  const summary = summaryResult.data as BillingSummary;
+  const flow = getFlowConfig();
+  const dlocal = getDlocalConfig();
+  const configLabel = (config: { configured: boolean; sandbox: boolean }) =>
+    !config.configured ? "Sin configurar" : config.sandbox ? "Sandbox" : "Credenciales de produccion presentes";
+  const pageHref = (next: number) => "/admin/billing?" + new URLSearchParams({
+    page: String(next), ...(status ? { status } : {}), ...(gateway ? { gateway } : {}),
+  }).toString();
 
-  // Calculations for dashboard (sobre TODAS las ordenes, no solo las 200 recientes)
-  const paidOrders = allOrders?.filter((o) => o.status === "paid") ?? [];
-  const totalOrdersCount = allOrders?.length ?? 0;
-  const paidOrdersCount = paidOrders.length;
-  const orders = recentOrders; // la tabla de abajo sigue mostrando las recientes
-
-  const GATEWAY_LABELS: Record<string, string> = {
-    flow: "Flow (Chile)",
-    dlocal: "dLocal (LatAm)",
-    mercadopago: "MercadoPago (legado)",
-    stripe: "Stripe (legado)",
-  };
-  const gatewayLabel = (gateway: string | null) => GATEWAY_LABELS[gateway ?? ""] ?? "Sin registrar";
-
-  // Group earnings by currency (para totales financieros reales)
-  const earningsByCurrency: Record<string, number> = {};
-  for (const o of paidOrders) {
-    const cur = (o.currency || "usd").toUpperCase();
-    earningsByCurrency[cur] = (earningsByCurrency[cur] || 0) + (o.amount_cents ?? 0) / 100;
-  }
-
-  // Format currency helpers
-  const formatCurrency = (val: number, cur: string) => {
-    if (cur === "CLP" || cur === "COP") {
-      return `$${Math.round(val).toLocaleString("es-CL")} ${cur}`;
-    }
-    return `$${val.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`;
-  };
-
-  const clpTotal = earningsByCurrency["CLP"] || 0;
-
-  // Ingresos agrupados por pasarela REAL (orders.gateway), no adivinados por moneda
-  const paidByGateway = new Map<string, number>();
-  for (const o of paidOrders) {
-    const key = o.gateway ?? "(sin registrar)";
-    paidByGateway.set(key, (paidByGateway.get(key) ?? 0) + 1);
-  }
-  const dlocalPaidCount = paidByGateway.get("dlocal") ?? 0;
-  const legacyPaidCount = (paidByGateway.get("mercadopago") ?? 0) + (paidByGateway.get("stripe") ?? 0);
-
-  return (
-    <AdminShell
-      active="/admin/billing"
-      title="Facturación e Ingresos"
-      description="Monitoreo de ingresos recurrentes, facturas, tasas de conversión de pasarelas locales (Flow en Chile, dLocal en el resto de LatAm) e IVA Chile 19%."
-    >
-      <div className="space-y-6">
-        {/* Financial KPI Cards */}
-        <KPIGrid>
-          <KPI label="Suscripciones Activas" value={activeSubs ?? 0} detail="Planes Pro/School" />
-          <KPI label="Ingresos Chile (Flow)" value={formatCurrency(clpTotal, "CLP")} detail={`${paidByGateway.get("flow") ?? 0} pagos`} />
-          <KPI label="Ingresos dLocal (LatAm)" value={dlocalPaidCount} detail="Pagos confirmados vía dLocal" />
-          <KPI label="Otros / sin pasarela activa" value={legacyPaidCount} detail="MercadoPago/Stripe (legado, sin checkout activo)" />
-        </KPIGrid>
-
-        {/* VAT / Impuestos Info Box */}
-        <section className="rounded-md border border-[#e5e7eb] bg-white p-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-base font-semibold">Cumplimiento Tributario & Pasarelas</h2>
-              <p className="mt-1 text-sm text-[#5b6472]">
-                Los pagos en pesos chilenos (CLP) vía Flow incluyen el **19% de IVA (Ley de Impuestos a Servicios Digitales en Chile)**. El resto de LatAm se cobra vía dLocal y se concilia según el origen tributario del tenant.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <span className="rounded bg-[#f0fdf4] px-2.5 py-1 text-xs font-semibold text-green-800 border border-green-200">Flow Prod OK</span>
-              <span className="rounded bg-[#fffbeb] px-2.5 py-1 text-xs font-semibold text-amber-800 border border-amber-200">dLocal pendiente de activar</span>
-            </div>
-          </div>
-        </section>
-
-        {/* Orders Table */}
-        <div className="rounded-md border border-[#e5e7eb] bg-white p-5">
-          <h2 className="text-base font-semibold mb-4">Registro de Transacciones</h2>
-          <DataTable
-            columns={["Orden / Fecha", "Colegio", "Detalle / Pasarela", "Monto", "Estado", "Acciones"]}
-            rows={orders ?? []}
-            empty="No hay transacciones registradas."
-            renderRow={(order) => {
-              const schoolName = (order.schools as any)?.name || "Colegio Eliminado";
-              const date = new Date(order.created_at).toLocaleString("es-CL");
-              const isPaid = order.status === "paid";
-              const isVoid = order.status === "void" || order.status === "manual_review";
-              const gatewayName = gatewayLabel(order.gateway ?? null);
-
-              return (
-                <tr key={order.id} className="border-b border-[#eef0f3] last:border-0 text-sm">
-                  <td className="px-5 py-4">
-                    <p className="font-mono text-xs text-[#07305f] font-semibold">{order.id.slice(0, 8)}...</p>
-                    <p className="text-xs text-[#6b7280] mt-0.5">{date}</p>
-                  </td>
-                  <td className="px-5 py-4 font-semibold text-[#111827]">{schoolName}</td>
-                  <td className="px-5 py-4">
-                    <p className="font-medium text-[#4b5563]">
-                      {order.type === "plan" ? "Suscripción Plan" : `Paquete de +${order.scans_added} escaneos`}
-                    </p>
-                    <p className="text-xs text-[#9ca3af] mt-0.5">Pasarela: {gatewayName}</p>
-                  </td>
-                  <td className="px-5 py-4 font-semibold text-[#111827]">
-                    {formatCurrency((order.amount_cents ?? 0) / 100, (order.currency || "usd").toUpperCase())}
-                  </td>
-                  <td className="px-5 py-4">
-                    <span
-                      className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${
-                        isPaid
-                          ? "bg-green-100 text-green-800 border border-green-200"
-                          : isVoid
-                          ? "bg-red-100 text-red-800 border border-red-200"
-                          : "bg-yellow-100 text-yellow-800 border border-yellow-200"
-                      }`}
-                    >
-                      {order.status === "paid" ? "Pagado" : order.status === "void" ? "Anulado/Reembolsado" : order.status}
-                    </span>
-                  </td>
-                  <td className="px-5 py-4">
-                    {isPaid ? (
-                      <form action={refundOrVoidOrder} className="flex items-center gap-2">
-                        <input type="hidden" name="order_id" value={order.id} />
-                        <input type="hidden" name="action" value="refund" />
-                        <input
-                          type="text"
-                          name="reason"
-                          placeholder="Motivo de reembolso..."
-                          required
-                          className="rounded border border-[#cfd6df] px-2 py-1 text-xs outline-none focus:border-red-500 w-40"
-                        />
-                        <button className="rounded bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-2 py-1 text-xs font-semibold transition-colors">
-                          Reembolsar
-                        </button>
-                      </form>
-                    ) : (
-                      <span className="text-xs text-[#9ca3af]">-</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            }}
-          />
-        </div>
-      </div>
-    </AdminShell>
-  );
+  return <AdminShell active="/admin/billing" title="Facturacion e ingresos"
+    description="Cobros anuales confirmados, comprobantes y registro de devoluciones.">
+    <div className="space-y-6">
+      <KPIGrid>
+        <KPI label="Suscripciones vigentes" value={summary.active_subscriptions} />
+        <KPI label="Pagos confirmados" value={summary.paid_count} />
+        <KPI label="Ordenes pendientes" value={summary.pending_count} />
+        <KPI label="Devoluciones registradas" value={summary.refunded_count} />
+      </KPIGrid>
+      <section className="rounded-md border border-[#e1e5ea] bg-white p-5 text-sm">
+        <h2 className="font-semibold">Ingresos por moneda</h2>
+        <p className="mt-2">{Object.entries(summary.revenue_by_currency).map(([currency, amount]) =>
+          money(amount, currency) + " " + currency).join(" · ") || "Sin pagos confirmados"}</p>
+        <p className="mt-3">Flow: {configLabel(flow)}. dLocal: {configLabel(dlocal)}.</p>
+        <p className="mt-2 text-[#5b6472]">La presencia de credenciales no verifica la conexion con la pasarela.
+          Los comprobantes de compra no reemplazan documentos tributarios.</p>
+        <p className="mt-2 text-[#5b6472]">Las devoluciones de dinero se realizan en la pasarela.
+          Aqui se registra la devolucion completa ya realizada, con su referencia.
+          Las ordenes historicas o anteriores a esta actualizacion pueden requerir revisar su acceso manualmente.</p>
+      </section>
+      <form className="flex flex-wrap items-end gap-3">
+        <label className="text-sm">Estado
+          <select name="status" defaultValue={status} className="ml-2 rounded border p-2">
+            <option value="">Todos</option>
+            {STATUSES.map((value) => <option key={value} value={value}>{LABELS[value]}</option>)}
+          </select>
+        </label>
+        <label className="text-sm">Pasarela
+          <select name="gateway" defaultValue={gateway} className="ml-2 rounded border p-2">
+            <option value="">Todas</option>
+            {GATEWAYS.map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        <button className="rounded border px-3 py-2 text-sm">Filtrar</button>
+      </form>
+      <DataTable columns={["Orden / Fecha", "Colegio", "Pasarela", "Monto", "Estado", "Acciones"]}
+        rows={orderResult.data ?? []} empty="Sin transacciones para estos filtros." renderRow={(order) => {
+          const school = Array.isArray(order.schools) ? order.schools[0] : order.schools;
+          return <tr key={order.id} className="border-b text-sm">
+            <td className="px-5 py-4"><span className="font-mono">{order.id.slice(0, 8)}</span>
+              <p className="text-xs text-[#5b6472]">{new Date(order.created_at).toLocaleString("es-CL")}</p></td>
+            <td className="px-5 py-4"><Link href={"/admin/schools/" + order.school_id}>{school?.name || "Colegio"}</Link></td>
+            <td className="px-5 py-4">{order.gateway || "Sin registrar"}</td>
+            <td className="px-5 py-4">{money((order.amount_cents ?? 0) / 100, (order.currency || "clp").toUpperCase())}</td>
+            <td className="px-5 py-4">{LABELS[order.status ?? ""] || order.status}
+              {order.refund_reference ? <p className="text-xs">{order.refund_reference}</p> : null}
+              {order.refund_access_review_required
+                ? <p className="text-xs text-amber-800">Revisar acceso manualmente</p> : null}</td>
+            <td className="px-5 py-4">{order.status === "paid" ? <div className="space-y-3">
+              <form action={resendAdminReceipt}>
+                <input type="hidden" name="order_id" value={order.id} />
+                <button className="text-xs underline">Reenviar comprobante</button>
+              </form>
+              <details><summary className="cursor-pointer text-xs">Registrar devolucion externa</summary>
+                <form action={recordExternalRefund} className="mt-2 grid min-w-52 gap-2">
+                  <input type="hidden" name="order_id" value={order.id} />
+                  <input name="refund_reference" aria-label="Referencia de devolucion" placeholder="Referencia de la pasarela" required minLength={3} maxLength={200} className="rounded border p-2 text-xs" />
+                  <input name="reason" aria-label="Motivo de devolucion" placeholder="Motivo" required minLength={3} maxLength={500} className="rounded border p-2 text-xs" />
+                  <label className="text-xs"><input type="checkbox" name="refund_confirmed" required /> Confirmo que devolvi el monto completo en la pasarela.</label>
+                  <button className="rounded border border-red-200 p-2 text-xs text-red-700">Registrar devolucion realizada</button>
+                </form>
+              </details>
+            </div> : "—"}</td>
+          </tr>;
+        }} />
+      <nav aria-label="Paginas de transacciones" className="flex items-center gap-4 text-sm">
+        {page > 1 ? <Link href={pageHref(page - 1)}>Anterior</Link> : null}
+        <span>Pagina {page} · {orderResult.count ?? 0} transacciones</span>
+        {page * PAGE_SIZE < (orderResult.count ?? 0) ? <Link href={pageHref(page + 1)}>Siguiente</Link> : null}
+      </nav>
+    </div>
+  </AdminShell>;
 }
