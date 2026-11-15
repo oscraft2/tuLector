@@ -50,7 +50,7 @@ test("payment verification returns actual currency and propagates transient fail
 });
 
 test("production fails closed when Flow credentials are absent", async () => {
-  process.env.NODE_ENV = "production";
+  process.env = { ...process.env, NODE_ENV: "production" };
   delete process.env.FLOW_API_KEY;
   delete process.env.FLOW_SECRET_KEY;
   await assert.rejects(() => getFlowPaymentStatus("mock_flow_token_1"), /no esta configurado/);

@@ -3,6 +3,9 @@ on:
   pull_request:
   push:
     branches: [codex/billing-admin-reliability]
+concurrency:
+  group: billing-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -17,7 +20,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d billing_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -38,11 +41,13 @@ jobs:
       - run: npm ci
       - name: Unit tests
         run: npm run test:unit
-      - name: Typecheck application
-        run: npx tsc --noEmit --project tsconfig.billing-check.json
       - name: Apply billing migration to isolated database
         run: |
           psql -v ON_ERROR_STOP=1 -f tests/billing/schema.sql
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261114000000_billing_integrity.sql
       - name: Rollback, replay, renewal, expiry, refund and permission tests
         run: psql -v ON_ERROR_STOP=1 -f tests/billing/integrity.sql
+      - name: Concurrent payment callbacks and renewals
+        run: bash tests/billing/concurrency.sh
+      - name: Typecheck application
+        run: npx tsc --noEmit --project tsconfig.billing-check.json

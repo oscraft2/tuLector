@@ -14,6 +14,8 @@ WHERE type = 'plan' AND plan_code IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_one_per_school ON public.subscriptions(school_id);
 CREATE UNIQUE INDEX IF NOT EXISTS orders_gateway_payment_unique
 ON public.orders(gateway, gateway_payment_id) WHERE gateway_payment_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS orders_refund_reference_unique
+ON public.orders(gateway, refund_reference) WHERE refund_reference IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION public.apply_paid_order(
   p_order_id uuid, p_amount_cents bigint, p_currency text, p_gateway text, p_payment_id text
@@ -120,7 +122,7 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'Colegio no encontrado'; END IF;
   SELECT * INTO sub FROM subscriptions WHERE school_id = s.id FOR UPDATE;
   -- Saving the current plan is not a quota reset or renewal.
-  IF s.plan = p_plan AND (p_plan = 'starter' OR
+  IF s.plan = p_plan AND ((p_plan = 'starter' AND (sub.id IS NULL OR sub.status <> 'active')) OR
     (sub.plan = p_plan AND sub.status = 'active' AND sub.current_period_end > now())) THEN RETURN; END IF;
   UPDATE schools SET plan = p_plan,
     scans_limit = CASE p_plan WHEN 'school' THEN 10000 WHEN 'pro' THEN 2000 ELSE 100 END,
