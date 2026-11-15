@@ -6,7 +6,6 @@ import { createFlowPayment, getFlowConfig } from "@/lib/flow";
 import { createDlocalPayment, getDlocalConfig } from "@/lib/dlocal";
 import { canonicalRut } from "@/lib/rut";
 import { resolveCountryIdFormat, validateNationalIdFormat, normalizeNationalId } from "@/lib/national_id";
-import { isMissingColumnError } from "@/lib/supabase_errors";
 import {
   readBillingDetailsPayload,
   parseBillingCheckoutInput,
@@ -130,6 +129,12 @@ export async function POST(request: Request) {
     }
 
     const item = resolveBillingCatalogItem(input, school.country_code);
+    if (school.status && school.status !== "active") {
+      return NextResponse.json({ error: "Contacta a soporte para reactivar esta cuenta." }, { status: 409 });
+    }
+    if (school.plan === "school" && input.plan === "pro") {
+      return NextResponse.json({ error: "Solicita a soporte el cambio a Pro al terminar tu periodo actual." }, { status: 409 });
+    }
     if (item.gateway !== "flow" && item.gateway !== "dlocal") {
       return NextResponse.json({ error: "La pasarela para este pais aun no esta habilitada. Contactanos para activar pagos institucionales." }, { status: 501 });
     }
@@ -167,11 +172,13 @@ export async function POST(request: Request) {
       }
     }
 
-    let orderInsert = await admin
+    const { data: order, error: orderError } = await admin
       .from("orders")
       .insert({
         school_id: school.id,
         type: item.type,
+        plan_code: item.plan,
+        gateway: item.gateway,
         status: "pending",
         scans_added: item.scansAdded,
         amount_cents: item.amountCents,
@@ -180,23 +187,6 @@ export async function POST(request: Request) {
       })
       .select("id")
       .single();
-
-    if (orderInsert.error && isMissingColumnError(orderInsert.error, "billing_details")) {
-      orderInsert = await admin
-        .from("orders")
-        .insert({
-          school_id: school.id,
-          type: item.type,
-          status: "pending",
-          scans_added: item.scansAdded,
-          amount_cents: item.amountCents,
-          currency: item.currency,
-        })
-        .select("id")
-        .single();
-    }
-
-    const { data: order, error: orderError } = orderInsert;
 
     if (orderError || !order) {
       console.error("[checkout] error al registrar orden:", orderError?.message);
@@ -238,7 +228,7 @@ export async function POST(request: Request) {
       sessionToken = dlocalResult.paymentId;
     }
 
-    await admin
+    const { error: sessionError } = await admin
       .from("orders")
       .update({
         stripe_checkout_session_id: sessionToken,
@@ -246,6 +236,7 @@ export async function POST(request: Request) {
       })
       .eq("id", order.id);
 
+    if (sessionError) throw new Error("No se pudo guardar la referencia del pago. Contacta a soporte antes de reintentar.");
     return NextResponse.json({ url: redirectUrl });
   } catch (err: unknown) {
     console.error("[checkout] error crítico:", err);

@@ -9,6 +9,9 @@ import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 import { BillingCheckoutPanel, type CheckoutItem, type CommuneOption } from "@/components/dashboard/BillingCheckoutPanel";
 import { resolveBillingCatalogItem, type BillingCheckoutInput } from "@/lib/billing_catalog";
 import { getFlowConfig } from "@/lib/flow";
+import { getDlocalConfig } from "@/lib/dlocal";
+import { BillingReceiptButton } from "@/components/dashboard/BillingReceiptButton";
+import { BillingReturnStatus } from "@/components/dashboard/BillingReturnStatus";
 import { planHasFeature } from "@/lib/plan_gates";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +53,10 @@ export default async function BillingPage({
     ? Math.round(monthlyEntries.slice(-3).reduce((s, [, c]) => s + c, 0) / Math.min(3, monthlyEntries.slice(-3).length))
     : (monthlyEntries[0]?.[1] ?? 0);
   const flowConfig = getFlowConfig();
-  const paymentsReady = process.env.NODE_ENV !== "production" || (flowConfig.configured && !flowConfig.sandbox);
+  const gatewayConfig = school.country_code === "CL" ? flowConfig : getDlocalConfig();
+  const paymentsReady = process.env.NODE_ENV !== "production" || (gatewayConfig.configured && !gatewayConfig.sandbox);
+  const returnOrderId = typeof sp.order_id === "string" ? sp.order_id : null;
+  const returnOrder = (orders ?? []).find((order) => order.id === returnOrderId);
   const checkoutInputs: Array<{ id: string; title: string; subtitle: string; badge?: string; input: BillingCheckoutInput }> = [
     { id: "pro", title: "Plan Pro", subtitle: "2.000 lecturas anuales", badge: "Recomendado", input: { type: "plan", plan: "pro" } },
     { id: "school", title: "Plan School", subtitle: "10.000 lecturas anuales y pestaña Equipo", input: { type: "plan", plan: "school" } },
@@ -83,9 +89,16 @@ export default async function BillingPage({
         title={t.billing}
         description={isNativeApp
           ? "Plan actual, cuota de lecturas y tu historial de facturas."
-          : "Plan anual, cuota de lecturas y facturacion. En Chile el pago se procesa con Flow desde un checkout seguro."}
+          : "Plan anual, cuota de lecturas y comprobantes. Flow para Chile; dLocal para los demas paises habilitados."}
       />
       <div className="space-y-6">
+        {returnOrder ? <BillingReturnStatus status={returnOrder.status} /> : null}
+        {subscription?.current_period_end ? (
+          <p className="text-sm text-[#5b6472]">
+            Vigencia registrada hasta {new Date(subscription.current_period_end).toLocaleDateString("es-CL")}.
+            El pago anual se renueva manualmente.
+          </p>
+        ) : null}
         {isNativeApp ? (
           <div className="rounded-md border border-[#e1e5ea] bg-[#f8faf9] p-5">
             <p className="text-sm font-semibold text-[#111827]">Plan actual: {school.plan}</p>
@@ -154,7 +167,7 @@ export default async function BillingPage({
               <div className="mt-3 flex items-center justify-between text-xs text-[#64748b]">
                 <span>{new Date(order.created_at).toLocaleDateString("es-CL")}</span>
                 {receiptNumber ? (
-                  <span className="font-bold text-[#07305f]">{receiptNumber}</span>
+                  <span className="font-bold text-[#07305f]">{receiptNumber}{isAdmin && order.status === "paid" ? <BillingReceiptButton orderId={order.id} /> : null}</span>
                 ) : order.invoice_pdf_url ? (
                   <a className="font-bold text-[#07305f] underline" href={order.invoice_pdf_url}>Factura PDF</a>
                 ) : (
@@ -172,7 +185,7 @@ export default async function BillingPage({
               <td className="px-5 py-4">{order.currency?.toUpperCase()} {Math.round((order.amount_cents ?? 0) / 100)}</td>
               <td className="px-5 py-4">
                 {receiptNumber ? (
-                  <span className="font-bold text-[#07305f]" title={order.receipt_sent_at ? `Enviado el ${new Date(order.receipt_sent_at).toLocaleDateString("es-CL")}` : "Comprobante generado"}>{receiptNumber}</span>
+                  <span className="font-bold text-[#07305f]" title={order.receipt_sent_at ? `Enviado el ${new Date(order.receipt_sent_at).toLocaleDateString("es-CL")}` : "Comprobante generado"}>{receiptNumber}{isAdmin && order.status === "paid" ? <BillingReceiptButton orderId={order.id} /> : null}</span>
                 ) : order.invoice_pdf_url ? (
                   <a className="underline" href={order.invoice_pdf_url}>PDF</a>
                 ) : (

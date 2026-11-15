@@ -84,15 +84,14 @@ export function BillingCheckoutPanel({
   const availableCommunes = communes.filter((option) => option.regionCode === form.regionCode);
   const selectedItem = items.find((item) => item.id === selectedItemId) ?? items[0];
   const isChile = countryCode.toUpperCase() === "CL";
-  const canCheckout = isAdmin && isChile && communes.length > 0 && paymentsReady && Boolean(selectedItem);
+  const gatewayName = isChile ? "Flow" : "dLocal";
+  const canCheckout = isAdmin && (!isChile || communes.length > 0) && paymentsReady && Boolean(selectedItem);
   const disabledReason = !isAdmin
     ? "Solo un administrador puede contratar planes."
-    : !isChile
-      ? "El checkout automatico esta habilitado por ahora solo para Chile."
-      : communes.length === 0
+    : isChile && communes.length === 0
         ? "No se pudieron cargar regiones y comunas de Chile."
         : !paymentsReady
-          ? "Flow aun no esta configurado para pagos reales."
+          ? `${gatewayName} aun no esta configurado para pagos reales.`
           : "";
 
   function updateForm<K extends keyof BillingFormState>(key: K, value: BillingFormState[K]) {
@@ -120,7 +119,7 @@ export function BillingCheckoutPanel({
       const data = await response.json().catch(() => null) as { url?: string; error?: string } | null;
 
       if (!response.ok || !data?.url) {
-        throw new Error(data?.error || "No se pudo iniciar el pago con Flow.");
+        throw new Error(data?.error || `No se pudo iniciar el pago con ${gatewayName}.`);
       }
 
       window.location.assign(data.url);
@@ -138,9 +137,9 @@ export function BillingCheckoutPanel({
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-[#9fc5ff]">Checkout seguro</p>
               <h2 id="billing-checkout-title" className="mt-3 text-2xl font-black tracking-tight sm:text-3xl">Sube de plan sin friccion</h2>
-              <p className="mt-3 max-w-lg text-sm leading-6 text-[#cbd7ea]">Elige tu plan anual, completa datos de facturacion y paga en Flow. TuLector no guarda datos bancarios.</p>
+              <p className="mt-3 max-w-lg text-sm leading-6 text-[#cbd7ea]">Elige tu plan anual, completa tus datos y paga en {gatewayName}. TuLector no guarda datos bancarios.</p>
             </div>
-            <span className="hidden rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-white sm:inline-flex">Flow Chile</span>
+            <span className="hidden rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-white sm:inline-flex">{gatewayName}</span>
           </div>
 
           <div className="mt-6 grid gap-3" role="radiogroup" aria-label="Opciones de compra">
@@ -184,9 +183,9 @@ export function BillingCheckoutPanel({
               </div>
             </div>
             <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[11px] font-bold text-[#cbd7ea]">
-              <span className="rounded-2xl bg-white/[0.08] px-2 py-2">Flow</span>
-              <span className="rounded-2xl bg-white/[0.08] px-2 py-2">Webpay</span>
-              <span className="rounded-2xl bg-white/[0.08] px-2 py-2">Factura</span>
+              <span className="rounded-2xl bg-white/[0.08] px-2 py-2">{gatewayName}</span>
+              <span className="rounded-2xl bg-white/[0.08] px-2 py-2">{isChile ? "Webpay" : "Medios locales"}</span>
+              <span className="rounded-2xl bg-white/[0.08] px-2 py-2">Comprobante</span>
             </div>
           </div>
         </div>
@@ -197,7 +196,7 @@ export function BillingCheckoutPanel({
               <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748b]">Facturacion</p>
               <h3 className="mt-2 text-xl font-black tracking-tight">Datos de la institucion</h3>
             </div>
-            <span className="rounded-full bg-[#eef4ff] px-3 py-1 text-xs font-black text-[#07305f]">Chile</span>
+            <span className="rounded-full bg-[#eef4ff] px-3 py-1 text-xs font-black text-[#07305f]">{countryCode.toUpperCase()}</span>
           </div>
 
           {disabledReason ? (
@@ -208,15 +207,16 @@ export function BillingCheckoutPanel({
           ) : null}
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <Field label="RUT institucional (opcional)" htmlFor="billing-tax-id">
-              <input id="billing-tax-id" name="taxId" value={form.taxId} onChange={(event) => updateForm("taxId", event.target.value)} placeholder="76.123.456-7" autoComplete="off" className={fieldInputClass} />
+            <Field label={isChile ? "RUT institucional (opcional)" : "Documento nacional (opcional)"} htmlFor="billing-tax-id">
+              <input id="billing-tax-id" name="taxId" value={form.taxId} onChange={(event) => updateForm("taxId", event.target.value)} placeholder={isChile ? "76.123.456-7" : "Documento de identificacion"} autoComplete="off" className={fieldInputClass} />
             </Field>
             <div className="rounded-2xl border border-[#d8dde3] bg-[#f8fafc] px-4 py-3 text-sm font-semibold leading-5 text-[#475569]">
-              Usaremos el correo de tu cuenta para Flow y comprobantes.
+              Usaremos el correo de tu cuenta para {gatewayName} y comprobantes.
             </div>
             <Field label="Razon social" htmlFor="billing-legal-name" className="sm:col-span-2">
               <input id="billing-legal-name" name="legalName" value={form.legalName} onChange={(event) => updateForm("legalName", event.target.value)} placeholder="Nombre legal de la institucion" autoComplete="organization" minLength={3} required className={fieldInputClass} />
             </Field>
+            {isChile ? <>
             <Field label="Giro" htmlFor="billing-business-activity" className="sm:col-span-2">
               <input id="billing-business-activity" name="businessActivity" value={form.businessActivity} onChange={(event) => updateForm("businessActivity", event.target.value)} placeholder="Educacion, capacitacion u otro" minLength={3} required className={fieldInputClass} />
             </Field>
@@ -235,12 +235,13 @@ export function BillingCheckoutPanel({
                 {availableCommunes.map((option) => <option key={`${option.regionCode}-${option.commune}`} value={option.commune}>{option.commune}</option>)}
               </select>
             </Field>
+            </> : null}
           </div>
 
           <button type="submit" disabled={!canCheckout || isSubmitting} className="mt-6 min-h-[3.25rem] w-full rounded-2xl bg-[#07305f] px-5 py-3.5 text-base font-black text-white shadow-lg shadow-[#07305f]/20 hover:bg-[#0a3d78] disabled:bg-[#94a3b8]">
-            {isSubmitting ? "Abriendo Flow..." : "Continuar a pago seguro"}
+            {isSubmitting ? `Abriendo ${gatewayName}...` : "Continuar a pago seguro"}
           </button>
-          <p className="mt-3 text-center text-xs leading-5 text-[#64748b]">Seras redirigido a Flow para pagar con Webpay u otro medio disponible. Validamos plan, monto y facturacion en servidor.</p>
+          <p className="mt-3 text-center text-xs leading-5 text-[#64748b]">Seras redirigido a {gatewayName} para elegir un medio de pago. La vigencia comienza al confirmar el pago. Las renovaciones del mismo plan conservan las lecturas disponibles.</p>
         </form>
       </div>
 

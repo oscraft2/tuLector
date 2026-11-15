@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomUUID } from "node:crypto";
+import { sendOrderReceiptIfNeeded } from "@/lib/billing_orders";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { requirePlatformContext, writeAuditLog } from "@/lib/supabaseAdmin";
@@ -8,15 +10,19 @@ import { sendTemplatedEmail } from "@/lib/email";
 import { getSiteUrl } from "@/lib/site_url";
 
 export async function updateSchoolPlan(formData: FormData) {
-  const { user, role, admin } = await requirePlatformContext(["platform_admin", "finance"]);
+  const { user, admin } = await requirePlatformContext(["platform_admin", "finance"]);
   const schoolId = String(formData.get("school_id") ?? "");
   const plan = String(formData.get("plan") ?? "starter");
   const reason = String(formData.get("reason") ?? "Cambio manual de plan");
   if (!schoolId || !["starter", "pro", "school"].includes(plan)) return;
-  const scansLimit = plan === "school" ? 10000 : plan === "pro" ? 2000 : 100;
-  await admin.from("schools").update({ plan, scans_limit: scansLimit, scans_used: 0, updated_at: new Date().toISOString() }).eq("id", schoolId);
-  await writeAuditLog({ actorUserId: user.id, actorRole: role, schoolId, targetType: "school", targetId: schoolId, action: "school.plan_update", reason, metadata: { plan, scans_limit: scansLimit } });
+  const { error } = await admin.rpc("set_school_plan", {
+    p_school_id: schoolId, p_plan: plan, p_actor: user.id, p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
   revalidatePath("/admin/schools");
+  revalidatePath("/admin/users", "layout");
+  revalidatePath("/admin/billing");
+  revalidatePath("/dashboard", "layout");
 }
 
 export async function updateSchoolStatus(formData: FormData) {
@@ -362,70 +368,21 @@ export async function updateContactLead(formData: FormData) {
   revalidatePath("/admin/marketing");
 }
 
-export async function refundOrVoidOrder(formData: FormData) {
-  const { user, role, admin } = await requirePlatformContext(["platform_admin", "finance"]);
-  const orderId = String(formData.get("order_id") ?? "");
-  const action = String(formData.get("action") ?? "refund"); // 'refund' | 'void'
-  const reason = String(formData.get("reason") ?? "Ajuste manual desde panel administrativo");
-
-  if (!orderId) throw new Error("ID de orden es obligatorio.");
-
-  // Fetch the order
-  const { data: order, error: orderError } = await admin
-    .from("orders")
-    .select("*")
-    .eq("id", orderId)
-    .single();
-
-  if (orderError || !order) throw new Error("Orden no encontrada.");
-
-  if (order.status !== "paid") {
-    throw new Error("Solo se pueden reembolsar/anular órdenes pagadas.");
+export async function recordExternalRefund(formData: FormData) {
+  const { user, admin } = await requirePlatformContext(["platform_admin", "finance"]);
+  if (formData.get("refund_confirmed") !== "on") {
+    throw new Error("Confirma que la devolucion ya fue realizada en la pasarela.");
   }
-
-  // Update order status
-  const targetStatus = action === "refund" ? "void" : "void"; // Using 'void' status from CHECK constraint in unified.sql/migrations
-  const { error: updateOrderError } = await admin
-    .from("orders")
-    .update({
-      status: targetStatus,
-    })
-    .eq("id", orderId);
-
-  if (updateOrderError) throw new Error(`Error al actualizar la orden: ${updateOrderError.message}`);
-
-  // Deduct the scans from school
-  const { data: school, error: schoolError } = await admin
-    .from("schools")
-    .select("id, name, scans_limit")
-    .eq("id", order.school_id)
-    .single();
-
-  if (!schoolError && school) {
-    const scansAdded = order.scans_added ?? 0;
-    const newScansLimit = Math.max(0, (school.scans_limit ?? 0) - scansAdded);
-
-    await admin
-      .from("schools")
-      .update({
-        scans_limit: newScansLimit,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", school.id);
-  }
-
-  await writeAuditLog({
-    actorUserId: user.id,
-    actorRole: role,
-    schoolId: order.school_id,
-    targetType: "order",
-    targetId: orderId,
-    action: `order.${action}`,
-    reason,
-    metadata: { orderId, amount_cents: order.amount_cents, scans_deducted: order.scans_added },
+  const { error } = await admin.rpc("record_external_refund", {
+    p_order_id: String(formData.get("order_id") ?? ""),
+    p_actor: user.id,
+    p_reason: String(formData.get("reason") ?? "").trim(),
+    p_reference: String(formData.get("refund_reference") ?? "").trim(),
   });
-
+  if (error) throw new Error(error.message);
   revalidatePath("/admin/billing");
+  revalidatePath("/admin/schools", "layout");
+  revalidatePath("/dashboard", "layout");
 }
 
 export async function updatePlatformUserRole(formData: FormData) {
@@ -733,3 +690,19 @@ export async function correctScanLog(formData: FormData) {
   revalidatePath(`/admin/usage/${scanLogId}`);
 }
 
+
+export async function resendAdminReceipt(formData: FormData) {
+  const { user, role, admin } = await requirePlatformContext(["platform_admin", "finance"]);
+  const orderId = String(formData.get("order_id") ?? "");
+  const { data: order, error } = await admin.from("orders").select("type,gateway,scans_added,school_id")
+    .eq("id", orderId).single();
+  if (error || !order) throw new Error("Orden no encontrada.");
+  const result = await sendOrderReceiptIfNeeded(admin, orderId,
+    order.type === "plan" ? "Suscripcion anual" : `Paquete de ${order.scans_added} escaneos`,
+    order.gateway || "Pasarela", getSiteUrl(), randomUUID());
+  if (!result.sent) throw new Error(result.error || "No se pudo enviar el comprobante.");
+  await writeAuditLog({ actorUserId: user.id, actorRole: role, schoolId: order.school_id,
+    targetType: "order", targetId: orderId, action: "order.receipt_resend",
+    reason: "Reenvio manual de comprobante" });
+  revalidatePath("/admin/billing");
+}

@@ -1,114 +1,20 @@
 import { NextResponse } from "next/server";
 import { getFlowPaymentStatus } from "@/lib/flow";
-import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-import { sendTemplatedEmail } from "@/lib/email";
-import { resolveLocaleForCountry } from "@/lib/country_profiles";
-import { markOrderPaidAndApplyEntitlement, sendOrderReceiptIfNeeded, notifyPaymentFailed } from "@/lib/billing_orders";
-import { getSiteUrl } from "@/lib/site_url";
+import { applyVerifiedPayment } from "@/lib/billing_webhook";
 
 export async function POST(request: Request) {
   try {
-    const textBody = await request.text();
-    const params = new URLSearchParams(textBody);
-    const token = params.get("token");
-
-    if (!token) {
-      return NextResponse.json({ error: "Falta token" }, { status: 400 });
-    }
-
-    const admin = createSupabaseAdminClient();
-
-    // Idempotencia: Verificar si ya procesamos este token (Flow no reintenta mucho,
-    // pero evitamos doble ejecución o ataques de replay).
-    const { error: insertError } = await admin.from("webhook_events").insert({
-      event_id: `flow_${token}`,
-      gateway: "flow"
-    });
-    if (insertError) {
-      return NextResponse.json({ status: "ignored", reason: "already processed event" });
-    }
-
-    // 1. Fetch real status from Flow to prevent spoofing. Flow no envía signature 
-    // en el webhook, sino que nosotros firmamos (HMAC-SHA256 orden canónico) 
-    // nuestra consulta de estado, haciéndolo 100% seguro contra spoofing.
+    const token = new URLSearchParams(await request.text()).get("token");
+    if (!token) return NextResponse.json({ error: "Falta token" }, { status: 400 });
+    // No event lock before verification: pending statuses and transient failures must remain retryable.
     const payment = await getFlowPaymentStatus(token);
-
-    if (payment.status !== 2) {
-      console.log(`[flow_webhook] pago no aprobado (status: ${payment.status}) para orden: ${payment.commerceOrder}`);
-      // 3=rechazado explicito -> avisar. 1=pendiente y 4=anulado quedan
-      // silenciosos (no son "pago no completado" en el mismo sentido).
-      if (payment.status === 3) {
-        const siteUrl = getSiteUrl();
-        await notifyPaymentFailed(admin, payment.commerceOrder, "Flow (Chile)", "Rechazado", siteUrl);
-      }
-      return NextResponse.json({ status: "processed", detail: "pago no aprobado" });
-    }
-
-    const orderId = payment.commerceOrder;
-    const result = await markOrderPaidAndApplyEntitlement(admin, orderId, {
-      expectedAmountCents: Math.round(payment.amount * 100),
-      expectedCurrency: "clp",
-      gateway: "flow",
-      gatewayPaymentId: token,
-      billingPeriodMonths: 12,
-    });
-
-    // Reintento del webhook para un pago ya procesado: no reenviar el correo
-    // de confirmacion (antes se reenviaba siempre, ver auditoria de correo).
-    if (result.alreadyProcessed) {
-      return NextResponse.json({ status: "already_processed" });
-    }
-
-    const { order, school, extraScans, targetPlan } = result;
-    const orderCurrency = String(order.currency || "clp").toUpperCase();
-    const planOrPack = order.type === "plan" ? `Plan ${(targetPlan || "pro").toUpperCase()}` : `Paquete de ${extraScans} escaneos`;
-
-    // Fetch admins to send confirmation email
-    const { data: members } = await admin
-      .from("school_members")
-      .select("user_id")
-      .eq("school_id", school.id)
-      .eq("role", "admin");
-
-    if (members && members.length > 0) {
-      const adminUserIds = members.map((m) => m.user_id);
-      const { data: usersData } = await admin.auth.admin.listUsers();
-      if (usersData) {
-        const emails = usersData.users
-          .filter((u) => adminUserIds.includes(u.id) && u.email)
-          .map((u) => u.email!);
-
-        const formattedAmount = `$${(Number(order.amount_cents ?? 0) / 100).toLocaleString("es-CL")} ${orderCurrency}`;
-        const siteUrl = getSiteUrl();
-        const locale = resolveLocaleForCountry(school.country_code);
-
-        for (const email of emails) {
-          await sendTemplatedEmail({
-            to: email,
-            templateKey: "payment_success",
-            locale,
-            variables: {
-              school_name: school.name,
-              plan_or_pack: planOrPack,
-              amount: formattedAmount,
-              transaction_id: token,
-              payment_method: "Flow (Chile)",
-              dashboard_link: `${siteUrl}/dashboard`,
-            },
-          });
-        }
-
-        // Enviar comprobante formal solo si aun no se ha enviado.
-        const receiptResult = await sendOrderReceiptIfNeeded(admin, orderId, planOrPack, "Flow (Chile)", siteUrl);
-        if (!receiptResult.sent && !receiptResult.alreadySent) {
-          console.warn("[flow_webhook] no se pudo enviar comprobante:", receiptResult.error);
-        }
-      }
-    }
-
-    return NextResponse.json({ status: "success", order_id: orderId });
-  } catch (err: unknown) {
-    console.error("[flow_webhook] error crítico:", err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Excepción de servidor" }, { status: 500 });
+    if (payment.status !== 2) return NextResponse.json({ status: "pending_or_failed" });
+    return NextResponse.json(await applyVerifiedPayment({
+      orderId: payment.commerceOrder, amountCents: Math.round(payment.amount * 100),
+      currency: payment.currency, gateway: "flow", paymentId: token,
+    }));
+  } catch (error) {
+    console.error("[flow_webhook]", error);
+    return NextResponse.json({ error: "No se pudo confirmar el pago; se puede reintentar." }, { status: 500 });
   }
 }

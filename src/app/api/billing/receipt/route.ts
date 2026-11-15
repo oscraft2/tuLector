@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { assertSchoolAdmin, getDashboardContext } from "@/lib/supabase_server";
 import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
-import { formatReceiptNumber } from "@/lib/billing_orders";
+import { formatReceiptNumber, sendOrderReceiptIfNeeded } from "@/lib/billing_orders";
+import { randomUUID } from "node:crypto";
+import { getSiteUrl } from "@/lib/site_url";
 
 export async function POST(request: Request) {
   try {
@@ -47,11 +49,17 @@ export async function POST(request: Request) {
     }
 
     const receiptNumber = formatReceiptNumber(order);
+    const receipt = await sendOrderReceiptIfNeeded(admin, order.id,
+      order.type === "plan" ? "Suscripcion anual" : `Paquete de ${order.scans_added} escaneos`,
+      order.gateway || "Pasarela", getSiteUrl(), randomUUID());
+    if (!receipt.sent) {
+      return NextResponse.json({ error: receipt.error || "No se pudo enviar el comprobante." }, { status: 503 });
+    }
 
     return NextResponse.json({
       receiptNumber,
-      sentAt: order.receipt_sent_at,
-      canResend: true,
+      sentAt: new Date().toISOString(),
+      sent: true,
       billingDetails: order.billing_details,
     });
   } catch (err: unknown) {

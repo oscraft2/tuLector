@@ -1,0 +1,48 @@
+name: Billing integrity
+on:
+  pull_request:
+  push:
+    branches: [codex/billing-admin-reliability]
+permissions:
+  contents: read
+jobs:
+  billing:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: billing-test-only
+          POSTGRES_DB: billing_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: billing-test-only
+      PGDATABASE: billing_test
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: test-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Typecheck application
+        run: npx tsc --noEmit --project tsconfig.billing-check.json
+      - name: Apply billing migration to isolated database
+        run: |
+          psql -v ON_ERROR_STOP=1 -f tests/billing/schema.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261114000000_billing_integrity.sql
+      - name: Rollback, replay, renewal, expiry, refund and permission tests
+        run: psql -v ON_ERROR_STOP=1 -f tests/billing/integrity.sql
