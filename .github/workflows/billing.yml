@@ -1,6 +1,7 @@
 name: Billing integrity
 on:
   pull_request:
+  workflow_dispatch:
   push:
     branches: [codex/billing-admin-reliability]
 concurrency:
@@ -53,3 +54,18 @@ jobs:
         run: npx tsc --noEmit
       - name: Build Next.js application
         run: npm run build
+      - name: Install browser for checkout review
+        if: github.head_ref == 'codex/billing-checkout-ui' || github.event_name == 'workflow_dispatch'
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Verify checkout interactions and capture desktop/mobile
+        if: github.head_ref == 'codex/billing-checkout-ui' || github.event_name == 'workflow_dispatch'
+        run: node scripts/check-billing-ui.mjs
+      - name: Checkout screenshots
+        if: always() && (github.head_ref == 'codex/billing-checkout-ui' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: billing-checkout-ui
+          path: artifacts/billing-ui/*.png
+          compression-level: 0

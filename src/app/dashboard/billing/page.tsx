@@ -1,202 +1,146 @@
 import { headers } from "next/headers";
-import Image from "next/image";
 import { getDashboardContext } from "@/lib/supabase_server";
-import { getDashboardMessages } from "@/locales";
-import { QuotaBar } from "@/components/dashboard/QuotaBar";
 import { DataTable } from "@/components/dashboard/DataTable";
-import { PageHeader } from "@/components/dashboard/PageHeader";
-import { KPI, KPIGrid } from "@/components/dashboard/KPI";
 import { BillingCheckoutPanel, type CheckoutItem, type CommuneOption } from "@/components/dashboard/BillingCheckoutPanel";
-import { resolveBillingCatalogItem, type BillingCheckoutInput } from "@/lib/billing_catalog";
-import { getFlowConfig } from "@/lib/flow";
-import { getDlocalConfig } from "@/lib/dlocal";
 import { BillingReceiptButton } from "@/components/dashboard/BillingReceiptButton";
 import { BillingReturnStatus } from "@/components/dashboard/BillingReturnStatus";
-import { planHasFeature } from "@/lib/plan_gates";
+import { resolveBillingCatalogItem } from "@/lib/billing_catalog";
+import { hasActiveSubscription } from "@/lib/billing_entitlement";
+import { getFlowConfig } from "@/lib/flow";
+import { getDlocalConfig } from "@/lib/dlocal";
 
 export const dynamic = "force-dynamic";
+type Order = {
+  id: string; type: string; plan_code: string | null; status: string | null;
+  amount_cents: number | null; currency: string | null; invoice_pdf_url: string | null;
+  receipt_seq: number | null; receipt_sent_at: string | null; created_at: string;
+};
+const STATUS: Record<string, string> = {
+  paid: "Pagado", pending: "Pendiente", failed: "No completado",
+  refunded: "Devolución registrada", void: "Anulado", manual_review: "En revisión",
+};
+function orderName(order: Order) {
+  if (order.type !== "plan") return "Lecturas adicionales";
+  return order.plan_code === "school" ? "Plan School" : order.plan_code === "pro" ? "Plan Pro" : "Plan anual";
+}
+function orderAmount(order: Order) {
+  return new Intl.NumberFormat("es-CL", {
+    style: "currency", currency: (order.currency || "CLP").toUpperCase(),
+    maximumFractionDigits: (order.currency || "CLP").toUpperCase() === "CLP" ? 0 : 2,
+  }).format((order.amount_cents ?? 0) / 100);
+}
+function Receipt({ order, canResend }: { order: Order; canResend: boolean }) {
+  if (order.status !== "paid" && order.status !== "refunded") return <span className="text-[#858b94]">—</span>;
+  return <div>
+    {order.receipt_seq
+      ? <span className="font-mono text-xs text-[#535b66]">{"TL-" + String(order.receipt_seq).padStart(8, "0")}</span>
+      : order.invoice_pdf_url ? <a href={order.invoice_pdf_url} className="text-[#07305f] underline">Documento PDF</a>
+      : <span className="text-[#858b94]">—</span>}
+    {canResend && order.status === "paid" ? <BillingReceiptButton orderId={order.id} /> : null}
+  </div>;
+}
 
 export default async function BillingPage({
   searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const { supabase, school, locale, isAdmin } = await getDashboardContext();
+}: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const { supabase, school, isAdmin } = await getDashboardContext();
   const sp = await searchParams;
-  const planParam = typeof sp.plan === "string" && ["pro", "school"].includes(sp.plan) ? sp.plan : undefined;
-  // Apple/Google prohiben vender contenido digital (planes anuales)
-  // DENTRO del APK sin usar su IAP. Como el pago nunca se procesa en la app
-  // (Flow queda solo en la web), aca se oculta el checkout y se muestra una
-  // vista de solo lectura + un mensaje para comprar desde un navegador.
+  const countryCode = (school.country_code || "CL").toUpperCase();
+  const isChile = countryCode === "CL";
   const isNativeApp = /TuLectorApp/i.test((await headers()).get("user-agent") ?? "");
-  const t = getDashboardMessages(locale);
-  const [{ data: subscription }, { data: orders }, { data: papers }, { data: comunas }] = await Promise.all([
-    supabase.from("subscriptions").select("*").eq("school_id", school.id).maybeSingle(),
-    supabase.from("orders").select("id,type,status,amount_cents,currency,invoice_pdf_url,receipt_seq,receipt_sent_at,gateway,gateway_payment_id,created_at").eq("school_id", school.id).order("created_at", { ascending: false }),
-    supabase.from("papers").select("scanned_at").neq("status", "void").order("scanned_at", { ascending: false }),
-    // Solo hace falta para el formulario de checkout, que no se renderiza en nativo.
-    isNativeApp
+  const [subscriptionResult, orderResult, communeResult] = await Promise.all([
+    supabase.from("subscriptions").select("plan,status,current_period_end").eq("school_id", school.id).maybeSingle(),
+    supabase.from("orders")
+      .select("id,type,plan_code,status,amount_cents,currency,invoice_pdf_url,receipt_seq,receipt_sent_at,created_at")
+      .eq("school_id", school.id).order("created_at", { ascending: false }),
+    isNativeApp || !isChile
       ? Promise.resolve({ data: [] as { comuna: string; region_cod: string; region_nombre: string }[] })
-      : supabase.from("comunas").select("comuna,region_cod,region_nombre").order("region_cod", { ascending: true }).order("comuna", { ascending: true }),
+      : supabase.from("comunas").select("comuna,region_cod,region_nombre").order("region_cod").order("comuna"),
   ]);
-
-  const scansByMonth: Record<string, number> = {};
-  for (const p of papers ?? []) {
-    const key = p.scanned_at?.slice(0, 7) ?? "desconocido";
-    scansByMonth[key] = (scansByMonth[key] ?? 0) + 1;
-  }
-  const monthlyEntries = Object.entries(scansByMonth)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-6);
-  const maxMonth = Math.max(1, ...monthlyEntries.map(([, c]) => c));
-  const projConsumption = monthlyEntries.length >= 2
-    ? Math.round(monthlyEntries.slice(-3).reduce((s, [, c]) => s + c, 0) / Math.min(3, monthlyEntries.slice(-3).length))
-    : (monthlyEntries[0]?.[1] ?? 0);
-  const flowConfig = getFlowConfig();
-  const gatewayConfig = (school.country_code || "CL").toUpperCase() === "CL" ? flowConfig : getDlocalConfig();
+  if (subscriptionResult.error || orderResult.error) throw new Error("No pudimos cargar el historial de pagos.");
+  const subscription = subscriptionResult.data;
+  const orders = (orderResult.data ?? []) as Order[];
+  const planParam = typeof sp.plan === "string" && ["pro", "school"].includes(sp.plan) ? sp.plan : undefined;
+  const returnOrder = typeof sp.order_id === "string" ? orders.find((order) => order.id === sp.order_id) : undefined;
+  const gatewayConfig = isChile ? getFlowConfig() : getDlocalConfig();
   const paymentsReady = process.env.NODE_ENV !== "production" || (gatewayConfig.configured && !gatewayConfig.sandbox);
-  const returnOrderId = typeof sp.order_id === "string" ? sp.order_id : null;
-  const returnOrder = (orders ?? []).find((order) => order.id === returnOrderId);
-  const checkoutInputs: Array<{ id: string; title: string; subtitle: string; badge?: string; input: BillingCheckoutInput }> = [
-    { id: "pro", title: "Plan Pro", subtitle: "2.000 lecturas anuales", badge: "Recomendado", input: { type: "plan", plan: "pro" } },
-    { id: "school", title: "Plan School", subtitle: "10.000 lecturas anuales y pestaña Equipo", input: { type: "plan", plan: "school" } },
-  ];
-  const checkoutItems: CheckoutItem[] = checkoutInputs.map(({ id, title, subtitle, badge, input }) => {
-    const item = resolveBillingCatalogItem(input, school.country_code);
+  const checkoutItems: CheckoutItem[] = (["pro", "school"] as const).map((plan) => {
+    const item = resolveBillingCatalogItem({ type: "plan", plan }, countryCode);
     return {
-      id,
-      type: item.type,
-      plan: item.plan,
-      scansAdded: item.scansAdded,
-      amountCents: item.amountCents,
-      currency: item.currency,
-      title,
-      subtitle,
-      badge,
+      id: plan, type: item.type, plan, scansAdded: item.scansAdded,
+      amountCents: item.amountCents, currency: item.currency,
+      title: plan === "pro" ? "Pro" : "School",
+      subtitle: plan === "pro" ? "2.000 lecturas al año" : "10.000 lecturas al año y trabajo en equipo",
     };
   });
-  const communeOptions: CommuneOption[] = (comunas ?? [])
-    .map((row) => ({
-      commune: String(row.comuna || ""),
-      regionCode: String(row.region_cod || ""),
-      regionName: String(row.region_nombre || row.region_cod || ""),
-    }))
-    .filter((row) => row.commune && row.regionCode);
+  const communes: CommuneOption[] = (communeResult.data ?? []).map((row) => ({
+    commune: row.comuna, regionCode: row.region_cod, regionName: row.region_nombre || row.region_cod,
+  })).filter((row) => row.commune && row.regionCode);
+  const used = Math.max(0, school.scans_used ?? 0);
+  const limit = school.scans_limit;
+  const remaining = limit === null ? null : Math.max(0, limit - used);
+  const progress = limit && limit > 0 ? Math.min(100, Math.max(0, used / limit * 100)) : 0;
+  const active = hasActiveSubscription(school.plan, subscription);
+  const planName = school.plan === "school" ? "School" : school.plan === "pro" ? "Pro" : "Gratis";
 
-  return (
-    <>
-      <PageHeader
-        title={t.billing}
-        description={isNativeApp
-          ? "Plan actual, cuota de lecturas y tu historial de facturas."
-          : "Plan anual, cuota de lecturas y comprobantes. Flow para Chile; dLocal para los demas paises habilitados."}
-      />
-      <div className="space-y-6">
-        {returnOrder ? <BillingReturnStatus status={returnOrder.status} /> : null}
-        {subscription?.current_period_end ? (
-          <p className="text-sm text-[#5b6472]">
-            Vigencia registrada hasta {new Date(subscription.current_period_end).toLocaleDateString("es-CL")}.
-            El pago anual se renueva manualmente.
-          </p>
-        ) : null}
-        {isNativeApp ? (
-          <div className="rounded-md border border-[#e1e5ea] bg-[#f8faf9] p-5">
-            <p className="text-sm font-semibold text-[#111827]">Plan actual: {school.plan}</p>
-            <p className="mt-2 text-sm text-[#5b6472]">
-              Para contratar o cambiar tu plan anual, ingresa a tulector.app desde un navegador (computador o celular).
-            </p>
-          </div>
-        ) : (
-          <BillingCheckoutPanel
-            schoolName={school.name}
-            countryCode={school.country_code || "CL"}
-            currentPlan={school.plan}
-            isAdmin={isAdmin}
-            items={checkoutItems}
-            communes={communeOptions}
-            paymentsReady={paymentsReady}
-            initialPlan={planParam}
-          />
-        )}
-        {school.country_code === "CL" && !planHasFeature(school.plan, "dia_sync") ? (
-          <div className="flex items-center gap-4 rounded-md border border-[#2f6f5e]/30 bg-[#f0f7f4] p-5">
-            <div className="flex h-14 w-20 shrink-0 items-center justify-center rounded-lg bg-white p-2">
-              <Image src="/agencia-calidad-educacion.png" alt="Agencia de Calidad de la Educacion" width={200} height={130} className="h-full w-full object-contain" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-[#111827]">Sube tus resultados a la plataforma DIA automaticamente</p>
-              <p className="mt-1 text-sm text-[#4b5563]">
-                Exclusivo de Plan Pro y School: sincroniza los resultados escaneados directo con la plataforma DIA sin digitarlos
-                uno por uno. Sube tu plan para activarlo.
-              </p>
-            </div>
-          </div>
-        ) : null}
-        <KPIGrid>
-          <KPI label="Escaneos usados" value={`${school.scans_used ?? 0}/${school.scans_limit ?? "—"}`} />
-          <KPI label="Consumo mensual est." value={String(projConsumption)} />
-          <KPI label="Meses con datos" value={monthlyEntries.length} />
-        </KPIGrid>
-        <section className="rounded-md border border-[#e1e5ea] bg-white p-5">
-          <h2 className="mb-4 text-lg font-semibold">Consumo mensual</h2>
-          <QuotaBar used={school.scans_used ?? 0} limit={school.scans_limit ?? 0} />
-          <p className="mt-4 text-sm text-[#5b6472]">Estado: {subscription?.status ?? "sin suscripcion activa"}</p>
-          {monthlyEntries.length > 0 && (
-            <div className="mt-4 flex items-end gap-2" style={{ height: 100 }}>
-              {monthlyEntries.map(([month, count]) => (
-                <div key={month} className="flex flex-1 flex-col items-center gap-1">
-                  <span className="text-[10px] font-semibold text-[#5b6472]">{count}</span>
-                  <div className="w-full rounded-t-sm bg-[#07305f]" style={{ height: `${Math.round((count / maxMonth) * 60)}px` }} />
-                  <span className="text-[9px] text-[#9aa3af]">{month.slice(5)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-        <DataTable columns={["Tipo", "Estado", "Monto", "Comprobante", "Fecha"]} rows={orders ?? []} empty="No hay compras ni facturas." renderMobileRow={(order) => {
-          const receiptNumber = order.receipt_seq ? `TL-${String(order.receipt_seq).padStart(8, "0")}` : null;
-          return (
-            <article key={order.id} className="rounded-2xl border border-[#e1e5ea] bg-white p-4 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-black capitalize text-[#111827]">{order.type}</p>
-                  <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#64748b]">{order.status}</p>
-                </div>
-                <p className="text-sm font-black text-[#07305f]">{order.currency?.toUpperCase()} {Math.round((order.amount_cents ?? 0) / 100).toLocaleString("es-CL")}</p>
-              </div>
-              <div className="mt-3 flex items-center justify-between text-xs text-[#64748b]">
-                <span>{new Date(order.created_at).toLocaleDateString("es-CL")}</span>
-                {receiptNumber ? (
-                  <span className="font-bold text-[#07305f]">{receiptNumber}{isAdmin && order.status === "paid" ? <BillingReceiptButton orderId={order.id} /> : null}</span>
-                ) : order.invoice_pdf_url ? (
-                  <a className="font-bold text-[#07305f] underline" href={order.invoice_pdf_url}>Factura PDF</a>
-                ) : (
-                  <span>Sin comprobante</span>
-                )}
-              </div>
-            </article>
-          );
-        }} renderRow={(order) => {
-          const receiptNumber = order.receipt_seq ? `TL-${String(order.receipt_seq).padStart(8, "0")}` : null;
-          return (
-            <tr key={order.id} className="border-b border-[#eef0f3] last:border-0">
-              <td className="px-5 py-4 font-semibold">{order.type}</td>
-              <td className="px-5 py-4">{order.status}</td>
-              <td className="px-5 py-4">{order.currency?.toUpperCase()} {Math.round((order.amount_cents ?? 0) / 100)}</td>
-              <td className="px-5 py-4">
-                {receiptNumber ? (
-                  <span className="font-bold text-[#07305f]" title={order.receipt_sent_at ? `Enviado el ${new Date(order.receipt_sent_at).toLocaleDateString("es-CL")}` : "Comprobante generado"}>{receiptNumber}{isAdmin && order.status === "paid" ? <BillingReceiptButton orderId={order.id} /> : null}</span>
-                ) : order.invoice_pdf_url ? (
-                  <a className="underline" href={order.invoice_pdf_url}>PDF</a>
-                ) : (
-                  "-"
-                )}
-              </td>
-              <td className="px-5 py-4 text-[#5b6472]">{new Date(order.created_at).toLocaleDateString("es-CL")}</td>
-            </tr>
-          );
-        }} />
+  return <div className="max-w-[1040px]">
+    <header className="mb-7">
+      <h1 className="text-2xl font-semibold tracking-tight text-[#20242b] sm:text-3xl">Plan y pagos</h1>
+      <p className="mt-2 text-sm leading-6 text-[#676e78]">Consulta tus lecturas y administra tu plan.</p>
+    </header>
+
+    {returnOrder ? <div className="mb-6"><BillingReturnStatus status={returnOrder.status} /></div> : null}
+
+    <section aria-label="Tu plan actual" className="mb-8 grid gap-5 border-y border-[#dde0e4] py-5 sm:grid-cols-2 sm:gap-10">
+      <div>
+        <p className="text-sm text-[#676e78]">Plan actual</p>
+        <p className="mt-1 text-lg font-semibold text-[#20242b]">{planName}</p>
+        <p className="mt-1 text-sm text-[#676e78]">
+          {active && subscription?.current_period_end
+            ? "Vigente hasta el " + new Date(subscription.current_period_end).toLocaleDateString("es-CL")
+            : "Sin suscripción anual activa."}
+        </p>
       </div>
-    </>
-  );
+      <div className="min-w-0">
+        <div className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="text-[#676e78]">Lecturas disponibles</span>
+          <strong className="font-semibold tabular-nums text-[#20242b]">{remaining === null ? "Sin límite" : remaining.toLocaleString("es-CL")}</strong>
+        </div>
+        {limit !== null && limit > 0 ? <div className="mt-3 h-1.5 overflow-hidden rounded-sm bg-[#e6e8eb]"
+          role="progressbar" aria-label="Lecturas utilizadas" aria-valuemin={0} aria-valuemax={limit}
+          aria-valuenow={Math.min(used, limit)} aria-valuetext={used.toLocaleString("es-CL") + " lecturas utilizadas"}>
+          <div className="h-full bg-[#697888]" style={{ width: progress + "%" }} />
+        </div> : null}
+        <p className="mt-2 text-xs text-[#858b94]">{used.toLocaleString("es-CL")} utilizadas{limit !== null ? " de " + limit.toLocaleString("es-CL") : ""}</p>
+      </div>
+    </section>
+
+    {isNativeApp ? <p className="text-sm leading-6 text-[#535b66]">Para contratar o renovar tu plan, ingresa a tulector.app desde un navegador.</p>
+      : <BillingCheckoutPanel schoolName={school.name} countryCode={countryCode} currentPlan={school.plan}
+        isAdmin={isAdmin} items={checkoutItems} communes={communes} paymentsReady={paymentsReady} initialPlan={planParam} />}
+
+    <section aria-labelledby="billing-history-title" className="mt-12 border-t border-[#dde0e4] pt-7">
+      <h2 id="billing-history-title" className="mb-4 text-lg font-semibold text-[#20242b]">Historial de compras</h2>
+      <DataTable columns={["Compra", "Fecha", "Estado", "Monto", "Comprobante"]} rows={orders}
+        empty="Todavía no hay compras en esta cuenta."
+        renderMobileRow={(order) => <article key={order.id} className="border-b border-[#dde0e4] py-4 last:border-0">
+          <div className="flex items-start justify-between gap-3">
+            <div><p className="text-sm font-medium text-[#20242b]">{orderName(order)}</p>
+              <p className="mt-1 text-xs text-[#858b94]">{new Date(order.created_at).toLocaleDateString("es-CL")}</p></div>
+            <p className="text-sm font-medium tabular-nums text-[#20242b]">{orderAmount(order)}</p>
+          </div>
+          <div className="mt-3 flex items-start justify-between gap-4 text-sm">
+            <span className={order.status === "paid" ? "text-[#32664f]" : "text-[#676e78]"}>{STATUS[order.status || ""] || order.status}</span>
+            <Receipt order={order} canResend={isAdmin} />
+          </div>
+        </article>}
+        renderRow={(order) => <tr key={order.id} className="border-b border-[#eceef0] last:border-0">
+          <td className="px-5 py-4 font-medium text-[#20242b]">{orderName(order)}</td>
+          <td className="px-5 py-4 text-[#676e78]">{new Date(order.created_at).toLocaleDateString("es-CL")}</td>
+          <td className={"px-5 py-4 " + (order.status === "paid" ? "text-[#32664f]" : "text-[#676e78]")}>{STATUS[order.status || ""] || order.status}</td>
+          <td className="px-5 py-4 tabular-nums text-[#20242b]">{orderAmount(order)}</td>
+          <td className="px-5 py-4"><Receipt order={order} canResend={isAdmin} /></td>
+        </tr>} />
+    </section>
+  </div>;
 }
