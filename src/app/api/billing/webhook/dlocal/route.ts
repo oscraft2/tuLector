@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDlocalPaymentStatus } from "@/lib/dlocal";
-import { applyVerifiedPayment } from "@/lib/billing_webhook";
+import { applyVerifiedPayment, recordVerifiedFailure } from "@/lib/billing_webhook";
 
 export async function POST(request: Request) {
   try {
@@ -11,7 +11,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "payment_id invalido" }, { status: 400 });
     }
     const payment = await getDlocalPaymentStatus(rawId);
-    if (payment.status !== "PAID") return NextResponse.json({ status: "pending_or_failed" });
+    if (payment.status !== "PAID") {
+      if (["REJECTED", "CANCELLED", "EXPIRED"].includes(payment.status)) await recordVerifiedFailure({
+        orderId: payment.orderId, amountCents: Math.round(payment.amount * 100),
+        currency: payment.currency, gateway: "dlocal", paymentId: rawId,
+      });
+      return NextResponse.json({ status: "pending_or_failed" });
+    }
     return NextResponse.json(await applyVerifiedPayment({
       orderId: payment.orderId, amountCents: Math.round(payment.amount * 100),
       currency: payment.currency, gateway: "dlocal", paymentId: rawId,

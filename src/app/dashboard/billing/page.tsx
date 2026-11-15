@@ -53,7 +53,7 @@ export default async function BillingPage({
     ? Math.round(monthlyEntries.slice(-3).reduce((s, [, c]) => s + c, 0) / Math.min(3, monthlyEntries.slice(-3).length))
     : (monthlyEntries[0]?.[1] ?? 0);
   const flowConfig = getFlowConfig();
-  const gatewayConfig = school.country_code === "CL" ? flowConfig : getDlocalConfig();
+  const gatewayConfig = (school.country_code || "CL").toUpperCase() === "CL" ? flowConfig : getDlocalConfig();
   const paymentsReady = process.env.NODE_ENV !== "production" || (gatewayConfig.configured && !gatewayConfig.sandbox);
   const returnOrderId = typeof sp.order_id === "string" ? sp.order_id : null;
   const returnOrder = (orders ?? []).find((order) => order.id === returnOrderId);

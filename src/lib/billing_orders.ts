@@ -277,6 +277,7 @@ export async function notifyPaymentFailed(
 
   type OrderSchool = { name: string; country_code: string | null };
   const order = orderData as BillingOrder & { schools: OrderSchool | OrderSchool[] | null };
+  if (order.status !== "failed") return { sent: false, error: "La orden no esta rechazada" };
   const schoolRow = Array.isArray(order.schools) ? order.schools[0] : order.schools;
   if (!schoolRow?.name) {
     return { sent: false, error: "Colegio no encontrado" };
@@ -313,6 +314,7 @@ export async function notifyPaymentFailed(
     const result = await sendTemplatedEmail({
       to: email,
       templateKey: "payment_failed",
+      idempotencyKey: `payment-failed/${orderId}/${createHash("sha256").update(email).digest("hex").slice(0, 24)}`,
       locale,
       variables: {
         school_name: schoolRow.name,

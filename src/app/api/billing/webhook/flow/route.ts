@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getFlowPaymentStatus } from "@/lib/flow";
-import { applyVerifiedPayment } from "@/lib/billing_webhook";
+import { applyVerifiedPayment, recordVerifiedFailure } from "@/lib/billing_webhook";
 
 export async function POST(request: Request) {
   try {
@@ -8,7 +8,13 @@ export async function POST(request: Request) {
     if (!token) return NextResponse.json({ error: "Falta token" }, { status: 400 });
     // No event lock before verification: pending statuses and transient failures must remain retryable.
     const payment = await getFlowPaymentStatus(token);
-    if (payment.status !== 2) return NextResponse.json({ status: "pending_or_failed" });
+    if (payment.status !== 2) {
+      if (payment.status === 3 || payment.status === 4) await recordVerifiedFailure({
+        orderId: payment.commerceOrder, amountCents: Math.round(payment.amount * 100),
+        currency: payment.currency, gateway: "flow", paymentId: token,
+      });
+      return NextResponse.json({ status: payment.status === 1 ? "pending" : "failed" });
+    }
     return NextResponse.json(await applyVerifiedPayment({
       orderId: payment.commerceOrder, amountCents: Math.round(payment.amount * 100),
       currency: payment.currency, gateway: "flow", paymentId: token,

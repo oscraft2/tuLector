@@ -18,7 +18,7 @@ CREATE TABLE orders (
   currency text, gateway text, gateway_payment_id text, stripe_checkout_session_id text UNIQUE,
   billing_details jsonb, receipt_seq bigserial, receipt_sent_at timestamptz,
   billing_period_start timestamptz, billing_period_end timestamptz,
-  paid_at timestamptz, created_at timestamptz DEFAULT now()
+  failed_at timestamptz, paid_at timestamptz, created_at timestamptz DEFAULT now()
 );
 CREATE TABLE subscriptions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), school_id uuid NOT NULL REFERENCES schools,

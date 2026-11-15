@@ -56,7 +56,7 @@ BEGIN
     RETURN jsonb_build_object('alreadyProcessed', true, 'order', to_jsonb(o),
       'school', to_jsonb(s), 'extraScans', o.scans_added, 'targetPlan', target_plan);
   END IF;
-  IF o.status <> 'pending' THEN RAISE EXCEPTION 'La orden no esta pendiente'; END IF;
+  IF o.status IS NULL OR o.status NOT IN ('pending', 'failed') THEN RAISE EXCEPTION 'La orden no esta pendiente'; END IF;
   IF o.scans_added IS NULL OR o.scans_added <= 0 THEN RAISE EXCEPTION 'Cuota invalida'; END IF;
   SELECT * INTO sub FROM subscriptions WHERE school_id = s.id FOR UPDATE;
   IF o.type = 'plan' THEN
@@ -273,7 +273,7 @@ REVOKE ALL ON FUNCTION public.increment_scans_used(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.increment_scans_used(uuid) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.billing_summary()
-RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $
+RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
   SELECT jsonb_build_object(
     'order_count', (SELECT count(*) FROM orders),
     'paid_count', (SELECT count(*) FROM orders WHERE status = 'paid'),
@@ -282,15 +282,15 @@ RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $
     'active_subscriptions', (SELECT count(*) FROM subscriptions
       WHERE status = 'active' AND current_period_end > now()),
     'revenue_by_currency', coalesce((SELECT jsonb_object_agg(currency, total) FROM (
-      SELECT upper(currency) AS currency, sum(amount_cents)::numeric / 100 AS total
-      FROM orders WHERE status = 'paid' GROUP BY upper(currency)
+      SELECT coalesce(upper(currency), 'CLP') AS currency, sum(amount_cents)::numeric / 100 AS total
+      FROM orders WHERE status = 'paid' GROUP BY coalesce(upper(currency), 'CLP')
     ) amounts), '{}'::jsonb),
     'paid_by_gateway', coalesce((SELECT jsonb_object_agg(gateway, total) FROM (
       SELECT coalesce(gateway, 'sin_registrar') AS gateway, count(*) AS total
       FROM orders WHERE status = 'paid' GROUP BY coalesce(gateway, 'sin_registrar')
     ) gateways), '{}'::jsonb)
   );
-$;
+$$;
 REVOKE ALL ON FUNCTION public.billing_summary() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.billing_summary() TO service_role;
 

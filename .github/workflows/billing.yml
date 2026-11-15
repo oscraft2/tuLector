@@ -50,4 +50,6 @@ jobs:
       - name: Concurrent payment callbacks and renewals
         run: bash tests/billing/concurrency.sh
       - name: Typecheck application
-        run: npx tsc --noEmit --project tsconfig.billing-check.json
+        run: npx tsc --noEmit
+      - name: Build Next.js application
+        run: npm run build

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getMercadoPagoPayment } from "@/lib/mercadopago";
-import { applyVerifiedPayment } from "@/lib/billing_webhook";
+import { applyVerifiedPayment, recordVerifiedFailure } from "@/lib/billing_webhook";
 
 import crypto from "crypto";
 
@@ -58,7 +58,13 @@ export async function POST(request: Request) {
     }
 
     const payment = await getMercadoPagoPayment(String(paymentId));
-    if (payment.status !== "approved") return NextResponse.json({ status: "pending_or_failed" });
+    if (payment.status !== "approved") {
+      if (payment.status === "rejected") await recordVerifiedFailure({
+        orderId: payment.externalReference, amountCents: Math.round(payment.amount * 100),
+        currency: String(payment.raw.currency_id || ""), gateway: "mercadopago", paymentId: String(paymentId),
+      });
+      return NextResponse.json({ status: "pending_or_failed" });
+    }
     return NextResponse.json(await applyVerifiedPayment({
       orderId: payment.externalReference, amountCents: Math.round(payment.amount * 100),
       currency: String(payment.raw.currency_id || ""), gateway: "mercadopago", paymentId: String(paymentId),
