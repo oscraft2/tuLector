@@ -18,6 +18,32 @@ ON public.orders(gateway, gateway_payment_id) WHERE gateway_payment_id IS NOT NU
 CREATE UNIQUE INDEX IF NOT EXISTS orders_refund_reference_unique
 ON public.orders(gateway, refund_reference) WHERE refund_reference IS NOT NULL;
 
+-- Preserve manual paid-plan grants from the previous system, which had no expiry check.
+-- Keep usage/quota unchanged; infer the annual period from the last matching admin grant
+-- or account creation. Older grants receive a 30-day transition window rather than losing access.
+WITH legacy AS (
+  SELECT s.id, s.plan, coalesce(
+    (SELECT a.created_at FROM audit_log a
+      WHERE a.target_id = s.id::text AND a.action = 'school.plan_update'
+        AND a.metadata ->> 'plan' = s.plan ORDER BY a.created_at DESC LIMIT 1),
+    s.created_at, now()) AS granted_at
+  FROM schools s
+  WHERE s.plan IN ('pro', 'school')
+    AND NOT EXISTS (SELECT 1 FROM subscriptions sub WHERE sub.school_id = s.id)
+), regularized AS (
+  INSERT INTO subscriptions(school_id, plan, status, currency, amount_cents,
+    current_period_start, current_period_end)
+  SELECT id, plan, 'active', 'clp', 0, granted_at,
+    greatest(granted_at + interval '1 year', now() + interval '30 days')
+  FROM legacy ON CONFLICT(school_id) DO NOTHING
+  RETURNING school_id, plan, current_period_end
+)
+INSERT INTO audit_log(actor_role, school_id, target_type, target_id, action, reason, metadata)
+SELECT 'migration', school_id, 'school', school_id::text, 'school.subscription_regularized',
+  'Conserva el plan manual heredado sin modificar cuota ni consumo',
+  jsonb_build_object('plan', plan, 'current_period_end', current_period_end, 'amount_cents', 0)
+FROM regularized;
+
 CREATE OR REPLACE FUNCTION public.apply_paid_order(
   p_order_id uuid, p_amount_cents bigint, p_currency text, p_gateway text, p_payment_id text
 ) RETURNS jsonb

@@ -21,6 +21,11 @@ DECLARE
   old_end timestamptz;
   count_before integer;
 BEGIN
+  IF NOT EXISTS(SELECT 1 FROM subscriptions WHERE school_id='00000000-0000-4000-8000-000000000099'
+    AND status='active' AND plan='school' AND current_period_end > now())
+    OR (SELECT scans_used FROM schools WHERE id='00000000-0000-4000-8000-000000000099') <> 321 THEN
+    RAISE EXCEPTION 'legacy grant lost access or usage';
+  END IF;
   INSERT INTO schools(id,name) VALUES(v_school_id,'Billing test');
   INSERT INTO platform_users(user_id,role) VALUES(v_actor_id,'finance');
   INSERT INTO orders(id,school_id,type,plan_code,status,scans_added,amount_cents,currency,gateway,stripe_checkout_session_id)

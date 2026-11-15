@@ -9,7 +9,7 @@ $$;
 CREATE TABLE schools (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL,
   plan text DEFAULT 'starter', scans_limit integer DEFAULT 100, scans_used integer DEFAULT 0,
-  country_code text DEFAULT 'CL', status text DEFAULT 'active', updated_at timestamptz DEFAULT now()
+  country_code text DEFAULT 'CL', status text DEFAULT 'active', created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()
 );
 CREATE TABLE school_members (school_id uuid REFERENCES schools, user_id uuid, role text);
 CREATE TABLE orders (
@@ -29,7 +29,9 @@ CREATE TABLE subscriptions (
 CREATE TABLE platform_users (user_id uuid PRIMARY KEY, role text NOT NULL, revoked_at timestamptz);
 CREATE TABLE audit_log (
   actor_user_id uuid, actor_role text, school_id uuid, target_type text, target_id text,
-  action text, reason text, metadata jsonb
+  action text, reason text, metadata jsonb, created_at timestamptz DEFAULT now()
 );
 CREATE TABLE webhook_events(event_id text PRIMARY KEY, gateway text NOT NULL, processed_at timestamptz DEFAULT now());
 CREATE TABLE papers(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), school_id uuid NOT NULL REFERENCES schools);
+
+INSERT INTO schools(id,name,plan,scans_limit,scans_used,created_at) VALUES('00000000-0000-4000-8000-000000000099','Legacy manual grant','school',10000,321,now()-interval '60 days');

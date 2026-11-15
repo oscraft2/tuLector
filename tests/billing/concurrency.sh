@@ -14,7 +14,7 @@ for pid in "${pids[@]}"; do wait "$pid"; done
 psql -v ON_ERROR_STOP=1 <<'SQL'
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM subscriptions) <> 1
+  IF (SELECT count(*) FROM subscriptions WHERE school_id='00000000-0000-4000-8000-000000000010') <> 1
     OR (SELECT scans_limit FROM schools WHERE id='00000000-0000-4000-8000-000000000010') <> 2000
     OR (SELECT count(*) FROM webhook_events) <> 1 THEN RAISE EXCEPTION 'concurrent replay applied more than once'; END IF;
 END;
@@ -34,7 +34,7 @@ psql -v ON_ERROR_STOP=1 <<'SQL'
 DO $$
 BEGIN
   IF (SELECT scans_limit FROM schools WHERE id='00000000-0000-4000-8000-000000000010') <> 6000
-    OR (SELECT count(*) FROM subscriptions) <> 1
+    OR (SELECT count(*) FROM subscriptions WHERE school_id='00000000-0000-4000-8000-000000000010') <> 1
     OR (SELECT count(*) FROM orders WHERE status='paid') <> 3
     OR (SELECT current_period_end FROM subscriptions) < now() + interval '3 years' - interval '1 minute' THEN
     RAISE EXCEPTION 'concurrent renewals lost entitlement';
