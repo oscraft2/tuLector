@@ -20,7 +20,7 @@ Rama codex/billing-admin-reliability. Los cambios no ejecutan cargos ni devoluci
 
 La devolución del dinero se realiza en Flow/dLocal. El admin permite **registrar la devolución completa ya realizada**, con referencia de la pasarela, motivo y confirmación. Esta acción no mueve dinero.
 
-El registro y el ajuste de acceso ocurren atómicamente y quedan auditados. No se cancela un plan más nuevo por devolver una compra histórica. Las órdenes creadas antes de esta actualización no tienen snapshot de derechos: se registran con advertencia y requieren reconciliar el acceso manualmente desde la ficha del colegio. No se ofrecen devoluciones parciales en esta pantalla.
+El registro y el ajuste de acceso ocurren atómicamente y quedan auditados. No se cancela ni se reduce la cuota de un plan más nuevo por devolver una compra histórica. Esos casos quedan señalados para conciliar el acceso manualmente; no hay un historial por lectura que permita atribuir el consumo a cada compra. Las órdenes creadas antes de esta actualización no tienen snapshot de derechos: se registran con advertencia y requieren reconciliar el acceso manualmente desde la ficha del colegio. No se ofrecen devoluciones parciales en esta pantalla.
 
 ## Antes de desplegar
 

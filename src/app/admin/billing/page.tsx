@@ -33,7 +33,7 @@ export default async function BillingAdminPage({
   const gateway = typeof sp.gateway === "string" && GATEWAYS.includes(sp.gateway) ? sp.gateway : "";
   const page = Math.max(1, Math.floor(Number(sp.page) || 1));
   let query = admin.from("orders").select(
-    "id,type,status,scans_added,amount_cents,currency,gateway,created_at,school_id,receipt_sent_at,refund_reference,entitlement_snapshot,schools(name)",
+    "id,type,status,scans_added,amount_cents,currency,gateway,created_at,school_id,receipt_sent_at,refund_reference,refund_access_review_required,schools(name)",
     { count: "exact" }).order("created_at", { ascending: false });
   if (status) query = query.eq("status", status);
   if (gateway) query = query.eq("gateway", gateway);
@@ -68,7 +68,7 @@ export default async function BillingAdminPage({
           Los comprobantes de compra no reemplazan documentos tributarios.</p>
         <p className="mt-2 text-[#5b6472]">Las devoluciones de dinero se realizan en la pasarela.
           Aqui se registra la devolucion completa ya realizada, con su referencia.
-          Las ordenes anteriores a esta actualizacion requieren revisar su acceso manualmente.</p>
+          Las ordenes historicas o anteriores a esta actualizacion pueden requerir revisar su acceso manualmente.</p>
       </section>
       <form className="flex flex-wrap items-end gap-3">
         <label className="text-sm">Estado
@@ -96,7 +96,7 @@ export default async function BillingAdminPage({
             <td className="px-5 py-4">{money((order.amount_cents ?? 0) / 100, (order.currency || "clp").toUpperCase())}</td>
             <td className="px-5 py-4">{LABELS[order.status ?? ""] || order.status}
               {order.refund_reference ? <p className="text-xs">{order.refund_reference}</p> : null}
-              {!order.entitlement_snapshot && order.status === "refunded"
+              {order.refund_access_review_required
                 ? <p className="text-xs text-amber-800">Revisar acceso manualmente</p> : null}</td>
             <td className="px-5 py-4">{order.status === "paid" ? <div className="space-y-3">
               <form action={resendAdminReceipt}>

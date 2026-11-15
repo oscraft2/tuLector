@@ -6,6 +6,7 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS plan_code text;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS entitlement_snapshot jsonb;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS refund_reference text;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS refunded_at timestamptz;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS refund_access_review_required boolean DEFAULT false;
 ALTER TABLE public.subscriptions ADD COLUMN IF NOT EXISTS source_order_id uuid REFERENCES public.orders(id);
 
 UPDATE public.orders SET plan_code = CASE WHEN scans_added >= 10000 THEN 'school' ELSE 'pro' END
@@ -199,18 +200,20 @@ BEGIN
       scans_used = coalesce((previous_school ->> 'scans_used')::integer, 0) + coalesce(s.scans_used, 0),
       updated_at = now() WHERE id = s.id;
   ELSE
-    -- A historical refund must not cancel a more recent plan or a manual grant.
-    -- Legacy orders lack a reliable snapshot: leave access unchanged for manual reconciliation.
-    IF o.entitlement_snapshot IS NOT NULL THEN
-      UPDATE schools SET scans_limit = greatest(0, coalesce(scans_limit, 0) - coalesce(o.scans_added, 0)),
-        updated_at = now() WHERE id = s.id;
-    END IF;
+    -- An old order may no longer contribute to the current quota (e.g. a later upgrade).
+    -- Without a per-reading ledger, subtracting its full allowance can remove a newer paid entitlement.
+    -- Preserve current access and flag this historical/legacy refund for staff reconciliation.
+    NULL;
   END IF;
-  UPDATE orders SET status = 'refunded', refund_reference = trim(p_reference), refunded_at = now() WHERE id = o.id;
+  UPDATE orders SET status = 'refunded', refund_reference = trim(p_reference), refunded_at = now(),
+    refund_access_review_required = o.entitlement_snapshot IS NULL
+      OR o.type <> 'plan' OR sub.source_order_id IS DISTINCT FROM o.id
+    WHERE id = o.id;
   INSERT INTO audit_log(actor_user_id, actor_role, school_id, target_type, target_id, action, reason, metadata)
   VALUES(p_actor, staff_role, s.id, 'order', o.id::text, 'order.external_refund', trim(p_reason),
     jsonb_build_object('reference', trim(p_reference), 'amount_cents', o.amount_cents,
-      'access_reconciliation_required', o.entitlement_snapshot IS NULL));
+      'access_reconciliation_required', o.entitlement_snapshot IS NULL
+        OR o.type <> 'plan' OR sub.source_order_id IS DISTINCT FROM o.id));
 END;
 $$;
 

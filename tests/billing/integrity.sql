@@ -37,6 +37,8 @@ BEGIN
     OR (SELECT plan FROM schools WHERE id=v_school_id) <> 'starter'
     OR EXISTS(SELECT 1 FROM webhook_events) THEN RAISE EXCEPTION 'partial payment commit'; END IF;
   PERFORM set_config('billing.test_failure','false',true);
+  -- A later verified success may recover an earlier authoritative rejection.
+  UPDATE orders SET status='failed' WHERE id=v_first_order;
   result := apply_paid_order(v_first_order,1999000,'CLP','flow','token-1');
   IF (result->>'alreadyProcessed')::boolean THEN RAISE EXCEPTION 'retry was swallowed'; END IF;
   IF (SELECT scans_limit FROM schools WHERE id=v_school_id) <> 2000 THEN RAISE EXCEPTION 'wrong quota'; END IF;
@@ -80,7 +82,9 @@ BEGIN
     RAISE EXCEPTION 'historical refund canceled newer plan';
   END IF;
   PERFORM record_external_refund(v_first_order,v_actor_id,'external refund','provider-ref-1');
-  IF (SELECT scans_limit FROM schools WHERE id=v_school_id) <> 1963 THEN RAISE EXCEPTION 'refund replay deducted twice'; END IF;
+  IF (SELECT scans_limit FROM schools WHERE id=v_school_id) <> 3963
+    OR NOT (SELECT refund_access_review_required FROM orders WHERE id=v_first_order) THEN
+    RAISE EXCEPTION 'historical refund altered a newer allowance or missed review flag'; END IF;
   PERFORM record_external_refund(v_second_order,v_actor_id,'external refund','provider-ref-2');
   IF (SELECT plan FROM schools WHERE id=v_school_id) <> 'starter' THEN
     RAISE EXCEPTION 'refund resurrected a refunded plan';
