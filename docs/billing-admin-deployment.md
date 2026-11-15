@@ -9,7 +9,7 @@ Rama codex/billing-admin-reliability. Los cambios no ejecutan cargos ni devoluci
 - El webhook no reserva eventos pendientes o fallidos. Los eventos guardados por el código anterior no bloquean los nuevos reintentos.
 - La compra es anual y manual. No se almacena una tarjeta ni se habilitan cargos recurrentes.
 - La renovación del mismo plan conserva lecturas disponibles y extiende la fecha pagada un año calendario. El cambio a School empieza de inmediato. Una bajada de School a Pro se gestiona con soporte al finalizar el período.
-- Los planes sin suscripción activa, coincidente y vigente tienen derechos de starter. El contador no se reinicia al vencer. El trigger de nuevas lecturas aplica el mismo límite.
+- La migración conserva los planes manuales heredados sin suscripción: crea su vigencia anual desde la última asignación administrativa o la creación de la cuenta, con un mínimo de 30 días de transición. No modifica cuota ni consumo ni registra un pago. Los planes sin suscripción activa, coincidente y vigente tienen derechos de starter. El contador no se reinicia al vencer. El trigger de nuevas lecturas aplica el mismo límite.
 - Un cambio manual de plan conserva el consumo, actualiza la suscripción y se audita. Guardar el mismo plan vigente no renueva ni recarga.
 - dLocal tiene su propio estado de configuración y un formulario sin dirección/comuna chilenas. Habilitar credenciales no sustituye homologar cada país/método con dLocal.
 - Los comprobantes se envían vía Resend y pueden reenviarse. En producción, la falta de Resend es un error de envío, nunca un envío simulado.
