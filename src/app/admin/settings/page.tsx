@@ -33,34 +33,74 @@ export default async function SiteConfigPage() {
         )}
 
         <div className="rounded-md border border-[#e5e7eb] bg-white p-5">
-          <h2 className="text-base font-semibold text-[#111827]">Botón de WhatsApp flotante</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-base font-semibold text-[#111827]">Botón de WhatsApp</h2>
+              {whatsapp?.enabled && whatsappPayload.phone ? (
+                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700 border border-emerald-200">
+                  ● Activo en el sitio público
+                </span>
+              ) : (
+                <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 border border-gray-200">
+                  ○ Inactivo
+                </span>
+              )}
+            </div>
+            {whatsappPayload.phone && (
+              <a
+                href={`https://wa.me/${whatsappPayload.phone.replace(/[^\d]/g, "")}?text=${encodeURIComponent(whatsappPayload.default_message || "Hola, quiero informacion sobre TuLector")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#128C4A] hover:underline"
+              >
+                Probar enlace en WhatsApp ↗
+              </a>
+            )}
+          </div>
           <p className="mt-1 text-sm text-[#5b6472] mb-4">
-            Aparece en todo el sitio público (no en dashboard/admin/scan/portal). Requiere un número de WhatsApp Business real.
+            Al activarse, se muestra el botón flotante en la esquina inferior y el enlace en el encabezado del sitio web público (no en el dashboard ni en el APK nativo).
           </p>
-          <form action={saveSiteConfig} className="grid gap-3 md:grid-cols-2">
+          <form action={saveSiteConfig} className="grid gap-4 md:grid-cols-2">
             <input type="hidden" name="key" value="whatsapp_button" />
-            <label className="flex items-center gap-2 text-sm font-semibold md:col-span-2">
-              <input type="checkbox" name="enabled" defaultChecked={whatsapp?.enabled ?? false} /> Activar botón
+            <label className="flex items-center gap-2 text-sm font-semibold md:col-span-2 cursor-pointer select-none">
+              <input type="checkbox" name="enabled" defaultChecked={whatsapp?.enabled ?? false} className="h-4 w-4 rounded border-gray-300 text-[#07305f] focus:ring-[#07305f]" />
+              Activar botón de WhatsApp en el sitio público
             </label>
-            <input
-              name="phone"
-              placeholder="Numero con codigo de pais, ej: 56912345678"
-              defaultValue={whatsappPayload.phone ?? ""}
-              className="rounded border border-[#cfd6df] px-3 py-2 text-sm outline-none"
-            />
-            <select name="position" defaultValue={whatsappPayload.position ?? "bottom-right"} className="rounded border border-[#cfd6df] px-3 py-2 text-sm outline-none">
-              <option value="bottom-right">Abajo a la derecha</option>
-              <option value="bottom-left">Abajo a la izquierda</option>
-            </select>
-            <textarea
-              name="default_message"
-              rows={2}
-              placeholder="Mensaje predefinido"
-              defaultValue={whatsappPayload.default_message ?? "Hola, quiero informacion sobre TuLector"}
-              className="rounded border border-[#cfd6df] px-3 py-2 text-sm outline-none md:col-span-2"
-            />
-            <button className="rounded bg-[#07305f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0b3f78] md:col-span-2">
-              Guardar botón de WhatsApp
+            <div>
+              <label className="block text-xs font-semibold text-[#374151] mb-1">
+                Número de teléfono (con código de país)
+              </label>
+              <input
+                name="phone"
+                placeholder="Ej. Chile: 56912345678"
+                defaultValue={whatsappPayload.phone ?? ""}
+                className="w-full rounded border border-[#cfd6df] px-3 py-2 text-sm outline-none focus:border-[#07305f] focus:ring-1 focus:ring-[#07305f]"
+              />
+              <p className="mt-1 text-[11px] text-[#858b94]">Sin &quot;+&quot; ni espacios ni guiones. Chile: 569XXXXXXXX, México: 521XXXXXXXXXX.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#374151] mb-1">
+                Posición en pantalla
+              </label>
+              <select name="position" defaultValue={whatsappPayload.position ?? "bottom-right"} className="w-full rounded border border-[#cfd6df] px-3 py-2 text-sm outline-none focus:border-[#07305f] focus:ring-1 focus:ring-[#07305f]">
+                <option value="bottom-right">Abajo a la derecha (recomendado)</option>
+                <option value="bottom-left">Abajo a la izquierda</option>
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold text-[#374151] mb-1">
+                Mensaje predefinido al iniciar chat
+              </label>
+              <textarea
+                name="default_message"
+                rows={2}
+                placeholder="Mensaje predefinido"
+                defaultValue={whatsappPayload.default_message ?? "Hola, quiero informacion sobre TuLector"}
+                className="w-full rounded border border-[#cfd6df] px-3 py-2 text-sm outline-none focus:border-[#07305f] focus:ring-1 focus:ring-[#07305f]"
+              />
+            </div>
+            <button className="rounded bg-[#07305f] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#0b3f78] md:col-span-2 transition">
+              Guardar configuración de WhatsApp
             </button>
           </form>
         </div>

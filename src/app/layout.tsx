@@ -5,6 +5,8 @@ import { NativeBootstrap } from "@/components/native/NativeBootstrap";
 import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 import { JsonLd } from "@/components/JsonLd";
 import { SupportFloatingButton } from "@/components/SupportFloatingButton";
+import { WhatsAppFloatingButton } from "@/components/WhatsAppFloatingButton";
+import { getWhatsappButtonConfig } from "@/lib/site_config";
 import { locales, defaultLocale } from "@/i18n/config";
 
 const siteUrl = "https://tulector.app";
@@ -113,6 +115,17 @@ const webSiteLd = {
   },
 };
 
+async function FloatingButtonsSlot() {
+  const whatsappConfig = await getWhatsappButtonConfig();
+  const showSupport = !whatsappConfig.enabled || !whatsappConfig.phone || whatsappConfig.position === "bottom-left";
+  return (
+    <>
+      <WhatsAppFloatingButton config={whatsappConfig} />
+      {showSupport && <SupportFloatingButton />}
+    </>
+  );
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang={defaultLocale} className="h-full antialiased">
@@ -123,7 +136,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <GoogleAnalytics />
         </Suspense>
         {children}
-        <SupportFloatingButton />
+        <Suspense fallback={null}>
+          <FloatingButtonsSlot />
+        </Suspense>
       </body>
     </html>
   );

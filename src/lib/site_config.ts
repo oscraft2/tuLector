@@ -41,8 +41,16 @@ const DEFAULT_BANNER: BannerConfig = {
  */
 async function readSiteConfig(key: string): Promise<{ enabled: boolean; payload: Record<string, unknown> } | null> {
   try {
-    const admin = createSupabaseAdminClient();
-    const { data, error } = await admin.from("site_config").select("enabled, payload").eq("key", key).maybeSingle();
+    let client;
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      client = createSupabaseAdminClient();
+    } else if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      const { createClient } = await import("@supabase/supabase-js");
+      client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+    } else {
+      return null;
+    }
+    const { data, error } = await client.from("site_config").select("enabled, payload").eq("key", key).maybeSingle();
     if (error) {
       if (!isMissingTableError(error, "site_config")) {
         console.warn(`[site_config] error al leer "${key}":`, error.message);

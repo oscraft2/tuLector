@@ -89,8 +89,10 @@ export async function saveSiteConfig(formData: FormData) {
 
   let payload: Record<string, unknown>;
   if (key === "whatsapp_button") {
+    const rawPhone = String(formData.get("phone") ?? "").trim();
+    const phone = rawPhone.replace(/[^\d]/g, "");
     payload = {
-      phone: String(formData.get("phone") ?? "").trim(),
+      phone,
       default_message: String(formData.get("default_message") ?? "").trim(),
       position: formData.get("position") === "bottom-left" ? "bottom-left" : "bottom-right",
     };
