@@ -168,7 +168,7 @@ export function BillingCheckoutPanel({
               {selectedItem ? formatMoney(selectedItem.amountCents, selectedItem.currency) : "—"}
             </span>
           </div>
-          <p className="mt-1 text-right text-xs text-[#676e78]">{selectedItem?.currency.toUpperCase()} · pago anual</p>
+          <p className="mt-1 text-right text-xs text-[#676e78]">{selectedItem?.currency.toUpperCase()}</p>
         </div>
         {error ? <p role="alert" className="mt-4 text-sm leading-5 text-[#a12c2c]">{error}</p> : null}
         <button type="submit" disabled={!canCheckout || isSubmitting}
@@ -185,10 +185,10 @@ export function BillingCheckoutPanel({
 function Field({ label, htmlFor, optional, className = "", children }: {
   label: string; htmlFor: string; optional?: boolean; className?: string; children: ReactNode;
 }) {
-  return <label htmlFor={htmlFor} className={"block min-w-0 " + className}>
-    <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 text-sm font-medium text-[#3c434d]">
+  return <div className={"min-w-0 " + className}>
+    <label htmlFor={htmlFor} className="mb-1.5 flex flex-wrap items-baseline gap-x-2 text-sm font-medium text-[#3c434d]">
       {label}{optional ? <span className="font-normal text-[#858b94]">Opcional</span> : null}
-    </span>
+    </label>
     {children}
-  </label>;
+  </div>;
 }
