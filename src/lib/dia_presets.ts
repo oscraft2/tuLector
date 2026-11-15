@@ -30,6 +30,12 @@ export interface DiaPreset {
   id: string;
   /** Texto del <option> y de getVariantLabel() en el detalle del ensayo. */
   label: string;
+  /** Etapa de la evaluación DIA: Cierre (final) o Monitoreo Intermedio. */
+  stage?: "cierre" | "intermedio";
+  /** URL pública del cuadernillo de preguntas PDF si está disponible. */
+  pdfUrl?: string;
+  /** URL pública de la ficha técnica oficial PDF si está disponible. */
+  fichaUrl?: string;
   numQuestions: number;
   numOptions: 3 | 4 | 5;
   /** CSV tal como espera el campo "Preguntas de desarrollo". */
@@ -55,9 +61,172 @@ export interface DiaPreset {
 }
 
 export const DIA_PRESETS: DiaPreset[] = [
+  // ==========================================
+  // EVALUACIÓN DE CIERRE 2026 (FINAL)
+  // ==========================================
+  {
+    id: "dia_cierre_7b_lectura",
+    label: "7° Básico - Lectura (Cierre)",
+    stage: "cierre",
+    pdfUrl: "/instrumentos-dia/prueba_lectura_cierre_2026_7_basico.pdf",
+    fichaUrl: "/instrumentos-dia/ficha_tecnica_lectura_cierre_2026_7_basico.pdf",
+    numQuestions: 30,
+    numOptions: 4,
+    openQuestions: "6",
+    optionOverrides: "",
+    multiSelectQuestions: "",
+    answerKey: "BDDCB-CDACABADCDDBBDBBDCBBCAAC",
+    openQuestionRubrics: {
+      6: {
+        rubric: `Código 2 (correcta): La/el estudiante formula una interpretación sobre lo que se pregunta (una enseñanza respecto a la apariencia física) y fundamenta coherentemente su interpretación, aludiendo a información del texto (explícita o implícita) que la sustenta (relacionada a la motivación del rey para ocultar su aspecto físico y/o a las consecuencias de las acciones del rey). Puede complementar con experiencia personal.
+Código 1 (parcial): La/el estudiante formula una interpretación sobre lo que se pregunta (una enseñanza respecto de la apariencia física) y fundamenta su interpretación, aludiendo a información del texto, pero esta solo remite a aspectos locales del relato, demostrando una comprensión parcial del mismo.
+Código 0 (incorrecta): La/el estudiante formula una interpretación que no se relaciona con lo solicitado, o fundamenta solo basándose en sus percepciones sin dar cuenta de la comprensión del texto, respuestas confusas, contradictorias, tautológicas o en blanco.`,
+        max_points: 2,
+      },
+    },
+  },
+  {
+    id: "dia_cierre_8b_lectura",
+    label: "8° Básico - Lectura (Cierre)",
+    stage: "cierre",
+    pdfUrl: "/instrumentos-dia/prueba_lectura_cierre_2026_8_basico.pdf",
+    fichaUrl: "/instrumentos-dia/ficha_tecnica_lectura_cierre_2026_8_basico.pdf",
+    numQuestions: 31,
+    numOptions: 4,
+    openQuestions: "19",
+    optionOverrides: "",
+    multiSelectQuestions: "",
+    answerKey: "CCBDDCBACBADAACBBD-CDADACBCDBCA",
+    openQuestionRubrics: {
+      19: {
+        rubric: `Código 2 (correcta): La/el estudiante formula una interpretación sobre lo que se pregunta (por qué Juan cree que a Luis “le hará bien” la crisis económica del padre) y fundamenta coherentemente su respuesta, aludiendo a información del texto (explícita o implícita). Se considerará coherente incorporar información referida a las consecuencias que tendrá la escasez de dinero en la vida de Luis.
+Código 1 (parcial): Formula una interpretación sobre lo que se pregunta, pero fundamenta con información referida a aspectos locales del texto, sin considerar el sentido global y evidenciando comprensión parcial, o bien con información ambigua.
+Código 0 (incorrecta): Formula una interpretación sin fundamentar, o no se relaciona con lo solicitado, respuestas vagas, contradictorias o en blanco.`,
+        max_points: 2,
+      },
+    },
+  },
+  {
+    id: "dia_cierre_1m_lectura",
+    label: "I Medio - Lectura (Cierre)",
+    stage: "cierre",
+    pdfUrl: "/instrumentos-dia/prueba_lectura_cierre_2026_I_medio.pdf",
+    fichaUrl: "/instrumentos-dia/ficha_tecnica_lectura_cierre_2026_I_medio.pdf",
+    numQuestions: 35,
+    numOptions: 4,
+    openQuestions: "13",
+    optionOverrides: "",
+    multiSelectQuestions: "",
+    answerKey: "BDDAADACADDC-AADBDDBDDABBCBACDBDDAC",
+    openQuestionRubrics: {
+      13: {
+        rubric: `Código 2 (correcta): La/el estudiante formula una postura sobre lo que se le solicita (escoge con qué punto de vista de ambos textos está de acuerdo) y fundamenta coherentemente su postura, aludiendo a información (explícita o implícita) que da cuenta de la comprensión de ambos textos.
+Código 1 (parcial): Formula una postura sobre lo que se le solicita y fundamenta coherentemente, pero alude a información que da cuenta de una comprensión parcial o local de los textos, o comprensión de solo uno de los dos textos.
+Código 0 (incorrecta): No formula postura o no se relaciona con lo solicitado, fundamenta de manera incoherente, vaga o sin fundamentar, o solo basándose en percepciones sin comprensión del texto, respuestas confusas, contradictorias o en blanco.`,
+        max_points: 2,
+      },
+    },
+  },
+  {
+    id: "dia_cierre_2m_lectura",
+    label: "II Medio - Lectura (Cierre)",
+    stage: "cierre",
+    pdfUrl: "/instrumentos-dia/prueba_lectura_cierre_2026_II_medio.pdf",
+    fichaUrl: "/instrumentos-dia/ficha_tecnica_lectura_cierre_2026_II_medio.pdf",
+    numQuestions: 38,
+    numOptions: 4,
+    openQuestions: "15",
+    optionOverrides: "",
+    multiSelectQuestions: "",
+    answerKey: "DBBCBBDBDCADAC-BCAABDDDBBCCAACCBBDCACA",
+    openQuestionRubrics: {
+      15: {
+        rubric: `Código 2 (correcta): Formula una postura sobre cuál enfoque le parece más adecuado y fundamenta coherentemente aludiendo a aspectos característicos de ambos enfoques que sustentan dicha postura y evidencian la comprensión del texto. También se consideran correctas aquellas respuestas que justifiquen con información coherente de solo alguno de los textos.
+Código 1 (parcial): Formula una postura sobre cuál enfoque le parece más adecuado, pero alude a información que da cuenta de una comprensión parcial o local de los textos (sin demostrar comprensión global al considerar beneficios y consecuencias de cada enfoque).
+Código 0 (incorrecta): No formula postura, o es incoherente, vaga, tautológica, o en blanco.`,
+        max_points: 2,
+      },
+    },
+  },
+  {
+    id: "dia_cierre_8b_matematica",
+    label: "8° Básico - Matemática (Cierre)",
+    stage: "cierre",
+    pdfUrl: "/instrumentos-dia/prueba_matematica_cierre_2026_8_basico.pdf",
+    fichaUrl: "/instrumentos-dia/ficha_tecnica_matematica_cierre_2026_8_basico.pdf",
+    numQuestions: 37,
+    numOptions: 4,
+    openQuestions: "1,14,37",
+    optionOverrides: "",
+    multiSelectQuestions: "30",
+    openQuestionSubtypes: { 1: "entero_decimal", 14: "simple", 37: "entero_decimal" },
+    answerKey: "-ADCDCADBCCDB-BCBBDACABDCBBDA-AACBBD-",
+    openQuestionRubrics: {
+      1: { rubric: `Respuesta correcta: -70. Código 1: coincide exactamente con ese valor numérico. Código 0: cualquier otro valor o en blanco.`, max_points: 1 },
+      14: {
+        rubric: `Código 2 (correcta): Marca No o evidencia la adopción de esta postura. Argumenta que los resultados descritos tienen la misma cantidad de combinaciones (3 combinaciones cada uno: 2 caras y 1 sello = 3; 2 sellos y 1 cara = 3), o bien argumenta usando las 3 ramas del diagrama de árbol.
+Código 1 (parcial): Marca No o evidencia la adopción de esta postura, pero sólo señala que el número de combinaciones es el mismo sin usar elementos del diagrama del árbol ni justificar adecuadamente.
+Código 0 (incorrecta): Marca Sí, entrega respuestas distintas a las esperadas, o en blanco.`,
+        max_points: 2,
+      },
+      37: { rubric: `Respuesta correcta: -13. Código 1: coincide exactamente con ese valor numérico. Código 0: cualquier otro valor o en blanco.`, max_points: 1 },
+    },
+  },
+  {
+    id: "dia_cierre_1m_matematica",
+    label: "I Medio - Matemática (Cierre)",
+    stage: "cierre",
+    pdfUrl: "/instrumentos-dia/prueba_matematica_cierre_2026_I_medio.pdf",
+    fichaUrl: "/instrumentos-dia/ficha_tecnica_matematica_cierre_2026_I_medio.pdf",
+    numQuestions: 38,
+    numOptions: 4,
+    openQuestions: "9,32",
+    optionOverrides: "",
+    multiSelectQuestions: "",
+    openQuestionSubtypes: { 9: "simple", 32: "entero_decimal" },
+    answerKey: "ACDBBDAD-BABACBADBBDDCBCADCBDCC-DBCADC",
+    openQuestionRubrics: {
+      9: {
+        rubric: `Código 2 (correcta): Presenta un sistema de ecuaciones que representa correctamente la información entregada (a + c = 12 y 2a + 3c = 33, o equivalente) y lo resuelve sin errores utilizando cualquier método. Finalmente responde que el camión traslada 3 autos y 9 camionetas.
+Código 1 (parcial): Presenta un sistema de ecuaciones correcto pero comete algún error al resolverlo llegando a solución concordante con el contexto (enteros positivos); o plantea una ecuación correcta y la otra con error pero resuelve coherentemente; o resuelve coherentemente un sistema con números positivos concordantes.
+Código 0 (incorrecta): Respuestas que no corresponden a lo solicitado, o en blanco.`,
+        max_points: 2,
+      },
+      32: { rubric: `Respuesta correcta: 4. Código 1: coincide exactamente con ese valor numérico. Código 0: cualquier otro valor o en blanco.`, max_points: 1 },
+    },
+  },
+  {
+    id: "dia_cierre_2m_matematica",
+    label: "II Medio - Matemática (Cierre)",
+    stage: "cierre",
+    pdfUrl: "/instrumentos-dia/prueba_matematica_cierre_2026_II_medio.pdf",
+    fichaUrl: "/instrumentos-dia/ficha_tecnica_matematica_cierre_2026_II_medio.pdf",
+    numQuestions: 39,
+    numOptions: 4,
+    openQuestions: "27,29,33",
+    optionOverrides: "",
+    multiSelectQuestions: "",
+    openQuestionSubtypes: { 27: "par_ordenado", 29: "simple", 33: "entero_decimal" },
+    answerKey: "DBCCDDADCCABCBADBBDA CBCACC-B-ACA-CBCACC".replace(/\s+/g, ""),
+    openQuestionRubrics: {
+      27: { rubric: `Respuesta correcta: (0,-2) o (0;-2) (par ordenado x,y). Código 1: coincide exactamente con ese par ordenado. Código 0: cualquier otro par o en blanco.`, max_points: 1 },
+      29: {
+        rubric: `Código 2 (correcta): Selecciona una estrategia que le permite encontrar la función inversa de g(x) = x/4 + 3 (obteniendo g⁻¹(x) = 4x - 12 o equivalente). Posteriormente, evalúa correctamente la función inversa en x = 10 y obtiene como resultado g⁻¹(10) = 28. (Nota: Si escribe x+1/6 sin paréntesis, verificar si comprende la expresión antes de invalidar).
+Código 1 (parcial): Opción A: Encuentra la función inversa pero no evalúa en 10. Opción B: Comete error al encontrar la inversa pero evalúa correctamente en x = 10 su función obtenida.
+Código 0 (incorrecta): Respuestas distintas a las esperadas, o en blanco.`,
+        max_points: 2,
+      },
+      33: { rubric: `Respuesta correcta: 5. Código 1: coincide exactamente con ese valor numérico. Código 0: cualquier otro valor o en blanco.`, max_points: 1 },
+    },
+  },
+
+  // ==========================================
+  // MONITOREO INTERMEDIO 2026
+  // ==========================================
   {
     id: "dia_5b_lectura",
-    label: "5° Básico - Lectura",
+    label: "5° Básico - Lectura (Intermedio)",
+    stage: "intermedio",
     numQuestions: 27,
     numOptions: 4,
     openQuestions: "5,17",
@@ -76,6 +245,7 @@ Código 0 (incorrecta): No opina sobre el aspecto solicitado, no evidencia compr
   {
     id: "dia_5b_matematica",
     label: "5° Básico - Matemática",
+    stage: "intermedio",
     numQuestions: 35,
     numOptions: 4,
     openQuestions: "3,7,12,21,31",
@@ -96,6 +266,7 @@ Código 0 (incorrecta): Entrega otras respuestas distintas a las esperadas en lo
   {
     id: "dia_6b_lectura",
     label: "6° Básico - Lectura",
+    stage: "intermedio",
     numQuestions: 28,
     numOptions: 4,
     openQuestions: "5,23",
@@ -105,6 +276,7 @@ Código 0 (incorrecta): Entrega otras respuestas distintas a las esperadas en lo
   {
     id: "dia_6b_matematica",
     label: "6° Básico - Matemática",
+    stage: "intermedio",
     numQuestions: 35,
     numOptions: 4,
     openQuestions: "7,15,18",
@@ -114,6 +286,7 @@ Código 0 (incorrecta): Entrega otras respuestas distintas a las esperadas en lo
   {
     id: "dia_7b_lectura",
     label: "7° Básico - Lectura",
+    stage: "intermedio",
     numQuestions: 30,
     numOptions: 4,
     openQuestions: "25",
@@ -129,6 +302,7 @@ Código 0 (incorrecta): Evidencia una comprensión errónea del texto y de lo so
   {
     id: "dia_7b_matematica",
     label: "7° Básico - Matemática",
+    stage: "intermedio",
     numQuestions: 35,
     numOptions: 4,
     openQuestions: "6,12,15,29,33",
@@ -149,6 +323,7 @@ Código 0 (incorrecta): Entrega otras respuestas distintas a las esperadas en lo
   {
     id: "dia_8b_lectura",
     label: "8° Básico - Lectura",
+    stage: "intermedio",
     numQuestions: 31,
     numOptions: 4,
     openQuestions: "20",
@@ -164,6 +339,7 @@ Código 0 (incorrecta): Evidencia una comprensión errónea del texto y de lo so
   {
     id: "dia_8b_matematica",
     label: "8° Básico - Matemática",
+    stage: "intermedio",
     numQuestions: 37,
     numOptions: 4,
     openQuestions: "16,37",
@@ -181,6 +357,7 @@ Código 0 (incorrecta): Entrega otras respuestas distintas a las esperadas en lo
   {
     id: "dia_Imedio_lectura",
     label: "I Medio - Lectura",
+    stage: "intermedio",
     numQuestions: 35,
     numOptions: 4,
     openQuestions: "6",
@@ -196,6 +373,7 @@ Código 0 (incorrecta): Evidencia una comprensión errónea del texto, no realiz
   {
     id: "dia_Imedio_matematica",
     label: "I Medio - Matemática",
+    stage: "intermedio",
     numQuestions: 38,
     numOptions: 4,
     openQuestions: "9,12,32",
@@ -214,6 +392,7 @@ Código 0 (incorrecta): Entrega otras respuestas distintas a las esperadas en lo
   {
     id: "dia_IImedio_lectura",
     label: "II Medio - Lectura",
+    stage: "intermedio",
     numQuestions: 38,
     numOptions: 4,
     openQuestions: "27",
@@ -229,6 +408,7 @@ Código 0 (incorrecta): Formula una opinión respecto a la situación, pero evid
   {
     id: "dia_IImedio_matematica",
     label: "II Medio - Matemática",
+    stage: "intermedio",
     numQuestions: 39,
     numOptions: 4,
     // Mismo instrumento ya visto por dia-bot en producción (FINDINGS.md §11.4):

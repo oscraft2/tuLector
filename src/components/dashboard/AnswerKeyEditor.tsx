@@ -380,9 +380,16 @@ export function AnswerKeyEditor({
               onChange={(e) => setEvalVariant(e.target.value)}
               className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal"
             >
-              {DIA_PRESETS.map((p) => (
-                <option key={p.id} value={p.id}>{p.label}</option>
-              ))}
+              <optgroup label="Evaluación de Cierre 2026 (Finales)">
+                {DIA_PRESETS.filter((p) => p.stage === "cierre").map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Monitoreo Intermedio 2026">
+                {DIA_PRESETS.filter((p) => p.stage !== "cierre").map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </optgroup>
               <option value={DIA_CUSTOM_ID}>Otro nivel/asignatura (config manual)</option>
             </select>
           </label>
@@ -394,9 +401,9 @@ export function AnswerKeyEditor({
           <p className="font-semibold">Ensayo para DIA (Diagnóstico Integral de Aprendizajes):</p>
           <p>• Puntaje = porcentaje de acierto simple (no aplica formula PAES/SIMCE).</p>
           {findDiaPreset(evalVariant) ? (
-            <p>• Preguntas, opciones, desarrollo{multiSelectQuestions.length > 0 ? " y selección múltiple" : ""} ya vienen precargados para <strong>{findDiaPreset(evalVariant)?.label}</strong> (Monitoreo Intermedio 2026) — puedes ajustarlos igual si el instrumento real de tu curso difiere.</p>
+            <p>• Preguntas, opciones, desarrollo{multiSelectQuestions.length > 0 ? " y selección múltiple" : ""} ya vienen precargados para <strong>{findDiaPreset(evalVariant)?.label}</strong> ({findDiaPreset(evalVariant)?.stage === "cierre" ? "Evaluación de Cierre 2026" : "Monitoreo Intermedio 2026"}) — puedes ajustarlos igual si el instrumento real de tu curso difiere.</p>
           ) : (
-            <p>• Ajusta preguntas/opciones segun el instrumento real de DIA para ese nivel — solo 5° y 6° básico tienen preset automático por ahora; otros niveles se configuran a mano.</p>
+            <p>• Ajusta preguntas/opciones según el instrumento real de DIA para ese nivel — puedes configurarlo a mano si tu instrumento difiere.</p>
           )}
           <p>• Si el instrumento tiene preguntas de <strong>respuesta construida (desarrollo)</strong>, indícalas abajo en &ldquo;Preguntas de desarrollo&rdquo;: la hoja las imprime como &ldquo;Resolver al reverso&rdquo; con su recuadro atrás, y no cuentan en el puntaje automático.</p>
           <p>• Al exportar, el <strong>curso</strong> de este ensayo debe coincidir con el curso real en la plataforma DIA (revisa el formato en &ldquo;Exportar Formato Pruebas DIA&rdquo;).</p>

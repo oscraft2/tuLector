@@ -24,6 +24,7 @@ import { planHasFeature } from "@/lib/plan_gates";
 import { fetchTeacherOptions } from "@/lib/teacher_scope";
 import { fetchSharesForQuiz, fetchUserEmails, userLabel } from "@/lib/quiz_shares";
 import { ShareQuizPanel } from "@/components/dashboard/ShareQuizPanel";
+import { findDiaPreset } from "@/lib/dia_presets";
 
 export const dynamic = "force-dynamic";
 
@@ -255,8 +256,11 @@ export default async function QuizDetailPage({ params }: PageProps) {
     status: s.status,
   }));
 
+  const diaPreset = findDiaPreset(quiz.evaluation_variant);
+
   const getVariantLabel = () => {
     if (!quiz.evaluation_variant) return "Personalizado";
+    if (diaPreset) return `DIA ${diaPreset.label}`;
     const labels: Record<string, string> = {
       paes_m1: "PAES Competencia Matemática 1 (M1)",
       paes_m2: "PAES Competencia Matemática 2 (M2)",
@@ -326,6 +330,28 @@ export default async function QuizDetailPage({ params }: PageProps) {
             <div className="flex flex-col gap-2 sm:flex-row">
               {canManageQuiz && (
                 <Link href={`/dashboard/quizzes/${quiz.id}/edit`} className="rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold hover:bg-gray-50">Editar</Link>
+              )}
+              {diaPreset?.pdfUrl && (
+                <a
+                  href={diaPreset.pdfUrl}
+                  download
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-center text-sm font-semibold text-blue-800 hover:bg-blue-100"
+                >
+                  Descargar Prueba DIA
+                </a>
+              )}
+              {diaPreset?.fichaUrl && (
+                <a
+                  href={diaPreset.fichaUrl}
+                  download
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md border border-gray-200 bg-gray-50 px-4 py-2 text-center text-sm font-semibold text-gray-700 hover:bg-gray-100"
+                >
+                  Ficha Técnica Oficial
+                </a>
               )}
               {/* Un ensayo de bloque compacto se imprime desde /bloque (imagen
                   pegable), no desde /sheet (hoja completa). Se ofrece el otro

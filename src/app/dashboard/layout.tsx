@@ -6,6 +6,7 @@ import { DashboardLayoutShell } from "@/components/dashboard/DashboardLayoutShel
 import { stopImpersonation } from "@/app/admin/actions";
 import { isNativeAllowedDashboardPath } from "@/lib/native/routes";
 import { NativeDashboardGuard } from "@/components/native/NativeDashboardGuard";
+import { DiaCierreNotice } from "@/components/dashboard/DiaCierreNotice";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   // Read pathname from middleware header
@@ -47,6 +48,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     return (
       <>
         <NativeDashboardGuard />
+
         {children}
       </>
     );
@@ -95,7 +97,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </form>
         </div>
       ) : null}
-      {children}
+      <DiaCierreNotice countryCode={school.country_code ?? "CL"} />
+        {children}
     </DashboardLayoutShell>
   );
 }
