@@ -149,6 +149,35 @@ Código 0 (incorrecta): No formula postura, o es incoherente, vaga, tautológica
     },
   },
   {
+    // Ficha técnica oficial "Prueba de Matemática 7° básico - Evaluación de
+    // Cierre 2026" (Agencia de Calidad, octubre 2026). 35 preguntas: 31 de
+    // alternativas (solo la 16 tiene 3 opciones, verificado en el cuadernillo),
+    // 3 de completación (6, 12, 33) y 1 de desarrollo (18).
+    id: "dia_cierre_7b_matematica",
+    label: "7° Básico - Matemática (Cierre)",
+    stage: "cierre",
+    pdfUrl: "/instrumentos-dia/prueba_matematica_cierre_2026_7_basico.pdf",
+    fichaUrl: "/instrumentos-dia/ficha_tecnica_matematica_cierre_2026_7_basico.pdf",
+    numQuestions: 35,
+    numOptions: 4,
+    openQuestions: "6,12,18,33",
+    optionOverrides: "16:3",
+    multiSelectQuestions: "",
+    openQuestionSubtypes: { 6: "entero_decimal", 12: "entero_decimal", 18: "simple", 33: "entero_decimal" },
+    answerKey: "BCDAA-DBCDB-CBCAA-DACDABBACBDACC-BB",
+    openQuestionRubrics: {
+      6: { rubric: `Respuesta correcta: 36. Código 1: coincide exactamente con ese valor numérico. Código 0: cualquier otro valor o en blanco.`, max_points: 1 },
+      12: { rubric: `Respuesta correcta: 6. Código 1: coincide exactamente con ese valor numérico. Código 0: cualquier otro valor o en blanco.`, max_points: 1 },
+      18: {
+        rubric: `Código 2 (correcta): Marca la opción No o la explícita en su respuesta. Luego selecciona una estrategia para determinar la cantidad de bolsas necesaria o los kilogramos de capacidad de las 6 bolsas que desea ocupar el vendedor. Posteriormente evalúa el valor de verdad de la afirmación del vendedor justificando su argumento mediante sus cálculos. Ejemplos: "No, porque necesita más de 6 bolsas para envasar el total de kilogramos de nueces (4/5 : 1/8 = 6,4)"; "No, porque la capacidad total de las bolsas es menor a la cantidad total de kilogramos a envasar (6 · 1/8 = 0,75, que es menor a 4/5 = 0,8)".
+Código 1 (parcial): Selecciona una estrategia para determinar la cantidad de bolsas necesarias para envasar las nueces o los kilogramos de capacidad de las 6 bolsas que desea ocupar el vendedor, pero no evalúa el valor de verdad de la afirmación del vendedor ni la justifica. Ejemplos: "Necesita 6,4 bolsas"; "Necesita embolsar 0,75 kilogramos".
+Código 0 (incorrecta): Entrega otras respuestas distintas a las esperadas en los códigos anteriores, o bien, no responde. Ejemplos: "No, porque necesita más bolsas puesto que debe embolsar aproximadamente 0,9 kilogramos de nueces" (suma en vez de dividir); "Sí, porque 6 es mayor que 1/8 = 0,125".`,
+        max_points: 2,
+      },
+      33: { rubric: `Respuesta correcta: 3/20 o cualquier fracción/decimal equivalente (0,15). Código 1: la respuesta es equivalente a ese valor. Código 0: cualquier otro valor o en blanco.`, max_points: 1 },
+    },
+  },
+  {
     id: "dia_cierre_8b_matematica",
     label: "8° Básico - Matemática (Cierre)",
     stage: "cierre",

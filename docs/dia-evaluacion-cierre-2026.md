@@ -8,9 +8,10 @@
 - **Periodo**: Evaluación de Cierre (Noviembre 2026)
 - **Asignaturas**: Lectura (Lenguaje) y Matemática
 - **Niveles auditados**: 7° Básico, 8° Básico, I Medio, II Medio
-- **Total instrumentos auditados**: 7
+- **Total instrumentos auditados**: 8
   - Lectura: 7° básico, 8° básico, I medio, II medio
-  - Matemática: 8° básico, I medio, II medio
+  - Matemática: 7° básico, 8° básico, I medio, II medio
+  - (7° Matemática se agregó el 2026-11-23 desde la ficha técnica y el cuadernillo oficiales.)
 
 ---
 
@@ -22,6 +23,7 @@
 | **8° Básico - Lectura** | `dia_cierre_8b_lectura` | 31 | 30 | **P19** (Código 2/1/0) | — | — |
 | **I Medio - Lectura** | `dia_cierre_1m_lectura` | 35 | 34 | **P13** (Código 2/1/0) | — | — |
 | **II Medio - Lectura** | `dia_cierre_2m_lectura` | 38 | 37 | **P15** (Código 2/1/0) | — | — |
+| **7° Básico - Matemática** | `dia_cierre_7b_matematica` | 35 | 31 (la P16 tiene solo 3: A-C) | **P18** (Código 2/1/0) | **P6** (`36`), **P12** (`6`), **P33** (`3/20`) | — |
 | **8° Básico - Matemática** | `dia_cierre_8b_matematica` | 37 | 33 | **P14** (Código 2/1/0) | **P1** (`-70`), **P37** (`-13`) | **P30** (`1 y 3`) |
 | **I Medio - Matemática** | `dia_cierre_1m_matematica` | 38 | 36 | **P9** (Código 2/1/0) | **P32** (`4`) | — |
 | **II Medio - Matemática** | `dia_cierre_2m_matematica` | 39 | 36 | **P29** (Código 2/1/0) | **P27** (`(0,-2)`), **P33** (`5`) | — |
@@ -61,6 +63,17 @@
   - *Código 2*: Opina cuál enfoque le parece más adecuado y fundamenta coherentemente con aspectos característicos de ambos enfoques.
   - *Código 1*: Comprensión parcial o local sin evaluar beneficios y consecuencias globales.
   - *Código 0*: Incoherente o en blanco.
+
+### 2.4b Matemática 7° Básico (`dia_cierre_7b_matematica`)
+- **Total preguntas**: 35 (31 alternativas, 3 completación, 1 desarrollo). Solo la **P16** tiene 3 opciones (A-C); el resto tiene 4.
+- **Clave**: `BCDAA-DBCDB-CBCAA-DACDABBACBDACC-BB`
+- **P6 (Completación)**: `36` (max_points: 1)
+- **P12 (Completación)**: `6` (max_points: 1)
+- **P18 (Desarrollo - Argumentar y comunicar / OA 3)**: ¿está de acuerdo el vendedor en que necesita justo 6 bolsas (4/5 kg en bolsas de 1/8 kg)?
+  - *Código 2*: Marca "No" y justifica con cálculos (4/5 : 1/8 = 6,4 bolsas, o 6 · 1/8 = 0,75 < 4/5).
+  - *Código 1*: Calcula (6,4 bolsas o 0,75 kg) pero no evalúa la afirmación ni la justifica.
+  - *Código 0*: Otra respuesta (p. ej. suma en vez de dividir) o en blanco.
+- **P33 (Completación)**: `3/20` o fracción/decimal equivalente (max_points: 1)
 
 ### 2.5 Matemática 8° Básico (`dia_cierre_8b_matematica`)
 - **Total preguntas**: 37

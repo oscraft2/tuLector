@@ -4,13 +4,14 @@ import { DIA_PRESETS, findDiaPreset } from "@/lib/dia_presets";
 
 test("todos los presets de Evaluación de Cierre 2026 existen y son válidos", () => {
   const cierrePresets = DIA_PRESETS.filter((p) => p.stage === "cierre");
-  assert.equal(cierrePresets.length, 7, "Deben existir exactamente 7 instrumentos de Cierre auditados");
+  assert.equal(cierrePresets.length, 8, "Deben existir exactamente 8 instrumentos de Cierre auditados");
 
   const expectedIds = [
     "dia_cierre_7b_lectura",
     "dia_cierre_8b_lectura",
     "dia_cierre_1m_lectura",
     "dia_cierre_2m_lectura",
+    "dia_cierre_7b_matematica",
     "dia_cierre_8b_matematica",
     "dia_cierre_1m_matematica",
     "dia_cierre_2m_matematica",
@@ -41,6 +42,7 @@ test("las claves oficiales de Evaluación de Cierre 2026 coinciden exactamente c
     dia_cierre_8b_lectura: "CCBDDCBACBADAACBBD-CDADACBCDBCA",
     dia_cierre_1m_lectura: "BDDAADACADDC-AADBDDBDDABBCBACDBDDAC",
     dia_cierre_2m_lectura: "DBBCBBDBDCADAC-BCAABDDDBBCCAACCBBDCACA",
+    dia_cierre_7b_matematica: "BCDAA-DBCDB-CBCAA-DACDABBACBDACC-BB",
     dia_cierre_8b_matematica: "-ADCDCADBCCDB-BCBBDACABDCBBDA-AACBBD-",
     dia_cierre_1m_matematica: "ACDBBDAD-BABACBADBBDDCBCADCBDCC-DBCADC",
     dia_cierre_2m_matematica: "DBCCDDADCCABCBADBBDACBCACC-B-ACA-CBCACC",
