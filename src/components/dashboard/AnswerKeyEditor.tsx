@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useRef } from "react";
 import {
   QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE, optionLabelsFor, extractAnswerLetters,
   parseOpenQuestions, serializeOpenQuestions, parseOptionOverrides, serializeOptionOverrides,
@@ -16,6 +16,14 @@ import { QuestionPointsPanel } from "@/components/dashboard/QuestionPointsPanel"
 import { ChevronIcon } from "@/components/header/icons";
 
 export type EvaluationType = "custom" | "paes" | "simce" | "dia";
+
+const PAES_PRESETS: Record<string, { questions: number; scored: number; pilots: number; options: 4 | 5 }> = {
+  paes_m1: { questions: 65, scored: 60, pilots: 5, options: 4 },
+  paes_m2: { questions: 55, scored: 50, pilots: 5, options: 5 },
+  paes_lectora: { questions: 65, scored: 60, pilots: 5, options: 4 },
+  paes_ciencias: { questions: 80, scored: 75, pilots: 5, options: 5 },
+  paes_historia: { questions: 65, scored: 60, pilots: 5, options: 5 },
+};
 
 export function AnswerKeyEditor({
   name = "answer_key",
@@ -108,84 +116,72 @@ export function AnswerKeyEditor({
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Al EDITAR un ensayo, el tipo ya viene puesto y este efecto correria en el
-  // primer render pisando las preguntas/opciones reales con las del preset (un
-  // PAES de 30 preguntas volveria a 40). El preset solo debe aplicarse cuando el
-  // profesor CAMBIA el tipo, no al abrir el formulario.
-  const skipPresetPrefill = useRef(Boolean(defaultEvaluationType || defaultEvaluationVariant));
-  // Último preset DIA aplicado (al editar, el del ensayo guardado): sirve para
-  // distinguir una pauta que solo puso el preset de una que escribió el profesor.
   const lastPresetRef = useRef<DiaPreset | undefined>(defaultEvaluationVariant ? findDiaPreset(defaultEvaluationVariant) : undefined);
 
-  // Pre-fill question/option count when evalType or variant changes.
-  // Campos SIEMPRE editables (el profesor puede ajustar el N° de preguntas).
-  useEffect(() => {
-    if (skipPresetPrefill.current) {
-      skipPresetPrefill.current = false;
-      return;
-    }
-    if (evalType === "paes") {
-      if (evalVariant === "paes_lectora" || evalVariant === "paes_historia" || evalVariant === "paes_ciencias") {
-        setQuestionCount(40);
-        setOptionCount(5);
-      } else if (evalVariant === "paes_m1" || evalVariant === "paes_m2") {
-        setQuestionCount(40);
-        setOptionCount(4);
-      } else {
-        setQuestionCount(40);
-        setOptionCount(5);
-      }
-    } else if (evalType === "simce") {
-      if (evalVariant === "simce_4b_lectura" || evalVariant === "simce_4b_mate") {
-        setQuestionCount(30);
-        setOptionCount(4);
-      } else {
-        setQuestionCount(40);
-        setOptionCount(4);
-      }
-    } else if (evalType === "dia") {
-      // Preset real de un instrumento DIA documentado (docs/dia-instrumentos-
-      // monitoreo-2026.md): precarga preguntas/opciones/abiertas/overrides. Con
-      // DIA_CUSTOM_ID (otro nivel/asignatura no auditado) no se toca nada -- el
-      // profesor sigue tipeando todo a mano, igual que el comportamiento previo.
-      const preset = findDiaPreset(evalVariant);
-      if (preset) {
-        setQuestionCount(preset.numQuestions);
-        setOptionCount(preset.numOptions);
-        setOpenText(preset.openQuestions);
-        setOverridesText(preset.optionOverrides);
-        setMultiText(preset.multiSelectQuestions);
-        // Clave real (ficha tecnica de la Agencia, docs/fichas-tecnicas-dia-
-        // 2026.md) si el instrumento la tiene documentada; si no, se deja lo
-        // que el profesor ya haya tipeado (comportamiento previo).
-        if (preset.answerKey) setValue(preset.answerKey.toUpperCase());
-        // Precarga el SUBTIPO (simple/par_ordenado/entero_decimal) y, cuando
-        // la ficha tecnica trae la pauta oficial (codigos 2/1/0 o respuesta
-        // exacta), tambien el texto de la rubrica y el puntaje maximo -- sin
-        // pisar lo que el profesor ya haya tipeado para esa misma pregunta.
-        const openQs = parseOpenQuestions(preset.openQuestions, preset.numQuestions);
-        // La pauta que solo puso el preset anterior se reemplaza; la que escribió
-        // el profesor se respeta (ver mergePresetRubrics).
-        const previousPreset = lastPresetRef.current;
-        lastPresetRef.current = preset;
-        setRubrics((prev) => mergePresetRubrics(prev, openQs, preset, previousPreset));
-      }
-    }
-  }, [evalType, evalVariant]);
+  const applyPaesPreset = (variant: string) => {
+    const preset = PAES_PRESETS[variant] ?? PAES_PRESETS.paes_m1;
+    setQuestionsText(null);
+    setQuestionCount(preset.questions);
+    setOptionCount(preset.options);
+  };
 
-  // Set default variant when type changes
+  const applyDiaPreset = (variant: string) => {
+    const preset = findDiaPreset(variant);
+    if (!preset) return;
+    setQuestionsText(null);
+    setQuestionCount(preset.numQuestions);
+    setOptionCount(preset.numOptions);
+    setOpenText(preset.openQuestions);
+    setOverridesText(preset.optionOverrides);
+    setMultiText(preset.multiSelectQuestions);
+    if (preset.answerKey) setValue(preset.answerKey.toUpperCase());
+    const openQs = parseOpenQuestions(preset.openQuestions, preset.numQuestions);
+    const previousPreset = lastPresetRef.current;
+    lastPresetRef.current = preset;
+    setRubrics((prev) => mergePresetRubrics(prev, openQs, preset, previousPreset));
+  };
+
   const handleEvalTypeChange = (type: EvaluationType) => {
     setEvalType(type);
     if (type === "paes") {
-      setEvalVariant("paes_m1");
+      const variant = "paes_m1";
+      setEvalVariant(variant);
+      setOpenText("");
+      setMultiText("");
+      setOverridesText("");
+      setRubrics({});
+      setRubricPanelOpen(false);
+      applyPaesPreset(variant);
     } else if (type === "simce") {
-      setEvalVariant("simce_4b_mate");
+      const variant = "simce_4b_mate";
+      setEvalVariant(variant);
+      setQuestionsText(null);
+      setQuestionCount(30);
+      setOptionCount(4);
     } else if (type === "dia") {
-      setEvalVariant(DIA_PRESETS[0].id);
+      const variant = DIA_PRESETS[0].id;
+      setEvalVariant(variant);
+      applyDiaPreset(variant);
     } else {
       setEvalVariant("");
     }
   };
+
+  const handleEvalVariantChange = (variant: string) => {
+    setEvalVariant(variant);
+    if (evalType === "paes") {
+      applyPaesPreset(variant);
+    } else if (evalType === "simce") {
+      setQuestionsText(null);
+      setQuestionCount(variant === "simce_4b_lectura" || variant === "simce_4b_mate" ? 30 : 40);
+      setOptionCount(4);
+    } else if (evalType === "dia") {
+      applyDiaPreset(variant);
+    }
+  };
+
+  const isPaes = evalType === "paes";
+  const activePaesPreset = isPaes ? (PAES_PRESETS[evalVariant] ?? PAES_PRESETS.paes_m1) : null;
 
   // Valor real que se envia en el campo `evaluation_type` de la BD -- esa
   // columna tiene un CHECK ('custom'|'paes'|'simce'), asi que "dia" NUNCA se
@@ -229,10 +225,10 @@ export function AnswerKeyEditor({
     setQuestionsText(null); // vuelve a mostrar el valor normalizado
   };
 
-  const openQuestions = useMemo(() => parseOpenQuestions(openText, questionCount), [openText, questionCount]);
+  const openQuestions = useMemo(() => (isPaes ? [] : parseOpenQuestions(openText, questionCount)), [isPaes, openText, questionCount]);
   const openSet0 = useMemo(() => new Set(openQuestions.map((q) => q - 1)), [openQuestions]);
-  const optionOverrides = useMemo(() => parseOptionOverrides(overridesText, questionCount), [overridesText, questionCount]);
-  const multiSelectQuestions = useMemo(() => parseMultiSelectQuestions(multiText, questionCount), [multiText, questionCount]);
+  const optionOverrides = useMemo(() => (isPaes ? {} : parseOptionOverrides(overridesText, questionCount)), [isPaes, overridesText, questionCount]);
+  const multiSelectQuestions = useMemo(() => (isPaes ? [] : parseMultiSelectQuestions(multiText, questionCount)), [isPaes, multiText, questionCount]);
   const multiSet0 = useMemo(() => new Set(multiSelectQuestions.map((q) => q - 1)), [multiSelectQuestions]);
   const multiOverlapsOpen = useMemo(() => multiSelectQuestions.some((q) => openSet0.has(q - 1)), [multiSelectQuestions, openSet0]);
   const rubricCount = useMemo(() => openQuestions.filter((q) => (rubrics[q]?.rubric ?? "").trim().length > 0).length, [openQuestions, rubrics]);
@@ -336,7 +332,7 @@ export function AnswerKeyEditor({
             <select
               name="evaluation_variant"
               value={evalVariant}
-              onChange={(e) => setEvalVariant(e.target.value)}
+              onChange={(e) => handleEvalVariantChange(e.target.value)}
               className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal"
             >
               <option value="paes_m1">Competencia Matemática 1 (M1)</option>
@@ -354,7 +350,7 @@ export function AnswerKeyEditor({
             <select
               name="evaluation_variant"
               value={evalVariant}
-              onChange={(e) => setEvalVariant(e.target.value)}
+              onChange={(e) => handleEvalVariantChange(e.target.value)}
               className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal"
             >
               <option value="simce_4b_mate">4° Básico - Matemática</option>
@@ -373,7 +369,7 @@ export function AnswerKeyEditor({
             <select
               name="evaluation_variant"
               value={evalVariant}
-              onChange={(e) => setEvalVariant(e.target.value)}
+              onChange={(e) => handleEvalVariantChange(e.target.value)}
               className="mt-2 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-normal"
             >
               <optgroup label="Evaluación de Cierre 2026 (Finales)">
@@ -442,9 +438,13 @@ export function AnswerKeyEditor({
         <div className="space-y-3">
           <div className="rounded-md bg-blue-50/50 border border-blue-100 p-3 text-xs text-blue-800 space-y-1">
             <p className="font-semibold">Equivalencia {evalType === "paes" ? "PAES" : "SIMCE"}:</p>
-            <p>• El puntaje se calcula como porcentaje de acierto &times; {evalType === "paes" ? "900" : "300"} + 100, <strong>independiente del numero de preguntas</strong>.</p>
-            <p>• Un 80% de acierto en 30 preguntas equivale al mismo puntaje que un 80% en 65.</p>
-            <p>• Puedes ajustar libremente el numero de preguntas abajo.</p>
+            {activePaesPreset ? (
+              <p>
+                • Incluye <strong>{activePaesPreset.questions} preguntas totales</strong> ({activePaesPreset.scored} que puntúan + {activePaesPreset.pilots} piloto) y <strong>{activePaesPreset.options} opciones</strong> por defecto.
+              </p>
+            ) : null}
+            <p>• El puntaje se calcula según el porcentaje de acierto (escala {evalType === "paes" ? "100–1000" : "100–400"}), <strong>independiente del número de preguntas</strong>.</p>
+            <p>• Puedes ajustar libremente el número de preguntas abajo.</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm font-semibold">
@@ -478,167 +478,169 @@ export function AnswerKeyEditor({
         </div>
       )}
 
-      <label className="block text-sm font-semibold">
-        Preguntas de desarrollo (opcional)
-        <input
-          value={openText}
-          onChange={(event) => setOpenText(event.target.value)}
-          placeholder="Ej: 18, 27, 33"
-          className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal"
-        />
-        <span className="mt-1 block text-[11px] font-normal text-[#5b6472]">
-          {openQuestions.length > 0
-            ? `${openQuestions.length} pregunta(s) se resolverán al reverso de la hoja (${openQuestions.join(", ")}); la nota se calcula sobre las ${closedCount} de alternativas.`
-            : "Preguntas abiertas/de desarrollo: se imprimen como “Resolver al reverso” (sin burbujas) y no cuentan en el puntaje automático."}
-        </span>
-      </label>
-      <input type="hidden" name="open_questions" value={serializeOpenQuestions(openQuestions) ?? ""} />
+      {!isPaes && (
+        <>
+          <label className="block text-sm font-semibold">
+            Preguntas de desarrollo (opcional)
+            <input
+              value={openText}
+              onChange={(event) => setOpenText(event.target.value)}
+              placeholder="Ej: 18, 27, 33"
+              className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal"
+            />
+            <span className="mt-1 block text-[11px] font-normal text-[#5b6472]">
+              {openQuestions.length > 0
+                ? `${openQuestions.length} pregunta(s) se resolverán al reverso de la hoja (${openQuestions.join(", ")}); la nota se calcula sobre las ${closedCount} de alternativas.`
+                : "Preguntas abiertas/de desarrollo: se imprimen como “Resolver al reverso” (sin burbujas) y no cuentan en el puntaje automático."}
+            </span>
+          </label>
 
-      {openQuestions.length > 0 && (
-        <div className="rounded-md border border-[#e1e5ea] bg-white">
-          <button
-            type="button"
-            onClick={() => setRubricPanelOpen((v) => !v)}
-            aria-expanded={rubricPanelOpen}
-            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-          >
-            <div>
-              <p className="text-sm font-semibold text-[#111827]">Rúbrica de corrección (IA)</p>
-              <p className="mt-0.5 text-xs text-[#6b7280]">
-                {rubricCount > 0
-                  ? `${rubricCount} de ${openQuestions.length} pregunta(s) de desarrollo con criterio cargado`
-                  : `Opcional — precisa la corrección automática de las ${openQuestions.length} pregunta(s) de desarrollo`}
-              </p>
-            </div>
-            <ChevronIcon className={`h-4 w-4 shrink-0 text-[#6b7280] transition-transform ${rubricPanelOpen ? "rotate-180" : ""}`} />
-          </button>
+          {openQuestions.length > 0 && (
+            <div className="rounded-md border border-[#e1e5ea] bg-white">
+              <button
+                type="button"
+                onClick={() => setRubricPanelOpen((v) => !v)}
+                aria-expanded={rubricPanelOpen}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-[#111827]">Rúbrica de corrección (IA)</p>
+                  <p className="mt-0.5 text-xs text-[#6b7280]">
+                    {rubricCount > 0
+                      ? `${rubricCount} de ${openQuestions.length} pregunta(s) de desarrollo con criterio cargado`
+                      : `Opcional — precisa la corrección automática de las ${openQuestions.length} pregunta(s) de desarrollo`}
+                  </p>
+                </div>
+                <ChevronIcon className={`h-4 w-4 shrink-0 text-[#6b7280] transition-transform ${rubricPanelOpen ? "rotate-180" : ""}`} />
+              </button>
 
-          {rubricPanelOpen && (
-            <div className="space-y-3 border-t border-[#eef0f3] px-4 py-4">
-              <p className="text-xs text-[#6b7280]">
-                Sin rúbrica, la IA solo tiene el enunciado (si lo cargas) para sugerir un puntaje —
-                con rúbrica el criterio es mucho más preciso. Puedes completarlo después desde
-                &ldquo;Editar&rdquo;.
-              </p>
-              <div className="space-y-2.5">
-                {openQuestions.map((q) => {
-                  const r = rubrics[q] ?? { rubric: "", max_points: 2, subtipo: "simple" as OpenQuestionSubtype };
-                  const update = (patch: Partial<OpenQuestionRubric>) =>
-                    setRubrics((prev) => ({ ...prev, [q]: { ...r, ...patch } }));
-                  return (
-                    <div key={q} className="rounded-md border border-[#eef0f3] bg-[#fafbfc] p-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex h-6 items-center justify-center rounded-full border border-dashed border-[#f0b429] bg-[#fffbeb] px-2 text-[11px] font-bold text-[#b45309]">
-                          P{q}
-                        </span>
-                        <select
-                          value={r.subtipo}
-                          onChange={(e) => update({ subtipo: e.target.value as OpenQuestionSubtype })}
-                          className="rounded-md border border-[#cfd6df] bg-white px-2 py-1 text-xs font-medium text-[#374151]"
-                        >
-                          <option value="simple">Desarrollo / texto</option>
-                          <option value="par_ordenado">Par ordenado (x; y)</option>
-                          <option value="entero_decimal">Número (entero o decimal)</option>
-                        </select>
-                        <label className="ml-auto flex items-center gap-1.5 text-xs font-medium text-[#6b7280]">
-                          Máx.
-                          {/* Mismo criterio que el campo "Preguntas": mientras se
-                              edita manda el texto (puede quedar vacio), y al salir
-                              se normaliza. Antes `Number("") || 0` lo devolvia a 0
-                              en cuanto se borraba, y no habia forma de reescribirlo. */}
-                          <input
-                            type="number" min={0} step={0.5} inputMode="decimal"
-                            value={rubricPointsText[q] ?? String(r.max_points)}
-                            onChange={(e) => {
-                              const raw = e.target.value;
-                              if (raw !== "" && !/^\d*[.,]?\d*$/.test(raw)) return;
-                              setRubricPointsText((prev) => ({ ...prev, [q]: raw }));
-                              const parsed = Number(raw.replace(",", "."));
-                              if (raw !== "" && Number.isFinite(parsed) && parsed >= 0) update({ max_points: parsed });
-                            }}
-                            onBlur={() => {
-                              const raw = rubricPointsText[q];
-                              if (raw !== undefined && raw !== "") {
-                                const parsed = Number(raw.replace(",", "."));
-                                if (Number.isFinite(parsed)) update({ max_points: Math.max(0, parsed) });
-                              }
-                              setRubricPointsText((prev) => {
-                                const next = { ...prev };
-                                delete next[q];
-                                return next;
-                              });
-                            }}
-                            className="w-14 rounded-md border border-[#cfd6df] bg-white px-2 py-1 text-xs text-[#111827]"
+              {rubricPanelOpen && (
+                <div className="space-y-3 border-t border-[#eef0f3] px-4 py-4">
+                  <p className="text-xs text-[#6b7280]">
+                    Sin rúbrica, la IA solo tiene el enunciado (si lo cargas) para sugerir un puntaje —
+                    con rúbrica el criterio es mucho más preciso. Puedes completarlo después desde
+                    &ldquo;Editar&rdquo;.
+                  </p>
+                  <div className="space-y-2.5">
+                    {openQuestions.map((q) => {
+                      const r = rubrics[q] ?? { rubric: "", max_points: 2, subtipo: "simple" as OpenQuestionSubtype };
+                      const update = (patch: Partial<OpenQuestionRubric>) =>
+                        setRubrics((prev) => ({ ...prev, [q]: { ...r, ...patch } }));
+                      return (
+                        <div key={q} className="rounded-md border border-[#eef0f3] bg-[#fafbfc] p-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex h-6 items-center justify-center rounded-full border border-dashed border-[#f0b429] bg-[#fffbeb] px-2 text-[11px] font-bold text-[#b45309]">
+                              P{q}
+                            </span>
+                            <select
+                              value={r.subtipo}
+                              onChange={(e) => update({ subtipo: e.target.value as OpenQuestionSubtype })}
+                              className="rounded-md border border-[#cfd6df] bg-white px-2 py-1 text-xs font-medium text-[#374151]"
+                            >
+                              <option value="simple">Desarrollo / texto</option>
+                              <option value="par_ordenado">Par ordenado (x; y)</option>
+                              <option value="entero_decimal">Número (entero o decimal)</option>
+                            </select>
+                            <label className="ml-auto flex items-center gap-1.5 text-xs font-medium text-[#6b7280]">
+                              Máx.
+                              <input
+                                type="number" min={0} step={0.5} inputMode="decimal"
+                                value={rubricPointsText[q] ?? String(r.max_points)}
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  if (raw !== "" && !/^\d*[.,]?\d*$/.test(raw)) return;
+                                  setRubricPointsText((prev) => ({ ...prev, [q]: raw }));
+                                  const parsed = Number(raw.replace(",", "."));
+                                  if (raw !== "" && Number.isFinite(parsed) && parsed >= 0) update({ max_points: parsed });
+                                }}
+                                onBlur={() => {
+                                  const raw = rubricPointsText[q];
+                                  if (raw !== undefined && raw !== "") {
+                                    const parsed = Number(raw.replace(",", "."));
+                                    if (Number.isFinite(parsed)) update({ max_points: Math.max(0, parsed) });
+                                  }
+                                  setRubricPointsText((prev) => {
+                                    const next = { ...prev };
+                                    delete next[q];
+                                    return next;
+                                  });
+                                }}
+                                className="w-14 rounded-md border border-[#cfd6df] bg-white px-2 py-1 text-xs text-[#111827]"
+                              />
+                              <span className="text-[#9ca3af]">pts</span>
+                            </label>
+                          </div>
+                          <textarea
+                            value={r.rubric}
+                            onChange={(e) => update({ rubric: e.target.value })}
+                            placeholder='Ej: "2 pts: plantea y resuelve correctamente. 1 pt: plantea pero se equivoca en el cálculo. 0 pts: en blanco o sin relación."'
+                            rows={2}
+                            className="mt-2.5 w-full rounded-md border border-[#cfd6df] bg-white px-2.5 py-2 text-xs text-[#111827] placeholder:text-[#9ca3af]"
                           />
-                          <span className="text-[#9ca3af]">pts</span>
-                        </label>
-                      </div>
-                      <textarea
-                        value={r.rubric}
-                        onChange={(e) => update({ rubric: e.target.value })}
-                        placeholder='Ej: "2 pts: plantea y resuelve correctamente. 1 pt: plantea pero se equivoca en el cálculo. 0 pts: en blanco o sin relación."'
-                        rows={2}
-                        className="mt-2.5 w-full rounded-md border border-[#cfd6df] bg-white px-2.5 py-2 text-xs text-[#111827] placeholder:text-[#9ca3af]"
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </>
       )}
-      <input type="hidden" name="open_question_rubrics" value={serializeOpenQuestionRubrics(rubrics) ?? ""} />
+      <input type="hidden" name="open_questions" value={isPaes ? "" : (serializeOpenQuestions(openQuestions) ?? "")} />
+      <input type="hidden" name="open_question_rubrics" value={isPaes ? "" : (serializeOpenQuestionRubrics(rubrics) ?? "")} />
 
       <QuestionPointsPanel
         questionCount={questionCount}
-        openQuestions={openQuestions}
-        multiSelectQuestions={multiSelectQuestions}
-        rubrics={rubrics}
+        openQuestions={isPaes ? [] : openQuestions}
+        multiSelectQuestions={isPaes ? [] : multiSelectQuestions}
+        rubrics={isPaes ? {} : rubrics}
         defaultDefaultPoints={defaultDefaultQuestionPoints}
         defaultQuestionPoints={initialQuestionPoints}
         defaultScoreOpen={defaultScoreOpenQuestions}
       />
 
-      <details className="rounded-md border border-[#eef0f3]">
-        <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-[#4b5563]">
-          Opciones avanzadas (replicar un instrumento externo, ej. DIA)
-        </summary>
-        <div className="space-y-3 border-t border-[#eef0f3] p-3">
-          <label className="block text-sm font-semibold">
-            Preguntas de selección múltiple (opcional)
-            <input
-              value={multiText}
-              onChange={(event) => setMultiText(event.target.value)}
-              placeholder="Ej: 29"
-              className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal"
-            />
-            <span className="mt-1 block text-[11px] font-normal text-[#5b6472]">
-              {multiSelectQuestions.length > 0
-                ? `${multiSelectQuestions.length} pregunta(s) tipo "marca todas las correctas" (${multiSelectQuestions.join(", ")}); varias marcas son una respuesta válida y quedan fuera del puntaje automático.`
-                : "Pregunta tipo “marca todas las correctas”: se imprime como una fila numerada (no A-B-C-D) y el lector acepta cualquier combinación de marcas."}
-              {multiOverlapsOpen && " ⚠ No puede repetirse una pregunta que ya está en “Preguntas de desarrollo”."}
-            </span>
-          </label>
-          <label className="block text-sm font-semibold">
-            Nº de opciones por pregunta puntual (opcional)
-            <input
-              value={overridesText}
-              onChange={(event) => setOverridesText(event.target.value)}
-              placeholder="Ej: 20:3, 29:6"
-              className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal"
-            />
-            <span className="mt-1 block text-[11px] font-normal text-[#5b6472]">
-              Formato &ldquo;pregunta:opciones&rdquo; separado por comas. Solo para preguntas que
-              tengan un nº de opciones distinto al general de este ensayo (ej. una hoja DIA con una
-              pregunta A-B-C en vez de A-B-C-D, o los 6 casilleros de una fila de selección
-              múltiple).
-            </span>
-          </label>
-        </div>
-      </details>
-      <input type="hidden" name="multi_select_questions" value={serializeMultiSelectQuestions(multiSelectQuestions) ?? ""} />
-      <input type="hidden" name="option_overrides" value={serializeOptionOverrides(optionOverrides) ?? ""} />
+      {!isPaes && (
+        <details className="rounded-md border border-[#eef0f3]">
+          <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-[#4b5563]">
+            Opciones avanzadas (replicar un instrumento externo, ej. DIA)
+          </summary>
+          <div className="space-y-3 border-t border-[#eef0f3] p-3">
+            <label className="block text-sm font-semibold">
+              Preguntas de selección múltiple (opcional)
+              <input
+                value={multiText}
+                onChange={(event) => setMultiText(event.target.value)}
+                placeholder="Ej: 29"
+                className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal"
+              />
+              <span className="mt-1 block text-[11px] font-normal text-[#5b6472]">
+                {multiSelectQuestions.length > 0
+                  ? `${multiSelectQuestions.length} pregunta(s) tipo "marca todas las correctas" (${multiSelectQuestions.join(", ")}); varias marcas son una respuesta válida y quedan fuera del puntaje automático.`
+                  : "Pregunta tipo “marca todas las correctas”: se imprime como una fila numerada (no A-B-C-D) y el lector acepta cualquier combinación de marcas."}
+                {multiOverlapsOpen && " ⚠ No puede repetirse una pregunta que ya está en “Preguntas de desarrollo”."}
+              </span>
+            </label>
+            <label className="block text-sm font-semibold">
+              Nº de opciones por pregunta puntual (opcional)
+              <input
+                value={overridesText}
+                onChange={(event) => setOverridesText(event.target.value)}
+                placeholder="Ej: 20:3, 29:6"
+                className="mt-2 w-full rounded-md border border-[#cfd6df] px-3 py-2 font-normal"
+              />
+              <span className="mt-1 block text-[11px] font-normal text-[#5b6472]">
+                Formato &ldquo;pregunta:opciones&rdquo; separado por comas. Solo para preguntas que
+                tengan un nº de opciones distinto al general de este ensayo (ej. una hoja DIA con una
+                pregunta A-B-C en vez de A-B-C-D, o los 6 casilleros de una fila de selección
+                múltiple).
+              </span>
+            </label>
+          </div>
+        </details>
+      )}
+      <input type="hidden" name="multi_select_questions" value={isPaes ? "" : (serializeMultiSelectQuestions(multiSelectQuestions) ?? "")} />
+      <input type="hidden" name="option_overrides" value={isPaes ? "" : (serializeOptionOverrides(optionOverrides) ?? "")} />
 
       <input type="hidden" name="option_labels" value={labels.split("").join(",")} />
       <label className="block text-sm font-semibold text-[#111827]" htmlFor={name}>Clave de respuestas</label>
