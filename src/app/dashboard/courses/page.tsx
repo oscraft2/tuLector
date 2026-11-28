@@ -28,11 +28,14 @@ export default async function CoursesPage() {
   const { supabase, isAdmin, school } = await getDashboardContext();
   const studentIdLabel = resolveCountryProfile(school.country_code ?? "CL").studentIdLabel;
 
-  const coursesResult = await supabase
-    .from("courses")
-    .select("id,name,grade,archived_at")
-    .eq("school_id", school.id)
-    .order("name");
+  const [coursesResult, counts] = await Promise.all([
+    supabase
+      .from("courses")
+      .select("id,name,grade,archived_at")
+      .eq("school_id", school.id)
+      .order("name"),
+    fetchCourseStudentCounts(supabase, school.id),
+  ]);
 
   // BD sin migrar (archived_at): degradacion silenciosa -- todos los cursos se
   // tratan como activos y no hay seccion de archivados.
@@ -45,9 +48,6 @@ export default async function CoursesPage() {
   const courseList = allCourses.filter((c) => !c.archived_at);
   const archivedCourses = allCourses.filter((c) => c.archived_at);
 
-  // Un solo RPC agregado en vez de una consulta por curso. Mapa vacio = la
-  // migracion no esta aplicada: se omite la columna en vez de fallar.
-  const counts = await fetchCourseStudentCounts(supabase, school.id);
   const hasCounts = counts.size > 0;
 
   return (

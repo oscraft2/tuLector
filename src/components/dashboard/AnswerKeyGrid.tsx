@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { QUIZ_MAX_QUESTIONS } from "@/lib/quiz_constraints";
+import { QUIZ_MAX_QUESTIONS, QUIZ_OPTION_LABELS } from "@/lib/quiz_constraints";
 
 /**
  * Muestra una clave de respuestas ("ABCABBBA...") como una grilla de chips
@@ -22,24 +22,41 @@ export function AnswerKeyGrid({
   numQuestions,
   pageSize = QUIZ_MAX_QUESTIONS,
   optionLabels,
+  optionOverrides,
   onAnswerChange,
   openQuestions,
   multiSelectQuestions,
+  pilotQuestions,
+  onTogglePilot,
 }: {
   answerKey: string;
   numQuestions: number;
   pageSize?: number;
   optionLabels?: string;
+  /** Overrides de nº de opciones por pregunta 1-indexada (ej. { 12: 5 }). */
+  optionOverrides?: Record<number, number>;
   onAnswerChange?: (index: number, letter: string) => void;
   /** Indices 0-indexados de preguntas de desarrollo: chip distinto, sin letra editable. */
   openQuestions?: Set<number>;
   /** Indices 0-indexados de preguntas de seleccion multiple: chip distinto, sin letra editable
    *  (una letra no representa "que subconjunto es correcto", se lee pero no se autocorrige). */
   multiSelectQuestions?: Set<number>;
+  /** Indices 0-indexados de preguntas piloto PAES (0 pts, no puntuan). */
+  pilotQuestions?: Set<number>;
+  /** Alterna si una pregunta es piloto (0 pts) desde la barra inferior. */
+  onTogglePilot?: (index: number) => void;
 }) {
   const editable = Boolean(onAnswerChange && optionLabels);
   const [selected, setSelected] = useState<number | null>(null);
   const cellRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  function labelsForIndex(index: number): string {
+    const override = optionOverrides?.[index + 1];
+    if (override !== undefined) {
+      return QUIZ_OPTION_LABELS.slice(0, Math.min(5, Math.max(2, override)));
+    }
+    return optionLabels ?? "";
+  }
 
   const letters = Array.from({ length: numQuestions }, (_, i) => answerKey[i] ?? "-");
   const pages = Array.from({ length: Math.max(1, Math.ceil(numQuestions / pageSize)) }, (_, p) => {
@@ -69,7 +86,8 @@ export function AnswerKeyGrid({
   function handleKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
     if (!editable) return;
     const key = event.key.toUpperCase();
-    if (optionLabels && optionLabels.includes(key)) {
+    const itemLabels = labelsForIndex(index);
+    if (itemLabels && itemLabels.includes(key)) {
       event.preventDefault();
       applyLetter(index, key);
       focusIndex(index + 1);
@@ -84,6 +102,9 @@ export function AnswerKeyGrid({
       focusIndex(index - 1);
     }
   }
+
+  const activeLabels = selected !== null ? labelsForIndex(selected) : optionLabels ?? "";
+  const selectedIsPilot = selected !== null && !(openQuestions?.has(selected) ?? false) && !(multiSelectQuestions?.has(selected) ?? false) && (pilotQuestions?.has(selected) ?? false);
 
   return (
     <div className="space-y-3">
@@ -100,12 +121,15 @@ export function AnswerKeyGrid({
                 const q = from + i;
                 const isOpen = openQuestions?.has(q) ?? false;
                 const isMulti = !isOpen && (multiSelectQuestions?.has(q) ?? false);
+                const isPilot = !isOpen && !isMulti && (pilotQuestions?.has(q) ?? false);
                 const empty = answer === "-";
                 const isSelected = selected === q;
                 const lockedLabel = isOpen
                   ? `Pregunta ${q + 1} — desarrollo (se resuelve al reverso)`
                   : isMulti
                   ? `Pregunta ${q + 1} — selección múltiple (varias marcas válidas)`
+                  : isPilot
+                  ? `Pregunta ${q + 1} — piloto (0 pts, no puntúa)`
                   : `Pregunta ${q + 1}`;
                 const chip = (
                   <span
@@ -114,17 +138,23 @@ export function AnswerKeyGrid({
                         ? "border border-dashed border-[#f0b429] bg-[#fffbeb] text-[#b45309]"
                         : isMulti
                         ? "border border-dashed border-[#8b5cf6] bg-[#f5f3ff] text-[#6d28d9]"
+                        : isPilot
+                        ? empty
+                          ? "border border-dashed border-[#f59e0b] bg-[#fffbeb]/70 text-[#b45309]"
+                          : "border border-dashed border-[#f59e0b] bg-[#fffbeb] text-[#92400e]"
                         : empty
                         ? "border border-dashed border-[#d8dde3] text-[#9ca3af]"
                         : "bg-[#eef4ff] text-[#07305f]"
                     } ${isSelected ? "ring-2 ring-[#111827] ring-offset-1" : ""}`}
                   >
-                    {isOpen ? "✎" : isMulti ? "▤" : answer}
+                    {isOpen ? "✎" : isMulti ? "▤" : isPilot && empty ? "*" : answer}
                   </span>
                 );
                 return (
                   <div key={q} className="flex flex-col items-center gap-0.5" title={lockedLabel}>
-                    <span className="text-[9px] font-medium leading-none text-[#9ca3af]">{q + 1}</span>
+                    <span className={`text-[9px] leading-none ${isPilot ? "font-bold text-[#b45309]" : "font-medium text-[#9ca3af]"}`}>
+                      {q + 1}{isPilot ? "*" : ""}
+                    </span>
                     {editable ? (
                       <button
                         type="button"
@@ -132,7 +162,7 @@ export function AnswerKeyGrid({
                         onClick={() => focusIndex(q)}
                         onFocus={() => setSelected(q)}
                         onKeyDown={(event) => handleKeyDown(event, q)}
-                        aria-label={isOpen || isMulti ? lockedLabel : `Pregunta ${q + 1}, respuesta ${empty ? "sin definir" : answer}`}
+                        aria-label={isOpen || isMulti ? lockedLabel : `${lockedLabel}, respuesta ${empty ? "sin definir" : answer}`}
                         className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[#111827]"
                       >
                         {chip}
@@ -157,9 +187,11 @@ export function AnswerKeyGrid({
               ? `Pregunta ${selected + 1}: de desarrollo (se resuelve al reverso)`
               : multiSelectQuestions?.has(selected)
               ? `Pregunta ${selected + 1}: selección múltiple (varias marcas válidas)`
+              : selectedIsPilot
+              ? `Pregunta ${selected + 1}* (piloto, 0 pts):`
               : `Pregunta ${selected + 1}:`}
           </span>
-          {optionLabels.split("").map((letter) => (
+          {activeLabels.split("").map((letter) => (
             <button
               key={letter}
               type="button"
@@ -185,6 +217,23 @@ export function AnswerKeyGrid({
           >
             Borrar
           </button>
+          {onTogglePilot && (
+            <button
+              type="button"
+              disabled={selected === null || isLocked(selected)}
+              onClick={() => {
+                if (selected === null) return;
+                onTogglePilot(selected);
+              }}
+              className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                selectedIsPilot
+                  ? "border-[#f59e0b] bg-[#fffbeb] text-[#92400e] hover:bg-[#fef3c7]"
+                  : "border-[#cfd6df] bg-white text-[#4b5563] hover:bg-[#f4f6f8]"
+              }`}
+            >
+              {selectedIsPilot ? "Quitar piloto" : "★ Piloto (0 pts)"}
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -9,7 +9,7 @@ import { QuizStats } from "@/components/dashboard/QuizStats";
 import { canonicalRut } from "@/lib/rut";
 import { PrintButton } from "@/components/dashboard/PrintButton";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
-import { parseOpenQuestions, countMissingKeySlots } from "@/lib/quiz_constraints";
+import { parseOpenQuestions, parseOptionOverrides, parseZeroPointQuestions, countMissingKeySlots } from "@/lib/quiz_constraints";
 import { parseSheetMode, compactModeIssue } from "@/lib/sheet_mode";
 import { buildPaperCourseResolver } from "@/lib/paper_course";
 import { findMisplacedPapers } from "@/lib/paper_reroute";
@@ -106,6 +106,13 @@ export default async function QuizDetailPage({ params }: PageProps) {
   if (!quiz) notFound();
   const quizPapers = (papers ?? []) as unknown as QuizPaper[];
   const openQuestions = parseOpenQuestions(quiz.open_questions ?? "", Number(quiz.num_questions ?? 0));
+  const pilotQuestions = parseZeroPointQuestions(
+    quiz.question_points ?? "",
+    Number(quiz.num_questions ?? 0),
+    quiz.default_question_points ?? 1,
+  );
+  const pilotSet0 = new Set(pilotQuestions.map((q) => q - 1));
+  const optionOverrides = parseOptionOverrides(quiz.option_overrides ?? "", Number(quiz.num_questions ?? 0));
   const isOwner = quiz.created_by === user.id;
   const canManageQuiz = isOwner || isAdmin;
   const canShare = canManageQuiz && planHasFeature(school.plan, "quiz_sharing");
@@ -321,7 +328,16 @@ export default async function QuizDetailPage({ params }: PageProps) {
           />
         )}
         <section className="grid gap-4 md:grid-cols-5">
-          <Info label="Preguntas" value={openQuestions.length > 0 ? `${quiz.num_questions} (${Number(quiz.num_questions) - openQuestions.length} alt. + ${openQuestions.length} desarrollo)` : quiz.num_questions} />
+          <Info
+            label="Preguntas"
+            value={
+              openQuestions.length > 0
+                ? `${quiz.num_questions} (${Number(quiz.num_questions) - openQuestions.length} alt. + ${openQuestions.length} desarrollo)`
+                : pilotQuestions.length > 0
+                ? `${quiz.num_questions} (${Number(quiz.num_questions) - pilotQuestions.length} puntúan + ${pilotQuestions.length} piloto)`
+                : quiz.num_questions
+            }
+          />
           <Info label="Opciones" value={quiz.options_per_question ?? 5} />
           <Info label="Asignatura" value={quiz.subject ?? "-"} />
           <Info label="Curso" value={quiz.grade ?? "-"} />
@@ -382,7 +398,13 @@ export default async function QuizDetailPage({ params }: PageProps) {
             </div>
           </div>
           <div className="mt-4">
-            <AnswerKeyGrid answerKey={String(quiz.answer_key ?? "")} numQuestions={Number(quiz.num_questions) || 0} openQuestions={openSet0} />
+            <AnswerKeyGrid
+              answerKey={String(quiz.answer_key ?? "")}
+              numQuestions={Number(quiz.num_questions) || 0}
+              openQuestions={openSet0}
+              pilotQuestions={pilotSet0}
+              optionOverrides={optionOverrides}
+            />
           </div>
         </section>
 

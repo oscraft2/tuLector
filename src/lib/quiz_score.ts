@@ -124,7 +124,6 @@ export function computeQuizScore(
   // corrigen automaticamente: la nota es correctas / preguntas-de-alternativas.
   const open = new Set(parseOpenQuestions(quiz.open_questions ?? "", numQ));
   const multi = new Set(parseMultiSelectQuestions(quiz.multi_select_questions ?? "", numQ));
-  const total = Math.max(1, numQ - open.size - multi.size);
 
   const defaultPoints = normalizeDefaultQuestionPoints(quiz.default_question_points);
   const overrides = parseQuestionPoints(quiz.question_points ?? "", numQ);
@@ -139,10 +138,24 @@ export function computeQuizScore(
     pointsTotal += pointsForQuestion(q);
   }
 
+  // Preguntas cerradas con 0 puntos (piloto PAES o anuladas): si el ensayo
+  // tiene preguntas con puntaje > 0, quedan excluidas tanto del puntaje como
+  // de `score/total` ("Respuestas Correctas"), para que en PAES 65/55/80 con
+  // 5 piloto el resultado refleje exactamente 60/50/75. Si TODAS valen 0
+  // (pointsTotal === 0), se conserva el fallback historico.
+  const excludedZero = new Set<number>();
+  if (pointsTotal > 0) {
+    for (let q = 1; q <= numQ; q++) {
+      if (open.has(q) || multi.has(q)) continue;
+      if (pointsForQuestion(q) === 0) excludedZero.add(q);
+    }
+  }
+  const total = Math.max(1, numQ - open.size - multi.size - excludedZero.size);
+
   let score = 0;
   let points = 0;
   for (const answer of answers) {
-    if (open.has(answer.q) || multi.has(answer.q)) continue;
+    if (open.has(answer.q) || multi.has(answer.q) || excludedZero.has(answer.q)) continue;
     const expected = answerKeyAt(String(quiz.answer_key ?? ""), answer.q - 1);
     if (answer.a !== "-" && answer.a === expected) {
       score += 1;

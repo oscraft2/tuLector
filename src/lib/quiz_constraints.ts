@@ -53,14 +53,38 @@ export function normalizeAnswerKeySlots(
   input: FormDataEntryValue | string | null | undefined,
   numOptions: number,
   numQuestions: number,
+  optionOverrides?: Record<number, number>,
 ): string {
-  const allowed = new Set(optionLabelsFor(numOptions).split(""));
+  const baseOptions = normalizeQuizOptions(numOptions);
+  const overrideValues = optionOverrides ? Object.values(optionOverrides) : [];
+  if (overrideValues.length === 0) {
+    const allowed = new Set(optionLabelsFor(baseOptions).split(""));
+    const chars = String(input ?? "")
+      .toUpperCase()
+      .split("")
+      .filter((char) => allowed.has(char) || char === "-")
+      .slice(0, numQuestions);
+    while (chars.length < numQuestions) chars.push("-");
+    return chars.join("");
+  }
+
+  const maxOpt = Math.min(5, Math.max(baseOptions, ...overrideValues));
+  const broadAllowed = new Set(QUIZ_OPTION_LABELS.slice(0, maxOpt).split(""));
   const chars = String(input ?? "")
     .toUpperCase()
     .split("")
-    .filter((char) => allowed.has(char) || char === "-")
+    .filter((char) => broadAllowed.has(char) || char === "-")
     .slice(0, numQuestions);
   while (chars.length < numQuestions) chars.push("-");
+
+  for (let i = 0; i < numQuestions; i++) {
+    const q = i + 1;
+    const qOpt = Math.min(5, Math.max(2, optionOverrides?.[q] ?? baseOptions));
+    const qAllowed = QUIZ_OPTION_LABELS.slice(0, qOpt);
+    if (chars[i] !== "-" && !qAllowed.includes(chars[i])) {
+      chars[i] = "-";
+    }
+  }
   return chars.join("");
 }
 
@@ -102,25 +126,36 @@ export function countMissingKeySlots(quiz: {
   answer_key?: string | null;
   num_questions?: number | null;
   open_questions?: string | null;
+  multi_select_questions?: string | null;
+  question_points?: string | null;
+  default_question_points?: number | string | null;
 }): number {
   const total = Number(quiz.num_questions ?? 0);
   if (total <= 0) return 0;
   const open = new Set(parseOpenQuestions(quiz.open_questions ?? "", total));
+  const multi = new Set(parseMultiSelectQuestions(quiz.multi_select_questions ?? "", total));
+  const zeroPilots = new Set(
+    parseZeroPointQuestions(quiz.question_points ?? "", total, quiz.default_question_points ?? 1),
+  );
   const key = String(quiz.answer_key ?? "");
   let missing = 0;
   for (let q = 1; q <= total; q++) {
-    if (open.has(q)) continue;
+    if (open.has(q) || multi.has(q) || zeroPilots.has(q)) continue;
     const slot = key[q - 1] ?? "-";
     if (slot === "-" || slot.trim() === "") missing++;
   }
   return missing;
 }
 
-/** true si a la clave le falta al menos una respuesta CERRADA. */
+/** true si a la clave le falta al menos una respuesta CERRADA (excluye desarrollo,
+ *  seleccion multiple y preguntas piloto/anuladas con 0 puntos). */
 export function isAnswerKeyIncomplete(quiz: {
   answer_key?: string | null;
   num_questions?: number | null;
   open_questions?: string | null;
+  multi_select_questions?: string | null;
+  question_points?: string | null;
+  default_question_points?: number | string | null;
 }): boolean {
   return countMissingKeySlots(quiz) > 0;
 }
@@ -211,6 +246,24 @@ export function serializeQuestionPoints(points: Record<number, number>): string 
   return entries.sort((a, b) => a[0] - b[0]).map(([q, pts]) => `${q}:${pts}`).join(",");
 }
 
+/**
+ * Preguntas cerradas con puntaje 0 (preguntas piloto PAES o anuladas).
+ * Devuelve los numeros de pregunta 1-indexados, unicos y ordenados.
+ * Si el puntaje por defecto es <= 0, no las distingue (devuelve []).
+ */
+export function parseZeroPointQuestions(
+  questionPoints: FormDataEntryValue | string | null | undefined,
+  numQuestions: number,
+  defaultPoints: FormDataEntryValue | string | number | null | undefined = 1,
+): number[] {
+  if (normalizeDefaultQuestionPoints(defaultPoints) <= 0) return [];
+  const parsed = parseQuestionPoints(questionPoints, numQuestions);
+  return Object.entries(parsed)
+    .filter(([, pts]) => pts === 0)
+    .map(([q]) => Number(q))
+    .sort((a, b) => a - b);
+}
+
 /** Normaliza el puntaje por defecto de una pregunta. NULL/vacio/invalido = 1
  *  (el comportamiento historico: toda pregunta cerrada vale 1 punto). */
 export function normalizeDefaultQuestionPoints(
@@ -262,6 +315,159 @@ export function extractAnswerLetters(text: string, numOptions: number): string {
     }
   }
   return letters.join("");
+}
+
+export type AnswerKeyImportResult = {
+  slots: string;
+  pilots: number[];
+  extraOptionOverrides: Record<number, number>;
+  importedCount: number;
+  mode: "numbered" | "sequential";
+};
+
+/**
+ * Importador inteligente de pauta / clavijero (copy-paste desde PDF del DEMRE,
+ * CSV, TXT, Excel o texto corrido).
+ *
+ * Soporta dos formatos:
+ * - "numbered": pares pregunta-respuesta en cualquier orden o multiples columnas
+ *   (ej. "1 A  23 C  4* B  19* -  45 PILOTO"). Detecta "*" o PILOTO/ANULADA.
+ * - "sequential": secuencia de letras ("ABCD...", "ABC*D-A" o una columna por linea).
+ *
+ * Si `allowAutoOption5` es true (ej. PAES M2/Ciencias con base 4 opciones), una
+ * letra "E" registra automaticamente `extraOptionOverrides[q] = 5` sin perderse.
+ */
+export function parseAnswerKeyImport(
+  text: string,
+  opts: {
+    numQuestions: number;
+    numOptions: number;
+    optionOverrides?: Record<number, number>;
+    allowAutoOption5?: boolean;
+  },
+): AnswerKeyImportResult {
+  const { numQuestions, optionOverrides = {}, allowAutoOption5 = false } = opts;
+  const baseOptions = normalizeQuizOptions(opts.numOptions);
+  const chars = Array.from({ length: numQuestions }, () => "-");
+  const pilotsSet = new Set<number>();
+  const extraOptionOverrides: Record<number, number> = {};
+  const touched = new Set<number>();
+
+  // Pre-normaliza "4 * B" o "4\t*\tB" a "4* B" antes de buscar pares numerados.
+  const preNormalized = String(text ?? "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\b(\d{1,3})\s+\*\s+(PILOTO|ANULADA|[A-Ea-e*-])(?=$|[\s,;])/gi, "$1* $2");
+
+  const numberedRe = /(\d{1,3})(\*?)(?:[:.,;)\t-]+|\s+(?:-\s+)?)(PILOTO|ANULADA|[A-E]\*?|\*|-)(?=$|[\s,;])/gi;
+  const matches: RegExpExecArray[] = [];
+  for (const m of preNormalized.matchAll(numberedRe)) {
+    const q = Number(m[1]);
+    if (Number.isInteger(q) && q >= 1 && q <= numQuestions) matches.push(m);
+  }
+
+  const placeLetter = (q: number, letter: string, isPilot: boolean) => {
+    if (isPilot) {
+      pilotsSet.add(q);
+      touched.add(q);
+    }
+    if (letter === "-") {
+      chars[q - 1] = "-";
+      return;
+    }
+    const effectiveOpt = Math.min(5, Math.max(2, extraOptionOverrides[q] ?? optionOverrides[q] ?? baseOptions));
+    if (letter === "E" && effectiveOpt < 5 && allowAutoOption5) {
+      extraOptionOverrides[q] = 5;
+      chars[q - 1] = "E";
+      touched.add(q);
+      return;
+    }
+    if (QUIZ_OPTION_LABELS.slice(0, effectiveOpt).includes(letter)) {
+      chars[q - 1] = letter;
+      touched.add(q);
+    }
+  };
+
+  if (matches.length >= 2 || (matches.length === 1 && /^\s*\d{1,3}/.test(preNormalized))) {
+    for (const m of matches) {
+      const q = Number(m[1]);
+      const hasStarInNum = m[2] === "*";
+      const rawAns = m[3].toUpperCase();
+      const hasStarInAns = rawAns.includes("*");
+      const isPilot = hasStarInNum || hasStarInAns || rawAns === "PILOTO" || rawAns === "ANULADA";
+      const letter = /^[A-E]/.test(rawAns) ? rawAns[0] : "-";
+      placeLetter(q, letter, isPilot);
+    }
+    return {
+      slots: chars.join(""),
+      pilots: [...pilotsSet].sort((a, b) => a - b),
+      extraOptionOverrides,
+      importedCount: touched.size,
+      mode: "numbered",
+    };
+  }
+
+  // Modo secuencial: ignora numeros sueltos y palabras de encabezado, conserva "*" y "-".
+  const tokens = preNormalized.toUpperCase().split(/[^A-Z0-9*-]+/).filter(Boolean);
+  const seqItems: Array<{ letter: string; pilot: boolean }> = [];
+  for (const token of tokens) {
+    if (/^\d+$/.test(token)) continue;
+    if (/^[A-E]\*$/.test(token)) {
+      const ch = token[0];
+      if (ch !== "E" || baseOptions >= 5 || allowAutoOption5) {
+        seqItems.push({ letter: ch, pilot: true });
+      }
+      continue;
+    }
+    if (token === "*") {
+      seqItems.push({ letter: "-", pilot: true });
+      continue;
+    }
+    if (token === "-") {
+      seqItems.push({ letter: "-", pilot: false });
+      continue;
+    }
+    if (token.length === 1 && /^[A-E]$/.test(token)) {
+      if (token !== "E" || baseOptions >= 5 || allowAutoOption5) {
+        seqItems.push({ letter: token, pilot: false });
+      }
+      continue;
+    }
+    // Cadena compacta (ej. "ABCDABCD", "ABC*D-A"). Evita falsos positivos de palabras
+    // cortas de 2-3 letras con "E" (ej. "DE") cuando la prueba es de 4 opciones.
+    if (/^[A-E*-]+$/.test(token)) {
+      const hasMarker = token.includes("*") || token.includes("-");
+      const onlyBase = token.split("").every((c) => QUIZ_OPTION_LABELS.slice(0, baseOptions).includes(c));
+      if (!onlyBase && !hasMarker && token.length < 4 && !allowAutoOption5) continue;
+      if (!onlyBase && !hasMarker && token.length < 4 && baseOptions < 5 && token.includes("E")) continue;
+      for (let i = 0; i < token.length; i++) {
+        const ch = token[i];
+        if (ch === "*") {
+          seqItems.push({ letter: "-", pilot: true });
+        } else if (ch === "-") {
+          seqItems.push({ letter: "-", pilot: false });
+        } else if (/^[A-E]$/.test(ch)) {
+          const nextIsStar = token[i + 1] === "*";
+          if (ch !== "E" || baseOptions >= 5 || allowAutoOption5) {
+            seqItems.push({ letter: ch, pilot: nextIsStar });
+          }
+          if (nextIsStar) i++;
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < Math.min(numQuestions, seqItems.length); i++) {
+    const q = i + 1;
+    placeLetter(q, seqItems[i].letter, seqItems[i].pilot);
+  }
+
+  return {
+    slots: chars.join(""),
+    pilots: [...pilotsSet].sort((a, b) => a - b),
+    extraOptionOverrides,
+    importedCount: touched.size,
+    mode: "sequential",
+  };
 }
 
 /** Subtipo de pregunta abierta (docs/dia-instrumentos-monitoreo-2026.md):

@@ -90,24 +90,47 @@ export const getDashboardContext = cache(async function getDashboardContext() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect(`/auth?next=${encodeURIComponent(await currentRequestPath())}`);
 
-  const cookieStore = await cookies();
+  const [cookieStore, headerStore] = await Promise.all([cookies(), headers()]);
   const activeSchoolId = cookieStore.get("tulector_active_school_id")?.value;
   const impersonateSchoolId = cookieStore.get("tulector_impersonate_school_id")?.value;
+  const isNativeRequest = /TuLectorApp/i.test(headerStore.get("user-agent") ?? "");
 
-  let membership: any = null;
-  let embeddedSchool: any = null;
+  type MembershipRow = DashboardMember & { schools?: DashboardSchool | DashboardSchool[] | null };
+  let membership: MembershipRow | null = null;
+  let embeddedSchool: DashboardSchool | null = null;
 
-  // Staff check y membresia-activa son independientes → en paralelo. La
-  // membresia-activa solo se pide si hay cookie de colegio activo. Trae
-  // schools(*) embebido en la MISMA consulta (antes era un .from("schools")
-  // aparte, secuencial, después de resolver la membresia) — ahorra otro
-  // round-trip Vercel↔Supabase en cada navegacion nativa (esto corre en
-  // CADA pantalla de /app/*, no solo al abrir la app).
-  const [{ data: staffMember }, activeMembershipResult] = await Promise.all([
+  const extractEmbeddedSchool = (row: MembershipRow | null): DashboardSchool | null => {
+    if (!row || !row.schools) return null;
+    const raw = Array.isArray(row.schools) ? row.schools[0] ?? null : row.schools;
+    delete row.schools;
+    return raw;
+  };
+
+  // Staff check, membresia (activa o primera por defecto) y locale corren
+  // juntos en un solo Promise.all despues de getUser(). Cuando no existe la
+  // cookie tulector_active_school_id, evitamos el round-trip extra consultando
+  // directo la primera membresia aqui mismo.
+  const membershipQuery = activeSchoolId
+    ? supabase
+        .from("school_members")
+        .select("id, school_id, user_id, role, created_at, schools(*)")
+        .eq("user_id", user.id)
+        .eq("school_id", activeSchoolId)
+        .maybeSingle()
+    : supabase
+        .from("school_members")
+        .select("id, school_id, user_id, role, created_at, schools(*)")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+  const [{ data: staffMember }, initialMembershipResult, { data: profile }] = await Promise.all([
     supabase.from("platform_users").select("role").eq("user_id", user.id).is("revoked_at", null).maybeSingle(),
-    activeSchoolId
-      ? supabase.from("school_members").select("id, school_id, user_id, role, created_at, schools(*)").eq("user_id", user.id).eq("school_id", activeSchoolId).maybeSingle()
-      : Promise.resolve({ data: null }),
+    membershipQuery,
+    isNativeRequest
+      ? Promise.resolve({ data: null })
+      : supabase.from("profiles").select("locale").eq("user_id", user.id).maybeSingle(),
   ]);
 
   const isStaff = staffMember !== null;
@@ -131,10 +154,9 @@ export const getDashboardContext = cache(async function getDashboardContext() {
       created_at: new Date().toISOString(),
     };
   } else if (activeSchoolId) {
-    membership = activeMembershipResult.data;
+    membership = (initialMembershipResult.data as MembershipRow | null) ?? null;
     if (membership) {
-      embeddedSchool = membership.schools;
-      delete membership.schools;
+      embeddedSchool = extractEmbeddedSchool(membership);
     } else {
       // Cookie de colegio activo apuntando a un colegio SIN membresía (ej.
       // impersonación vieja pegada, o membresía revocada): se borra para que
@@ -145,10 +167,26 @@ export const getDashboardContext = cache(async function getDashboardContext() {
         // Server Components no pueden tocar cookies; el fallback opera igual.
       }
     }
+  } else {
+    if (initialMembershipResult.error) throw new Error(initialMembershipResult.error.message);
+    membership = (initialMembershipResult.data as MembershipRow | null) ?? null;
+    if (membership) {
+      embeddedSchool = extractEmbeddedSchool(membership);
+      try {
+        cookieStore.set("tulector_active_school_id", membership.school_id, {
+          path: "/",
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+        });
+      } catch {
+        // Cookies can only be set in Server Actions / Route Handlers, not Server Components
+      }
+    }
   }
 
-  // Fallback to the first school membership
-  if (!membership) {
+  // Fallback a la primera membresía solo cuando existía activeSchoolId pero ya no era válida
+  if (!membership && activeSchoolId && !isImpersonating) {
     const { data, error: membershipError } = await supabase
       .from("school_members")
       .select("id, school_id, user_id, role, created_at, schools(*)")
@@ -158,10 +196,9 @@ export const getDashboardContext = cache(async function getDashboardContext() {
       .maybeSingle();
 
     if (membershipError) throw new Error(membershipError.message);
-    membership = data;
+    membership = (data as MembershipRow | null) ?? null;
     if (membership) {
-      embeddedSchool = membership.schools;
-      delete membership.schools;
+      embeddedSchool = extractEmbeddedSchool(membership);
     }
 
     // Set cookie for active school
@@ -197,15 +234,6 @@ export const getDashboardContext = cache(async function getDashboardContext() {
     }
     school = data;
   }
-
-  // profile.locale solo lo usa el dashboard web (las pantallas nativas /app/*
-  // heredan del país del colegio). Saltar esta consulta en nativo ahorra un
-  // round-trip completo; en web también ahorramos pedir allMemberships porque
-  // no hay selector multi-colegio activo en el shell.
-  const isNativeRequest = /TuLectorApp/i.test((await headers()).get("user-agent") ?? "");
-  const { data: profile } = isNativeRequest
-    ? { data: null }
-    : await supabase.from("profiles").select("locale").eq("user_id", user.id).maybeSingle();
 
   const typedSchool = school as DashboardSchool;
   const userSchools = [

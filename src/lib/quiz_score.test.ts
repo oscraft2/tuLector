@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { computeQuizScore, type ScoreableQuiz } from "./quiz_score";
+import {
+  countMissingKeySlots,
+  normalizeAnswerKeySlots,
+  parseAnswerKeyImport,
+  parseZeroPointQuestions,
+} from "./quiz_constraints";
 
 const SCHOOL = {};
 const CL = "CL";
@@ -326,4 +332,131 @@ test("tabla puntaje->nota: funciona sobre los PUNTOS ponderados, no las correcta
   assert.equal(r.points, 12);
   assert.equal(r.grade, 4.0);
   assert.equal(r.score, 1, "una sola correcta, pero 12 puntos");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAES: PREGUNTAS PILOTO, OMITIR PILOTO Y CLAVIJERO DEMRE
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("PAES 65 con 5 piloto (0 pts) y clave '-' en piloto: 60/60 => 1000 pts", () => {
+  const pilots = [4, 19, 31, 51, 63];
+  const pilotSet = new Set(pilots);
+  const key = Array.from({ length: 65 }, (_, i) => (pilotSet.has(i + 1) ? "-" : "A")).join("");
+  const quiz: ScoreableQuiz = {
+    answer_key: key,
+    num_questions: 65,
+    evaluation_type: "paes",
+    question_points: pilots.map((q) => `${q}:0`).join(","),
+  };
+  const validQs = Array.from({ length: 65 }, (_, i) => i + 1).filter((q) => !pilotSet.has(q));
+  const answers = Array.from({ length: 65 }, (_, i) => ({
+    q: i + 1,
+    a: validQs.includes(i + 1) ? "A" : "B",
+  }));
+  const r = computeQuizScore(quiz, answers, SCHOOL, CL);
+  assert.equal(r.score, 60);
+  assert.equal(r.total, 60);
+  assert.equal(r.points, 60);
+  assert.equal(r.pointsTotal, 60);
+  assert.equal(r.equivalentScore, 1000);
+});
+
+test("PAES 65 con 5 piloto (0 pts) con letras referenciales: piloto acertadas no inflan score ni total", () => {
+  const pilots = [4, 19, 31, 51, 63];
+  const pilotSet = new Set(pilots);
+  const key = "ABCD".repeat(17).slice(0, 65);
+  const quiz: ScoreableQuiz = {
+    answer_key: key,
+    num_questions: 65,
+    evaluation_type: "paes",
+    question_points: pilots.map((q) => `${q}:0`).join(","),
+  };
+  const validQs = Array.from({ length: 65 }, (_, i) => i + 1).filter((q) => !pilotSet.has(q));
+  const hitSet = new Set([...validQs.slice(0, 50), ...pilots]);
+  const answers = Array.from({ length: 65 }, (_, i) => {
+    const q = i + 1;
+    const expected = key[i];
+    const wrong = expected === "A" ? "B" : "A";
+    return { q, a: hitSet.has(q) ? expected : wrong };
+  });
+  const r = computeQuizScore(quiz, answers, SCHOOL, CL);
+  assert.equal(r.score, 50);
+  assert.equal(r.total, 60);
+  assert.equal(r.points, 50);
+  assert.equal(r.pointsTotal, 60);
+});
+
+test("PAES 65 omitiendo piloto (question_points null): escala completa sobre 65", () => {
+  const key = "ABCD".repeat(17).slice(0, 65);
+  const quiz: ScoreableQuiz = {
+    answer_key: key,
+    num_questions: 65,
+    evaluation_type: "paes",
+    question_points: null,
+  };
+  const answers = Array.from({ length: 65 }, (_, i) => ({ q: i + 1, a: key[i] }));
+  const r = computeQuizScore(quiz, answers, SCHOOL, CL);
+  assert.equal(r.score, 65);
+  assert.equal(r.total, 65);
+  assert.equal(r.points, 65);
+  assert.equal(r.pointsTotal, 65);
+  assert.equal(r.equivalentScore, 1000);
+});
+
+test("parseAnswerKeyImport detecta clavijero DEMRE multi-columna, piloto (*) y opcion E en PAES", () => {
+  const sample = [
+    "1 A   11 C   4* B",
+    "2 D   12 E   19* -",
+    "3 B   5 PILOTO",
+  ].join("\n");
+  const imported = parseAnswerKeyImport(sample, {
+    numQuestions: 20,
+    numOptions: 4,
+    allowAutoOption5: true,
+  });
+  assert.equal(imported.mode, "numbered");
+  assert.deepEqual(imported.pilots, [4, 5, 19]);
+  assert.deepEqual(imported.extraOptionOverrides, { 12: 5 });
+  assert.equal(imported.slots[0], "A");
+  assert.equal(imported.slots[1], "D");
+  assert.equal(imported.slots[2], "B");
+  assert.equal(imported.slots[3], "B");
+  assert.equal(imported.slots[4], "-");
+  assert.equal(imported.slots[10], "C");
+  assert.equal(imported.slots[11], "E");
+  assert.equal(imported.slots[18], "-");
+});
+
+test("parseAnswerKeyImport en modo secuencial con ABCD*A", () => {
+  const imported = parseAnswerKeyImport("ABCD*A", {
+    numQuestions: 6,
+    numOptions: 4,
+    allowAutoOption5: false,
+  });
+  assert.equal(imported.mode, "sequential");
+  assert.equal(imported.slots, "ABCDA-");
+  assert.deepEqual(imported.pilots, [4]);
+});
+
+test("countMissingKeySlots y normalizeAnswerKeySlots respetan piloto 0 pts y option_overrides", () => {
+  assert.deepEqual(parseZeroPointQuestions("4:0,12:2,19:0", 20, 1), [4, 19]);
+  assert.equal(
+    countMissingKeySlots({
+      answer_key: "ABC-E",
+      num_questions: 5,
+      question_points: "4:0",
+    }),
+    0,
+    "la pregunta 4 es piloto con 0 pts y no marca clave incompleta",
+  );
+  assert.equal(
+    normalizeAnswerKeySlots("ABCDE", 4, 5, { 5: 5 }),
+    "ABCDE",
+    "en el slot 5 (con override 5 opciones) E es valida",
+  );
+  assert.equal(
+    normalizeAnswerKeySlots("ABCDE", 4, 5, { 4: 5 }),
+    "ABCD-",
+    "en el slot 5 sin override, E pasa a '-' sin correr el indice",
+  );
 });

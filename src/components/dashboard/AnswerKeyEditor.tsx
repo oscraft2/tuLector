@@ -2,14 +2,15 @@
 
 import { useMemo, useState, useRef } from "react";
 import {
-  QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE, optionLabelsFor, extractAnswerLetters,
+  QUIZ_ALLOWED_OPTIONS, QUIZ_MAX_QUESTIONS, QUIZ_MAX_QUESTIONS_MULTIPAGE, optionLabelsFor,
+  normalizeAnswerKeySlots, parseAnswerKeyImport,
   parseOpenQuestions, serializeOpenQuestions, parseOptionOverrides, serializeOptionOverrides,
   parseMultiSelectQuestions, serializeMultiSelectQuestions, parseOpenQuestionRubrics, serializeOpenQuestionRubrics,
+  parseQuestionPoints, serializeQuestionPoints, parseZeroPointQuestions,
   type OpenQuestionRubric, type OpenQuestionSubtype,
 } from "@/lib/quiz_constraints";
 import { resolveCountryProfile } from "@/lib/country_profiles";
 import { DIA_PRESETS, DIA_CUSTOM_ID, findDiaPreset, mergePresetRubrics, type DiaPreset } from "@/lib/dia_presets";
-import { parseQuestionPoints } from "@/lib/quiz_constraints";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
 import { AnswerKeyFromSheet } from "@/components/dashboard/AnswerKeyFromSheet";
 import { QuestionPointsPanel } from "@/components/dashboard/QuestionPointsPanel";
@@ -17,12 +18,12 @@ import { ChevronIcon } from "@/components/header/icons";
 
 export type EvaluationType = "custom" | "paes" | "simce" | "dia";
 
-const PAES_PRESETS: Record<string, { questions: number; scored: number; pilots: number; options: 4 | 5 }> = {
+const PAES_PRESETS: Record<string, { questions: number; scored: number; pilots: number; options: 4 | 5; mixedOptions?: boolean }> = {
   paes_m1: { questions: 65, scored: 60, pilots: 5, options: 4 },
-  paes_m2: { questions: 55, scored: 50, pilots: 5, options: 5 },
+  paes_m2: { questions: 55, scored: 50, pilots: 5, options: 4, mixedOptions: true },
   paes_lectora: { questions: 65, scored: 60, pilots: 5, options: 4 },
-  paes_ciencias: { questions: 80, scored: 75, pilots: 5, options: 5 },
-  paes_historia: { questions: 65, scored: 60, pilots: 5, options: 5 },
+  paes_ciencias: { questions: 80, scored: 75, pilots: 5, options: 4, mixedOptions: true },
+  paes_historia: { questions: 65, scored: 60, pilots: 5, options: 4 },
 };
 
 export function AnswerKeyEditor({
@@ -112,16 +113,47 @@ export function AnswerKeyEditor({
     () => parseQuestionPoints(defaultQuestionPoints, QUIZ_MAX_QUESTIONS_MULTIPAGE),
     [defaultQuestionPoints],
   );
+  const initialZeroPilots = useMemo(
+    () => parseZeroPointQuestions(defaultQuestionPoints, questions, defaultDefaultQuestionPoints || 1),
+    [defaultQuestionPoints, questions, defaultDefaultQuestionPoints],
+  );
+  const hasCustomNonZeroWeights = useMemo(() => {
+    const parsedDefault = Number(String(defaultDefaultQuestionPoints || "1").replace(",", "."));
+    const hasCustomDefault = Number.isFinite(parsedDefault) && parsedDefault !== 1;
+    const hasNonZeroOverride = Object.values(initialQuestionPoints).some((pts) => pts !== 0);
+    return hasCustomDefault || hasNonZeroOverride || defaultScoreOpenQuestions;
+  }, [defaultDefaultQuestionPoints, initialQuestionPoints, defaultScoreOpenQuestions]);
+
+  const initialIsPaes = defaultEvaluationType === "paes" && !defaultEvaluationVariant?.startsWith("dia");
+  const initialPaesPreset = initialIsPaes
+    ? (PAES_PRESETS[defaultEvaluationVariant ?? ""] ?? PAES_PRESETS.paes_m1)
+    : PAES_PRESETS.paes_m1;
+  const [includePilots, setIncludePilots] = useState<boolean>(() => {
+    if (!initialIsPaes) return true;
+    return initialZeroPilots.length > 0 || questions === initialPaesPreset.questions;
+  });
+  const [pilotMode, setPilotMode] = useState<"exclude" | "score_all">(() => {
+    if (!initialIsPaes) return "exclude";
+    if (initialZeroPilots.length > 0) return "exclude";
+    if (questions === initialPaesPreset.questions && defaultValue.length > 0) return "score_all";
+    return "exclude";
+  });
+  const [pilotsText, setPilotsText] = useState<string>(() =>
+    initialZeroPilots.length > 0 ? initialZeroPilots.join(", ") : "",
+  );
+  const [importPanel, setImportPanel] = useState<"none" | "paste" | "scan">("none");
+  const [pasteDraft, setPasteDraft] = useState("");
+  const [importNotice, setImportNotice] = useState<string | null>(null);
   const [allowPartial, setAllowPartial] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const lastPresetRef = useRef<DiaPreset | undefined>(defaultEvaluationVariant ? findDiaPreset(defaultEvaluationVariant) : undefined);
 
-  const applyPaesPreset = (variant: string) => {
+  const applyPaesPreset = (variant: string, withPilots = includePilots) => {
     const preset = PAES_PRESETS[variant] ?? PAES_PRESETS.paes_m1;
     setQuestionsText(null);
-    setQuestionCount(preset.questions);
+    setQuestionCount(withPilots ? preset.questions : preset.scored);
     setOptionCount(preset.options);
   };
 
@@ -151,7 +183,10 @@ export function AnswerKeyEditor({
       setOverridesText("");
       setRubrics({});
       setRubricPanelOpen(false);
-      applyPaesPreset(variant);
+      setIncludePilots(true);
+      setPilotMode("exclude");
+      setPilotsText("");
+      applyPaesPreset(variant, true);
     } else if (type === "simce") {
       const variant = "simce_4b_mate";
       setEvalVariant(variant);
@@ -170,7 +205,7 @@ export function AnswerKeyEditor({
   const handleEvalVariantChange = (variant: string) => {
     setEvalVariant(variant);
     if (evalType === "paes") {
-      applyPaesPreset(variant);
+      applyPaesPreset(variant, includePilots);
     } else if (evalType === "simce") {
       setQuestionsText(null);
       setQuestionCount(variant === "simce_4b_lectura" || variant === "simce_4b_mate" ? 30 : 40);
@@ -178,6 +213,14 @@ export function AnswerKeyEditor({
     } else if (evalType === "dia") {
       applyDiaPreset(variant);
     }
+  };
+
+  const handleToggleIncludePilots = (next: boolean) => {
+    setIncludePilots(next);
+    const preset = PAES_PRESETS[evalVariant] ?? PAES_PRESETS.paes_m1;
+    setQuestionsText(null);
+    setQuestionCount(next ? preset.questions : preset.scored);
+    if (!next) setPilotsText("");
   };
 
   const isPaes = evalType === "paes";
@@ -193,7 +236,6 @@ export function AnswerKeyEditor({
   const evaluationTypeToSubmit = evalType === "dia" ? "custom" : evalType;
 
   const labels = optionLabelsFor(optionCount);
-  const allowed = useMemo(() => new Set(labels.split("")), [labels]);
   // "slots": representacion posicional de la clave, siempre exactamente
   // questionCount caracteres, cada uno una letra valida o "-" (pregunta
   // todavia sin responder). Se deriva del texto libre (value) tomando solo
@@ -227,7 +269,7 @@ export function AnswerKeyEditor({
 
   const openQuestions = useMemo(() => (isPaes ? [] : parseOpenQuestions(openText, questionCount)), [isPaes, openText, questionCount]);
   const openSet0 = useMemo(() => new Set(openQuestions.map((q) => q - 1)), [openQuestions]);
-  const optionOverrides = useMemo(() => (isPaes ? {} : parseOptionOverrides(overridesText, questionCount)), [isPaes, overridesText, questionCount]);
+  const optionOverrides = useMemo(() => parseOptionOverrides(overridesText, questionCount), [overridesText, questionCount]);
   const multiSelectQuestions = useMemo(() => (isPaes ? [] : parseMultiSelectQuestions(multiText, questionCount)), [isPaes, multiText, questionCount]);
   const multiSet0 = useMemo(() => new Set(multiSelectQuestions.map((q) => q - 1)), [multiSelectQuestions]);
   const multiOverlapsOpen = useMemo(() => multiSelectQuestions.some((q) => openSet0.has(q - 1)), [multiSelectQuestions, openSet0]);
@@ -236,19 +278,44 @@ export function AnswerKeyEditor({
   // no representa "que subconjunto es correcto") -- mismo tratamiento que el
   // server (dashboard/actions.ts) y computeQuizScore (src/lib/grading.ts).
   const unscoredSet0 = useMemo(() => new Set([...openSet0, ...multiSet0]), [openSet0, multiSet0]);
+
+  const pilotQuestions = useMemo(
+    () => (isPaes && includePilots && pilotMode === "exclude" ? parseOpenQuestions(pilotsText, questionCount) : []),
+    [isPaes, includePilots, pilotMode, pilotsText, questionCount],
+  );
+  const pilotSet0 = useMemo(() => new Set(pilotQuestions.map((q) => q - 1)), [pilotQuestions]);
+  const serializedPilotPoints = useMemo(() => {
+    if (pilotQuestions.length === 0) return "";
+    const map: Record<number, number> = {};
+    for (const q of pilotQuestions) map[q] = 0;
+    return serializeQuestionPoints(map) ?? "";
+  }, [pilotQuestions]);
+
   const slots = useMemo(() => {
-    const chars = value
-      .toUpperCase()
-      .split("")
-      .filter((char) => allowed.has(char) || char === "-")
-      .slice(0, questionCount);
-    while (chars.length < questionCount) chars.push("-");
+    const normalized = normalizeAnswerKeySlots(value, optionCount, questionCount, optionOverrides);
+    if (unscoredSet0.size === 0) return normalized;
+    const chars = normalized.split("");
     for (const i of unscoredSet0) if (i < chars.length) chars[i] = "-";
     return chars.join("");
-  }, [value, allowed, questionCount, unscoredSet0]);
-  const filledCount = slots.split("").filter((char) => char !== "-").length;
+  }, [value, optionCount, questionCount, optionOverrides, unscoredSet0]);
+
+  let requiredCount = 0;
+  let filledRequiredCount = 0;
+  for (let i = 0; i < questionCount; i++) {
+    if (unscoredSet0.has(i) || pilotSet0.has(i)) continue;
+    requiredCount++;
+    if (slots[i] !== "-") filledRequiredCount++;
+  }
   const closedCount = questionCount - unscoredSet0.size;
-  const valid = filledCount === closedCount;
+  const valid = filledRequiredCount === requiredCount;
+
+  function handleTogglePilot(index: number) {
+    const q = index + 1;
+    const next = new Set(pilotQuestions);
+    if (next.has(q)) next.delete(q);
+    else next.add(q);
+    setPilotsText([...next].sort((a, b) => a - b).join(", "));
+  }
 
   function handleGridAnswerChange(index: number, letter: string) {
     if (unscoredSet0.has(index)) return; // desarrollo/seleccion multiple: slot bloqueado
@@ -257,29 +324,60 @@ export function AnswerKeyEditor({
     setValue(chars.join(""));
   }
 
+  function applyImportedKey(rawText: string): boolean {
+    const imported = parseAnswerKeyImport(rawText, {
+      numQuestions: questionCount,
+      numOptions: optionCount,
+      optionOverrides,
+      allowAutoOption5: isPaes,
+    });
+    if (imported.importedCount === 0) {
+      setFileError("No se encontraron respuestas válidas en el texto o archivo.");
+      setImportNotice(null);
+      return false;
+    }
+    setFileError(null);
+    setValue(imported.slots);
+    const extraEntries = Object.entries(imported.extraOptionOverrides);
+    if (extraEntries.length > 0) {
+      const merged = { ...optionOverrides, ...imported.extraOptionOverrides };
+      setOverridesText(
+        Object.entries(merged)
+          .sort((a, b) => Number(a[0]) - Number(b[0]))
+          .map(([q, n]) => `${q}:${n}`)
+          .join(", "),
+      );
+    }
+    if (isPaes && imported.pilots.length > 0) {
+      setIncludePilots(true);
+      setPilotMode("exclude");
+      setPilotsText(imported.pilots.join(", "));
+    }
+    const parts = [`✓ ${imported.importedCount} ítem(s) cargados`];
+    if (isPaes && imported.pilots.length > 0) parts.push(`${imported.pilots.length} piloto (*)`);
+    if (extraEntries.length > 0) parts.push(`${extraEntries.length} pregunta(s) con 5 opciones (E)`);
+    setImportNotice(parts.join(" · "));
+    return true;
+  }
+
   async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
     setFileError(null);
+    setImportNotice(null);
     try {
-      let letters = "";
+      let text = "";
       if (/\.(xlsx|xls)$/i.test(file.name)) {
         const XLSX = await import("xlsx");
         const buffer = await file.arrayBuffer();
         const workbook = XLSX.read(buffer, { type: "array" });
         const firstSheet = workbook.SheetNames[0];
         const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[firstSheet], { header: 1 });
-        const flattened = rows.map((row) => (Array.isArray(row) ? row.join(" ") : "")).join(" ");
-        letters = extractAnswerLetters(flattened, optionCount);
+        text = rows.map((row) => (Array.isArray(row) ? row.join("\t") : "")).join("\n");
       } else {
-        const text = await file.text();
-        letters = extractAnswerLetters(text, optionCount);
+        text = await file.text();
       }
-      if (!letters) {
-        setFileError("No se encontraron letras validas en el archivo.");
-      } else {
-        setValue(letters);
-      }
+      applyImportedKey(text);
     } catch {
       setFileError("No se pudo leer el archivo. Prueba con CSV, TXT o XLSX.");
     } finally {
@@ -436,16 +534,113 @@ export function AnswerKeyEditor({
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="rounded-md bg-blue-50/50 border border-blue-100 p-3 text-xs text-blue-800 space-y-1">
-            <p className="font-semibold">Equivalencia {evalType === "paes" ? "PAES" : "SIMCE"}:</p>
-            {activePaesPreset ? (
-              <p>
-                • Incluye <strong>{activePaesPreset.questions} preguntas totales</strong> ({activePaesPreset.scored} que puntúan + {activePaesPreset.pilots} piloto) y <strong>{activePaesPreset.options} opciones</strong> por defecto.
-              </p>
-            ) : null}
-            <p>• El puntaje se calcula según el porcentaje de acierto (escala {evalType === "paes" ? "100–1000" : "100–400"}), <strong>independiente del número de preguntas</strong>.</p>
-            <p>• Puedes ajustar libremente el número de preguntas abajo.</p>
-          </div>
+          {evalType === "paes" && activePaesPreset ? (
+            <div className="rounded-md border border-blue-200 bg-blue-50/60 p-3.5 text-xs text-blue-950 space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="font-semibold">Configuración oficial DEMRE</p>
+                  <p className="mt-0.5 text-[11px] text-blue-800">
+                    {activePaesPreset.questions} preguntas en hoja ({activePaesPreset.scored} puntúan + {activePaesPreset.pilots} piloto) · {activePaesPreset.options} opciones por defecto{activePaesPreset.mixedOptions ? " (admite preguntas puntuales de 5)" : ""}. Escala 100–1000 sobre las preguntas que puntúan.
+                  </p>
+                </div>
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#07305f]">
+                  <input
+                    type="checkbox"
+                    checked={includePilots}
+                    onChange={(e) => handleToggleIncludePilots(e.target.checked)}
+                    className="rounded border-[#cfd6df]"
+                  />
+                  Incluir {activePaesPreset.pilots} piloto en hoja ({activePaesPreset.questions})
+                </label>
+              </div>
+
+              {includePilots ? (
+                <div className="space-y-2.5 border-t border-blue-200/70 pt-2.5">
+                  <p className="font-semibold text-[#07305f]">¿Cómo tratar las preguntas piloto en el puntaje?</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label
+                      className={`flex cursor-pointer items-start gap-2 rounded-md border p-2.5 transition ${
+                        pilotMode === "exclude"
+                          ? "border-[#07305f] bg-white shadow-2xs"
+                          : "border-blue-200/80 bg-white/50 hover:bg-white"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="paes_pilot_mode_ui"
+                        checked={pilotMode === "exclude"}
+                        onChange={() => setPilotMode("exclude")}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <span className="block font-semibold text-[#111827]">
+                          Excluir piloto del puntaje (oficial DEMRE)
+                        </span>
+                        <span className="mt-0.5 block text-[11px] text-[#4b5563]">
+                          La hoja imprime {questionCount}, pero las marcadas con 0 pts no cuentan (escala sobre {pilotQuestions.length > 0 ? Math.max(1, questionCount - pilotQuestions.length) : activePaesPreset.scored}).
+                        </span>
+                      </span>
+                    </label>
+                    <label
+                      className={`flex cursor-pointer items-start gap-2 rounded-md border p-2.5 transition ${
+                        pilotMode === "score_all"
+                          ? "border-[#07305f] bg-white shadow-2xs"
+                          : "border-blue-200/80 bg-white/50 hover:bg-white"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="paes_pilot_mode_ui"
+                        checked={pilotMode === "score_all"}
+                        onChange={() => {
+                          setPilotMode("score_all");
+                          setPilotsText("");
+                        }}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <span className="block font-semibold text-[#111827]">
+                          Omitir piloto (puntúan todas)
+                        </span>
+                        <span className="mt-0.5 block text-[11px] text-[#4b5563]">
+                          Evalúa las {questionCount} preguntas por igual (escala calculada sobre {questionCount}).
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+
+                  {pilotMode === "exclude" && (
+                    <label className="block text-xs font-semibold text-[#07305f]">
+                      Preguntas piloto (*, valen 0 pts y clave opcional)
+                      <input
+                        type="text"
+                        value={pilotsText}
+                        onChange={(e) => setPilotsText(e.target.value)}
+                        placeholder="Ej: 4, 19, 31, 51, 63"
+                        className="mt-1.5 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-1.5 text-sm font-normal text-[#111827]"
+                      />
+                      <span className="mt-1 block text-[11px] font-normal text-blue-800">
+                        {pilotQuestions.length > 0
+                          ? `${pilotQuestions.length} piloto(s) marcadas (${pilotQuestions.join(", ")}) · el puntaje PAES se calcula sobre ${Math.max(1, questionCount - pilotQuestions.length)} preguntas.`
+                          : "Aún sin piloto marcadas: escríbelas arriba, marca “★ Piloto” en la grilla, o pega un clavijero DEMRE con asteriscos (*)."}
+                      </span>
+                    </label>
+                  )}
+                </div>
+              ) : (
+                <p className="border-t border-blue-200/70 pt-2 text-[11px] text-blue-800">
+                  Modo sin piloto: la hoja imprime solo <strong>{questionCount} preguntas</strong> (todas puntúan). Puedes ajustar el largo abajo para mini-ensayos.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-md bg-blue-50/50 border border-blue-100 p-3 text-xs text-blue-800 space-y-1">
+              <p className="font-semibold">Equivalencia SIMCE:</p>
+              <p>• El puntaje se calcula según el porcentaje de acierto (escala 100–400), <strong>independiente del número de preguntas</strong>.</p>
+              <p>• Puedes ajustar libremente el número de preguntas abajo.</p>
+            </div>
+          )}
+
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm font-semibold">
               Preguntas
@@ -475,6 +670,32 @@ export function AnswerKeyEditor({
               </select>
             </label>
           </div>
+
+          {isPaes && (
+            <details
+              open={Boolean(activePaesPreset?.mixedOptions) || Object.keys(optionOverrides).length > 0}
+              className="rounded-md border border-[#e1e5ea] bg-white"
+            >
+              <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-[#374151]">
+                Preguntas con 5 alternativas (opcional{activePaesPreset?.mixedOptions ? " · M2 y Ciencias mezclan 4 y 5" : ""})
+                {Object.keys(optionOverrides).length > 0 && ` · ${Object.keys(optionOverrides).length} configurada(s)`}
+              </summary>
+              <div className="border-t border-[#eef0f3] p-3">
+                <label className="block text-xs font-semibold text-[#374151]">
+                  Nº de opciones por pregunta puntual
+                  <input
+                    value={overridesText}
+                    onChange={(event) => setOverridesText(event.target.value)}
+                    placeholder="Ej: 12:5, 28:5"
+                    className="mt-1.5 w-full rounded-md border border-[#cfd6df] px-3 py-1.5 text-sm font-normal text-[#111827]"
+                  />
+                  <span className="mt-1 block text-[11px] font-normal text-[#5b6472]">
+                    Formato &ldquo;pregunta:opciones&rdquo; separado por comas (ej. 12:5, 28:5). Si pegas o subes una pauta con letra E, tuLector las agrega automáticamente.
+                  </span>
+                </label>
+              </div>
+            </details>
+          )}
         </div>
       )}
 
@@ -590,15 +811,22 @@ export function AnswerKeyEditor({
       <input type="hidden" name="open_questions" value={isPaes ? "" : (serializeOpenQuestions(openQuestions) ?? "")} />
       <input type="hidden" name="open_question_rubrics" value={isPaes ? "" : (serializeOpenQuestionRubrics(rubrics) ?? "")} />
 
-      <QuestionPointsPanel
-        questionCount={questionCount}
-        openQuestions={isPaes ? [] : openQuestions}
-        multiSelectQuestions={isPaes ? [] : multiSelectQuestions}
-        rubrics={isPaes ? {} : rubrics}
-        defaultDefaultPoints={defaultDefaultQuestionPoints}
-        defaultQuestionPoints={initialQuestionPoints}
-        defaultScoreOpen={defaultScoreOpenQuestions}
-      />
+      {isPaes && !hasCustomNonZeroWeights ? (
+        <>
+          <input type="hidden" name="default_question_points" value="1" />
+          <input type="hidden" name="question_points" value={serializedPilotPoints} />
+        </>
+      ) : (
+        <QuestionPointsPanel
+          questionCount={questionCount}
+          openQuestions={isPaes ? [] : openQuestions}
+          multiSelectQuestions={isPaes ? [] : multiSelectQuestions}
+          rubrics={isPaes ? {} : rubrics}
+          defaultDefaultPoints={defaultDefaultQuestionPoints}
+          defaultQuestionPoints={initialQuestionPoints}
+          defaultScoreOpen={defaultScoreOpenQuestions}
+        />
+      )}
 
       {!isPaes && (
         <details className="rounded-md border border-[#eef0f3]">
@@ -640,60 +868,138 @@ export function AnswerKeyEditor({
         </details>
       )}
       <input type="hidden" name="multi_select_questions" value={isPaes ? "" : (serializeMultiSelectQuestions(multiSelectQuestions) ?? "")} />
-      <input type="hidden" name="option_overrides" value={isPaes ? "" : (serializeOptionOverrides(optionOverrides) ?? "")} />
+      <input type="hidden" name="option_overrides" value={serializeOptionOverrides(optionOverrides) ?? ""} />
 
       <input type="hidden" name="option_labels" value={labels.split("").join(",")} />
-      <label className="block text-sm font-semibold text-[#111827]" htmlFor={name}>Clave de respuestas</label>
-      <p className="mt-1 text-xs text-[#6b7280]">Marca las respuestas directo en la grilla, tipea la clave completa, o subela desde un archivo.</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <label className="block text-sm font-semibold text-[#111827]" htmlFor={name}>Clave de respuestas</label>
+          <p className="mt-0.5 text-xs text-[#6b7280]">Carga rápida por archivo, pegando el clavijero, escaneando una hoja o marcando abajo.</p>
+        </div>
+      </div>
+
+      {/* Carga rapida de clave (visible sin expandir) */}
+      <div className="rounded-md border border-[#e1e5ea] bg-[#fafbfc] p-3 space-y-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="rounded-md border border-[#07305f] bg-white px-3 py-1.5 text-xs font-semibold text-[#07305f] hover:bg-[#eef4ff]"
+          >
+            Subir CSV / Excel / TXT
+          </button>
+          <button
+            type="button"
+            onClick={() => setImportPanel((p) => (p === "paste" ? "none" : "paste"))}
+            className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition ${
+              importPanel === "paste"
+                ? "border-[#07305f] bg-[#07305f] text-white"
+                : "border-[#cfd6df] bg-white text-[#374151] hover:bg-[#f4f6f8]"
+            }`}
+          >
+            Pegar clavijero / texto
+          </button>
+          <button
+            type="button"
+            onClick={() => setImportPanel((p) => (p === "scan" ? "none" : "scan"))}
+            className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition ${
+              importPanel === "scan"
+                ? "border-[#07305f] bg-[#07305f] text-white"
+                : "border-[#cfd6df] bg-white text-[#374151] hover:bg-[#f4f6f8]"
+            }`}
+          >
+            Escanear hoja pauta
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.txt,.xlsx,.xls"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+        </div>
+
+        {importNotice && <p className="text-xs font-semibold text-[#0f766e]">{importNotice}</p>}
+        {fileError && <p className="text-xs font-semibold text-[#b45309]">{fileError}</p>}
+
+        {importPanel === "paste" && (
+          <div className="space-y-2.5 border-t border-[#e6e8eb] pt-2.5">
+            <label className="block text-xs font-semibold text-[#374151]">
+              Pega el clavijero del DEMRE, una tabla de Excel o la cadena de letras
+              <textarea
+                value={pasteDraft}
+                onChange={(e) => setPasteDraft(e.target.value)}
+                rows={4}
+                placeholder={"Ej. clavijero DEMRE:\n1 A  2 C  3 D  4* B  5 A ...\n\nO cadena directa:\nABCDABCD..."}
+                className="mt-1.5 w-full rounded-md border border-[#cfd6df] bg-white px-3 py-2 font-mono text-xs text-[#111827] outline-none focus:border-[#07305f]"
+              />
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (applyImportedKey(pasteDraft)) setImportPanel("none");
+                }}
+                disabled={!pasteDraft.trim()}
+                className="rounded-md bg-[#07305f] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#062447] disabled:opacity-40"
+              >
+                Aplicar clavijero
+              </button>
+              <button
+                type="button"
+                onClick={() => { setPasteDraft(""); setImportPanel("none"); }}
+                className="rounded-md border border-[#cfd6df] bg-white px-3 py-1.5 text-xs font-semibold text-[#5b6472] hover:bg-[#f4f6f8]"
+              >
+                Cerrar
+              </button>
+            </div>
+            <label className="block text-[11px] font-medium text-[#6b7280]">
+              Secuencia directa en una línea (editable)
+              <input
+                id={name}
+                name={name}
+                value={value}
+                onChange={(event) => setValue(event.target.value.toUpperCase())}
+                className="mt-1 w-full rounded-md border border-[#d8dde3] bg-white px-3 py-1.5 font-mono text-xs text-[#111827] outline-none focus:border-[#111827]"
+                placeholder="ABCDABCD..."
+                aria-invalid={!valid}
+              />
+            </label>
+          </div>
+        )}
+
+        {importPanel === "scan" && (
+          <div className="border-t border-[#e6e8eb] pt-2.5">
+            <AnswerKeyFromSheet
+              numQuestions={questionCount}
+              numOptions={optionCount}
+              openQuestions={openQuestions}
+              onAccept={(letters) => {
+                setValue(letters);
+                setFileError(null);
+                setImportNotice("✓ Pauta escaneada desde hoja");
+                setImportPanel("none");
+              }}
+            />
+          </div>
+        )}
+      </div>
+
+      {importPanel !== "paste" && <input id={name} type="hidden" name={name} value={value} />}
 
       <div className="mt-3">
         <AnswerKeyGrid
           answerKey={slots}
           numQuestions={questionCount}
           optionLabels={labels}
+          optionOverrides={optionOverrides}
           onAnswerChange={handleGridAnswerChange}
           openQuestions={openSet0}
           multiSelectQuestions={multiSet0}
+          pilotQuestions={pilotSet0}
+          onTogglePilot={isPaes && includePilots && pilotMode === "exclude" ? handleTogglePilot : undefined}
         />
       </div>
-
-      <details className="mt-3 rounded-md border border-[#eef0f3]">
-        <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-[#4b5563]">Pegar clave completa o subir archivo</summary>
-        <div className="space-y-3 border-t border-[#eef0f3] p-3">
-          <input
-            id={name}
-            name={name}
-            value={value}
-            onChange={(event) => setValue(event.target.value.toUpperCase())}
-            className="w-full rounded-md border border-[#d8dde3] bg-white px-3 py-2 text-sm text-[#111827] outline-none focus:border-[#111827]"
-            placeholder="ABCDEABCDEABCDEABCDE"
-            aria-invalid={!valid}
-          />
-          <div>
-            <label className="text-xs font-semibold text-[#4b5563]">
-              Subir desde archivo (CSV, TXT o XLSX)
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,.txt,.xlsx,.xls"
-                onChange={handleFileUpload}
-                className="mt-1 block w-full text-xs file:mr-3 file:rounded-md file:border file:border-[#cfd6df] file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-semibold hover:file:bg-[#f4f6f8]"
-              />
-            </label>
-            {fileError && <p className="mt-1 text-xs font-semibold text-[#b45309]">{fileError}</p>}
-          </div>
-
-          {/* Tercera via de carga, junto al pegado manual y al archivo: leer la
-              clave de una hoja TuLector rellenada con las respuestas correctas.
-              Corre entera en el cliente con el mismo motor OMR del escaner. */}
-          <AnswerKeyFromSheet
-            numQuestions={questionCount}
-            numOptions={optionCount}
-            openQuestions={openQuestions}
-            onAccept={(letters) => { setValue(letters); setFileError(null); }}
-          />
-        </div>
-      </details>
 
       <input type="hidden" name={`${name}_clean`} value={slots} />
       <label className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#4b5563]">
@@ -702,8 +1008,9 @@ export function AnswerKeyEditor({
       </label>
       <p className={valid || allowPartial ? "mt-2 text-xs text-[#4b5563]" : "mt-2 text-xs font-semibold text-[#b45309]"}>
         {allowPartial
-          ? `${filledCount}/${closedCount} respuestas cargadas — podrás completar el resto despues desde "Editar".`
-          : `${filledCount}/${closedCount} respuestas validas ${labels}.`}
+          ? `${filledRequiredCount}/${requiredCount} respuestas cargadas — podrás completar el resto despues desde "Editar".`
+          : `${filledRequiredCount}/${requiredCount} respuestas válidas ${labels}${Object.keys(optionOverrides).length > 0 ? " (+ overrides)" : ""}.`}
+        {pilotQuestions.length > 0 && ` (${pilotQuestions.length} piloto sin puntaje)`}
         {openQuestions.length > 0 && ` (${openQuestions.length} de desarrollo, sin clave)`}
         {multiSelectQuestions.length > 0 && ` (${multiSelectQuestions.length} de selección múltiple, sin clave)`}
       </p>

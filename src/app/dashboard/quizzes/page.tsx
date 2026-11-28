@@ -29,6 +29,9 @@ type QuizRow = {
   options_per_question: number | null;
   answer_key: string | null;
   open_questions?: string | null;
+  multi_select_questions?: string | null;
+  question_points?: string | null;
+  default_question_points?: number | string | null;
   created_at: string;
   sheet_mode?: string | null;
 };
@@ -54,7 +57,7 @@ export default async function QuizzesPage({
   const requested = parseTeacherScope(sp, { userId: user.id, isAdmin, plan: school.plan });
   const sharingOn = planHasFeature(school.plan, "quiz_sharing");
 
-  const [teachers, sharePair] = await Promise.all([
+  const [teachers, sharePair, { data: courses }] = await Promise.all([
     requested.canSwitch ? fetchTeacherOptions(supabase, school.id, user.id) : Promise.resolve([]),
     sharingOn
       ? Promise.all([
@@ -62,6 +65,7 @@ export default async function QuizzesPage({
           countPendingShares(supabase, school.id, user.id),
         ])
       : Promise.resolve([[], 0] as const),
+    supabase.from("courses").select("id,name,grade").is("archived_at", null).order("name"),
   ]);
 
   const scope = resolveScope(requested, teachers.length);
@@ -77,7 +81,7 @@ export default async function QuizzesPage({
     );
 
   const BASE_COLUMNS = "id,title,subject,grade,num_questions,options_per_question,answer_key,created_at,archived_at,created_by";
-  const OPTIONAL_COLUMNS = ["sheet_mode", "course_id", "open_questions"];
+  const OPTIONAL_COLUMNS = ["sheet_mode", "course_id", "open_questions", "multi_select_questions", "question_points", "default_question_points"];
 
   const loadQuizzes = async () => {
     const optional = [...OPTIONAL_COLUMNS];
@@ -91,10 +95,7 @@ export default async function QuizzesPage({
     return null;
   };
 
-  const [quizzesData, { data: courses }] = await Promise.all([
-    loadQuizzes(),
-    supabase.from("courses").select("id,name,grade").is("archived_at", null).order("name"),
-  ]);
+  const quizzesData = await loadQuizzes();
 
   const courseList = (courses ?? []) as CourseRow[];
   const quizzes = (quizzesData ?? []) as unknown as QuizRow[];

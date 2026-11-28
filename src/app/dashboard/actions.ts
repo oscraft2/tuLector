@@ -28,6 +28,7 @@ import {
   serializeMultiSelectQuestions,
   parseOpenQuestionRubrics,
   serializeOpenQuestionRubrics,
+  parseZeroPointQuestions,
 } from "@/lib/quiz_constraints";
 import { countryDefaults, resolveCountryProfile } from "@/lib/country_profiles";
 import { type StudentCsvRow, guessColumnMapping, rowsFromMapping } from "@/lib/student_import";
@@ -121,19 +122,31 @@ export async function createQuiz(_prevState: DashboardActionState, formData: For
     // el proposito de la clave/puntaje: fuera del calculo automatico (ver
     // computeQuizScore en src/lib/grading.ts).
     const unscoredQuestions = [...new Set([...openQuestions, ...multiSelectQuestions])].sort((a, b) => a - b);
+    const zeroPointQuestions = parseZeroPointQuestions(
+      scoring.question_points,
+      numQuestions,
+      scoring.default_question_points ?? 1,
+    );
+    const zeroPointSet = new Set(zeroPointQuestions);
     const rawAnswerKey = formData.get("answer_key_clean") ?? formData.get("answer_key");
-    // Con preguntas de desarrollo la clave SIEMPRE es posicional (slots): las
-    // abiertas quedan "-" fijo y no pueden colapsar el resto de la clave.
-    const answerKey = allowPartial || unscoredQuestions.length > 0
-      ? applyOpenSlots(normalizeAnswerKeySlots(rawAnswerKey, numOptions, numQuestions), unscoredQuestions)
+    const hasOverrides = Object.keys(optionOverrides).length > 0;
+    // Con preguntas de desarrollo, seleccion multiple, piloto (0 pts) u overrides
+    // de opciones la clave SIEMPRE es posicional (slots), sin colapsar indices.
+    const answerKey = allowPartial || unscoredQuestions.length > 0 || zeroPointQuestions.length > 0 || hasOverrides
+      ? applyOpenSlots(normalizeAnswerKeySlots(rawAnswerKey, numOptions, numQuestions, optionOverrides), unscoredQuestions)
       : normalizeAnswerKeyForOptions(rawAnswerKey, numOptions);
     const evalType = String(formData.get("evaluation_type") ?? "custom");
     const evalVariant = String(formData.get("evaluation_variant") ?? "") || null;
     const rawExigencia = formData.get("exigencia");
     const exigencia = rawExigencia ? Math.max(0, Math.min(1, Number(rawExigencia) || 0.60)) : null;
     if (!title) throw new Error("Ingresa un titulo para el ensayo.");
-    const filledSlots = answerKey.split("").filter((ch) => ch !== "-").length;
-    if (!allowPartial && filledSlots !== numQuestions - unscoredQuestions.length) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
+    const unscoredSet = new Set(unscoredQuestions);
+    let missingRequired = 0;
+    for (let q = 1; q <= numQuestions; q++) {
+      if (unscoredSet.has(q) || zeroPointSet.has(q)) continue;
+      if ((answerKey[q - 1] ?? "-") === "-") missingRequired++;
+    }
+    if (!allowPartial && missingRequired > 0) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
 
     // N. de columnas derivado del tamano de UNA pagina (sobre seguro validado
     // por test:omr, ver sheet_generator.allowedColumns), no del total del
@@ -350,23 +363,35 @@ export async function updateQuiz(_prevState: DashboardActionState, formData: For
       throw new Error("Una pregunta no puede ser de desarrollo y de seleccion multiple a la vez.");
     }
     const openQuestionRubrics = parseOpenQuestionRubrics(String(formData.get("open_question_rubrics") ?? ""));
+    const scoring = readQuizScoringFields(formData, numQuestions);
+    const scoringIssue = quizScoringIssue(scoring);
+    if (scoringIssue) throw new Error(scoringIssue);
     const unscoredQuestions = [...new Set([...openQuestions, ...multiSelectQuestions])].sort((a, b) => a - b);
+    const zeroPointQuestions = parseZeroPointQuestions(
+      scoring.question_points,
+      numQuestions,
+      scoring.default_question_points ?? 1,
+    );
+    const zeroPointSet = new Set(zeroPointQuestions);
     const rawAnswerKey = formData.get("answer_key_clean") ?? formData.get("answer_key");
-    const answerKey = allowPartial || unscoredQuestions.length > 0
-      ? applyOpenSlots(normalizeAnswerKeySlots(rawAnswerKey, numOptions, numQuestions), unscoredQuestions)
+    const hasOverrides = Object.keys(optionOverrides).length > 0;
+    const answerKey = allowPartial || unscoredQuestions.length > 0 || zeroPointQuestions.length > 0 || hasOverrides
+      ? applyOpenSlots(normalizeAnswerKeySlots(rawAnswerKey, numOptions, numQuestions, optionOverrides), unscoredQuestions)
       : normalizeAnswerKeyForOptions(rawAnswerKey, numOptions);
     if (!title) throw new Error("Ingresa un titulo para el ensayo.");
-    const filledSlots = answerKey.split("").filter((ch) => ch !== "-").length;
-    if (!allowPartial && filledSlots !== numQuestions - unscoredQuestions.length) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
+    const unscoredSet = new Set(unscoredQuestions);
+    let missingRequired = 0;
+    for (let q = 1; q <= numQuestions; q++) {
+      if (unscoredSet.has(q) || zeroPointSet.has(q)) continue;
+      if ((answerKey[q - 1] ?? "-") === "-") missingRequired++;
+    }
+    if (!allowPartial && missingRequired > 0) throw new Error("La clave debe coincidir con el numero de preguntas y las opciones del formato.");
 
     const numColumns = suggestColumns(Math.min(numQuestions, QUIZ_MAX_QUESTIONS));
     const evalType = String(formData.get("evaluation_type") ?? "custom");
     const evalVariant = String(formData.get("evaluation_variant") ?? "") || null;
     const rawExigencia = formData.get("exigencia");
     const exigencia = rawExigencia ? Math.max(0, Math.min(1, Number(rawExigencia) || 0.60)) : null;
-    const scoring = readQuizScoringFields(formData, numQuestions);
-    const scoringIssue = quizScoringIssue(scoring);
-    if (scoringIssue) throw new Error(scoringIssue);
     const grade = String(formData.get("grade") ?? "") || null;
     const courseId = grade ? await findOrCreateCourse(supabase, school.id, grade) : existing.course_id ?? null;
     // El form de edicion NO manda sheet_mode (el formato se elige en el
