@@ -44,6 +44,7 @@ export default async function AppMenuPage() {
         </div>
         <h1 className="mt-5 text-2xl font-black tracking-tight">Hola 👋</h1>
         <p className="mt-1 text-sm text-white/60">{user.email}</p>
+        <p className="mt-2 text-xs font-medium tracking-wide text-white/50">Versión web {APP_VERSION}</p>
       </header>
 
       <section className="px-5 py-6">

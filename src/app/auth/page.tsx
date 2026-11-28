@@ -15,6 +15,7 @@ import { BiometricGate } from "@/components/native/BiometricGate";
 import { BiometricToggle } from "@/components/native/BiometricToggle";
 import { getSiteUrl } from "@/lib/site_url";
 import { translateAuthError } from "@/lib/auth_error_messages";
+import { APP_VERSION } from "@/lib/version";
 
 const passwordEstimator = new ZxcvbnFactory({
   dictionary,
@@ -479,6 +480,7 @@ function AuthForm() {
           <div className="cap-anim-pop mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-white text-3xl font-black text-[#111827] shadow-lg">TL</div>
           <h1 className="cap-anim-up text-3xl font-black tracking-tight">TuLector</h1>
           <p className="cap-anim-up cap-delay-2 mt-2 max-w-xs text-sm text-white/60">Escanea hojas de respuesta al instante, con la misma cuenta que la web.</p>
+          <p className="mt-3 text-xs font-medium tracking-wide text-white/40">Versión web {APP_VERSION}</p>
         </div>
 
         <div className="cap-anim-sheet safe-pb relative rounded-t-[2rem] bg-white px-6 pt-7 pb-7 text-[#0b1220] shadow-[0_-10px_50px_rgba(0,0,0,0.3)]">
