@@ -278,8 +278,10 @@ export default function ScanPage() {
   return null;
  };
 
- // RUT esperado completo (cuerpo + digitos verificadores) segun el pais activo.
- const expectedRutLength = useMemo(() => idReadCfg.block.idDigits + idReadCfg.block.checkDigits, [idReadCfg]);
+ // La lectura informa si el ID esta completo. En paises sin DV, dvOk es
+ // false por diseno; en Chile el RUT incluye un guion y su largo varia.
+ const identityReady = (result: Pick<ReturnType<typeof readRut>, "complete" | "dvOk">) =>
+  result.complete && (idReadCfg.block.checkDigits === 0 || result.dvOk);
 
  // Entra al resultado de una hoja ya calificada (kind "success"/"warning") o a
  // un fallo de grading (kind "error"). Modo ráfaga ON -> HUD no bloqueante para
@@ -1026,7 +1028,7 @@ export default function ScanPage() {
    setDebugLog([...logs]);
    submitScan({ rut: rutR.rut, answers: bubbleResults, photo: photoThumb, warp: warpThumb, source, dvOk: rutR.dvOk, code: codeR, nameImg });
 
-   const isHappy = idRows[0]?.length === expectedRutLength && rutR.dvOk === true && warn === null;
+   const isHappy = identityReady(rutR) && warn === null;
    enterResult(isHappy ? "success" : "warning", warn, corners);
   } catch {
    enterResult("error", "Error al procesar. Intenta de nuevo.", corners);
@@ -1049,7 +1051,7 @@ export default function ScanPage() {
   setVoteProgress(0);
 
   const ctx = canvas.getContext("2d")!;
-  const sessions: { answers: string[]; rut: string; dvOk: boolean; scores: number[][]; features: (number[][] | undefined)[]; rutDiag: ReturnType<typeof readRut>["diag"] }[] = [];
+  const sessions: { answers: string[]; rut: string; dvOk: boolean; complete: boolean; scores: number[][]; features: (number[][] | undefined)[]; rutDiag: ReturnType<typeof readRut>["diag"] }[] = [];
   // Lectura de cada frame valido: respuestas + RUT (para diagnostico Y para la
   // salida temprana de abajo -- ver nota). Formato: "A,B,C...|<rut>".
   const frameReads: string[] = [];
@@ -1077,7 +1079,7 @@ export default function ScanPage() {
    if (!report.valid || report.diag?.timingRows !== marksRequired) { rejInvalid++; await sleep(40); continue; }
    const rutR = readRut(warped, config, idReadCfg);
    const reads = report.results.map((r) => r.answer);
-   sessions.push({ answers: reads, rut: rutR.rut, dvOk: rutR.dvOk, scores: report.results.map((r) => r.scores), features: report.results.map((r) => r.features), rutDiag: rutR.diag });
+   sessions.push({ answers: reads, rut: rutR.rut, dvOk: rutR.dvOk, complete: rutR.complete, scores: report.results.map((r) => r.scores), features: report.results.map((r) => r.features), rutDiag: rutR.diag });
    // Incluye el RUT en la clave: dos frames con las mismas respuestas pero RUT
    // distinto (digito ambiguo) YA NO cortan el loop -- antes desempataba al azar.
    frameReads.push(`${reads.join(",")}|${rutR.rut}`);
@@ -1155,7 +1157,7 @@ export default function ScanPage() {
   });
   submitScan({ rut: votedRut, answers: bubbleResults, photo: photoThumb, warp: warpThumb, source: "camera", dvOk: votedDvOk, code: codeR, nameImg: nameImgV });
 
-  const isHappy = votedRut.length === expectedRutLength && votedDvOk === true && warn === null;
+  const isHappy = identityReady(repRutSession) && warn === null;
   enterResult(isHappy ? "success" : "warning", warn, lastCorners);
  };
 

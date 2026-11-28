@@ -20,12 +20,11 @@ export function CreateQuizFab({ courses, isAdmin = false }: { courses: CourseOpt
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Crear ensayo nuevo"
-        className="fixed bottom-24 right-5 z-40 flex h-14 items-center gap-2 rounded-full bg-[#07305f] pl-4 pr-5 text-white shadow-lg active:scale-[0.95]"
+        className="fixed bottom-24 right-5 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-[#07305f] text-white shadow-lg active:scale-[0.95] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#07305f]"
       >
         <svg className="h-6 w-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 5v14M5 12h14" />
         </svg>
-        <span className="text-sm font-bold whitespace-nowrap">Nuevo ensayo</span>
       </button>
 
       {open ? (

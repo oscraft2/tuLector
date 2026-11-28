@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { startScanForQuiz } from "@/app/dashboard/actions";
 import { CreateQuizFab } from "@/components/native/CreateQuizFab";
+import { ScanQuizPicker } from "@/components/native/ScanQuizPicker";
 import { parseSheetMode } from "@/lib/sheet_mode";
 import { countPendingShares } from "@/lib/quiz_shares";
 
@@ -112,44 +113,7 @@ export default async function NativeScanPage() {
           </div>
         ) : null}
 
-        <div>
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7280]">
-            {activeQuiz ? "Otros ensayos" : "Tus ensayos"}
-          </p>
-          {otherQuizzes.length === 0 && !activeQuiz ? (
-            <div className="rounded-2xl border border-dashed border-[#dfe3e8] bg-white/50 p-5 text-center text-sm text-[#5b6472]">
-              Todavia no tienes ensayos. Crea el primero con el boton + de abajo.
-            </div>
-          ) : (
-            <div className="divide-y divide-[#e6e8eb] overflow-hidden rounded-2xl border border-[#e6e8eb] bg-white">
-              {/* Dos acciones por ensayo: escanear (el <form>) y ver su hoja
-                  (un <Link>). Van como HERMANOS en un contenedor flex: anidar
-                  un enlace dentro del boton del formulario es HTML invalido. */}
-              {otherQuizzes.map((quiz) => (
-                <div key={quiz.id} className="flex items-stretch">
-                  <form action={startScanForQuiz} className="min-w-0 flex-1">
-                    <input type="hidden" name="quiz_id" value={quiz.id} />
-                    <button className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-[#f4f6f8]">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-bold text-[#111827]">{quiz.title}</p>
-                        <p className="mt-0.5 text-xs text-[#5b6472]">{quiz.subject ?? quiz.grade ?? "Ensayo"} · {quiz.num_questions} preguntas</p>
-                      </div>
-                      <svg className="h-5 w-5 shrink-0 text-[#9aa3af]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
-                    </button>
-                  </form>
-                  <Link
-                    href={sheetHref(quiz)}
-                    aria-label={`Ver la hoja de respuestas de ${quiz.title}`}
-                    title="Ver / generar su hoja de respuestas"
-                    className="flex shrink-0 items-center border-l border-[#e6e8eb] px-4 text-[#07305f] active:bg-[#eef4ff]"
-                  >
-                    <SheetIcon />
-                  </Link>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <ScanQuizPicker quizzes={otherQuizzes} hasActive={!!activeQuiz} />
 
         {/* Correccion rapida: no necesita ensayo ni alumnos, y vive en el mismo
             origen que server.url, asi que se abre DENTRO del APK. */}
