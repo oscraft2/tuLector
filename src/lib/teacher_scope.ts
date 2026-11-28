@@ -144,6 +144,9 @@ export async function quizIdsInScope(
 
 export type TeacherOption = { userId: string; label: string; isSelf: boolean };
 
+const TEACHER_EMAIL_TTL_MS = 5 * 60 * 1000;
+const teacherEmailCache = new Map<string, { email: string; expiresAt: number }>();
+
 /**
  * Docentes del colegio para el selector. El correo vive en `auth.users`, que
  * solo se puede leer con service role — el mismo camino que ya usa la seccion
@@ -163,19 +166,37 @@ export async function fetchTeacherOptions(
   const rows = (members ?? []) as { user_id: string; role: string | null }[];
   if (rows.length === 0) return [];
 
+  const now = Date.now();
   const emailByUser = new Map<string, string>();
-  try {
-    const { createSupabaseAdminClient } = await import("@/lib/supabaseAdmin");
-    const admin = createSupabaseAdminClient();
-    await Promise.all(
-      rows.map(async (m) => {
-        try {
-          const { data } = await admin.auth.admin.getUserById(m.user_id);
-          if (data?.user?.email) emailByUser.set(m.user_id, data.user.email);
-        } catch { /* usuario borrado en auth: se muestra el id */ }
-      }),
-    );
-  } catch { /* sin service role configurado: se muestran los ids */ }
+  const missingIds: string[] = [];
+  for (const m of rows) {
+    if (m.user_id === selfUserId) continue;
+    const cached = teacherEmailCache.get(m.user_id);
+    if (cached && cached.expiresAt > now) {
+      emailByUser.set(m.user_id, cached.email);
+    } else {
+      missingIds.push(m.user_id);
+    }
+  }
+
+  if (missingIds.length > 0) {
+    try {
+      const { createSupabaseAdminClient } = await import("@/lib/supabaseAdmin");
+      const admin = createSupabaseAdminClient();
+      await Promise.all(
+        missingIds.map(async (uid) => {
+          try {
+            const { data } = await admin.auth.admin.getUserById(uid);
+            const email = data?.user?.email;
+            if (email) {
+              emailByUser.set(uid, email);
+              teacherEmailCache.set(uid, { email, expiresAt: now + TEACHER_EMAIL_TTL_MS });
+            }
+          } catch { /* usuario borrado en auth: se muestra el id */ }
+        }),
+      );
+    } catch { /* sin service role configurado: se muestran los ids */ }
+  }
 
   return rows.map((m) => ({
     userId: m.user_id,

@@ -9,6 +9,7 @@ import { deleteStudent, createStudent } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { StudentFilters } from "@/components/dashboard/StudentFilters";
 import { Pagination } from "@/components/dashboard/Pagination";
+import { StudentAvatar } from "@/components/dashboard/StudentAvatar";
 import {
   fetchStudentPage, parseStudentFilters, studentFiltersToQuery, hasActiveFilters, PAGE_SIZE,
 } from "@/lib/student_search";
@@ -61,7 +62,7 @@ export default async function StudentsPage({ searchParams }: PageProps) {
     <>
       <PageHeader
         title={t.students}
-        description="Busca, filtra y administra los alumnos del establecimiento. Los cursos y la importacion masiva se gestionan en Cursos."
+        description="Busca, filtra y administra los alumnos del establecimiento. Los cursos y la importación masiva se gestionan en Cursos."
       />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,340px)] lg:gap-6">
@@ -78,37 +79,40 @@ export default async function StudentsPage({ searchParams }: PageProps) {
           ) : (
             <>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <h2 className="text-lg font-semibold text-[#111827]">
+                <h2 className="text-lg font-semibold text-[#1c1917]">
                   {filtering ? "Resultados" : "Todos los alumnos"}
                 </h2>
                 <a
                   href={isAdmin ? exportHref : undefined}
                   download
                   aria-disabled={!isAdmin}
-                  className={`w-full rounded-md border border-[#cfd6df] px-4 py-2 text-center text-sm font-semibold sm:w-auto ${isAdmin ? "hover:bg-[#f4f6f8]" : "pointer-events-none opacity-50"}`}
+                  className={`w-full rounded-lg border border-[#d6d3cb] bg-white px-4 py-2 text-center text-sm font-semibold sm:w-auto ${isAdmin ? "hover:bg-[#faf9f6]" : "pointer-events-none opacity-50"}`}
                 >
                   Exportar CSV
                 </a>
               </div>
 
               <DataTable
-                columns={["RUT/ID", "Nombre", "Curso", "Ensayos", "Registro", "Accion"]}
+                columns={["RUT/ID", "Nombre", "Curso", "Ensayos", "Registro", "Acción"]}
                 rows={page.rows}
-                empty="Ningun alumno coincide con los filtros aplicados."
+                empty="Ningún alumno coincide con los filtros aplicados."
                 renderRow={(student) => (
-                  <tr key={student.id} className="border-b border-[#eef0f3] last:border-0">
-                    <td className="px-5 py-4 font-mono text-sm">{student.rut ?? student.student_id}</td>
-                    <td className="px-5 py-4 font-semibold">
-                      <Link href={`/dashboard/students/${student.id}`} className="text-[#07305f] hover:underline">{student.name}</Link>
+                  <tr key={student.id} className="border-b border-[#efede8] last:border-0">
+                    <td className="px-5 py-3.5 font-mono text-sm text-[#44403c]">{student.rut ?? student.student_id}</td>
+                    <td className="px-5 py-3.5 font-semibold">
+                      <Link href={`/dashboard/students/${student.id}`} className="inline-flex items-center gap-2.5 text-[#07305f] hover:underline">
+                        <StudentAvatar seed={student.id} name={student.name} size="sm" />
+                        <span>{student.name}</span>
+                      </Link>
                     </td>
-                    <td className="px-5 py-4 text-[#5b6472]">
-                      <span className="rounded bg-[#f4f6f8] px-2 py-0.5 text-xs font-semibold text-[#1e293b]">
+                    <td className="px-5 py-3.5 text-[#57534e]">
+                      <span className="rounded-md bg-[#f4f2ec] px-2.5 py-1 text-xs font-semibold text-[#44403c]">
                         {student.course ?? "Sin curso"}
                       </span>
                     </td>
-                    <td className="px-5 py-4 text-sm text-[#5b6472]">{page.degraded ? "—" : student.papers_count}</td>
-                    <td className="px-5 py-4 text-xs text-[#5b6472]">{new Date(student.created_at).toLocaleDateString("es-CL")}</td>
-                    <td className="px-5 py-4">
+                    <td className="tnum px-5 py-3.5 text-sm text-[#57534e]">{page.degraded ? "—" : student.papers_count}</td>
+                    <td className="tnum px-5 py-3.5 text-xs text-[#78716c]">{new Date(student.created_at).toLocaleDateString("es-CL")}</td>
+                    <td className="px-5 py-3.5">
                       {isAdmin ? (
                         <DeleteButton
                           action={deleteStudent}
@@ -120,17 +124,20 @@ export default async function StudentsPage({ searchParams }: PageProps) {
                   </tr>
                 )}
                 renderMobileRow={(student) => (
-                  <article key={student.id} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
+                  <article key={student.id} className="rounded-xl border border-[#e7e5df] bg-white p-4 shadow-xs">
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <Link href={`/dashboard/students/${student.id}`} className="block truncate text-base font-semibold text-[#07305f] hover:underline">{student.name}</Link>
-                        <p className="mt-1 font-mono text-xs text-[#5b6472]">{student.rut ?? student.student_id}</p>
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <StudentAvatar seed={student.id} name={student.name} size="sm" />
+                        <div className="min-w-0">
+                          <Link href={`/dashboard/students/${student.id}`} className="block truncate text-base font-semibold text-[#07305f] hover:underline">{student.name}</Link>
+                          <p className="mt-0.5 font-mono text-xs text-[#57534e]">{student.rut ?? student.student_id}</p>
+                        </div>
                       </div>
-                      <span className="rounded bg-[#f4f6f8] px-2 py-0.5 text-xs font-semibold text-[#1e293b]">
+                      <span className="shrink-0 rounded-md bg-[#f4f2ec] px-2 py-0.5 text-xs font-semibold text-[#44403c]">
                         {student.course ?? "Sin curso"}
                       </span>
                     </div>
-                    <div className="mt-3 flex items-center justify-between text-xs text-[#5b6472]">
+                    <div className="tnum mt-3 flex items-center justify-between text-xs text-[#57534e]">
                       <span>Registro: {new Date(student.created_at).toLocaleDateString("es-CL")}</span>
                       {!page.degraded && <span>{student.papers_count} ensayo{student.papers_count === 1 ? "" : "s"}</span>}
                     </div>
@@ -159,10 +166,10 @@ export default async function StudentsPage({ searchParams }: PageProps) {
         </div>
 
         <aside className="space-y-6">
-          <div className="rounded-md border border-[#e6e8eb] bg-white p-5 space-y-4">
-            <h2 className="text-lg font-semibold text-[#111827]">Agregar alumno</h2>
-            <p className="text-xs text-[#5b6472]">
-              Para cargar un curso completo usa la importacion masiva en{" "}
+          <div className="rounded-xl border border-[#e7e5df] bg-white p-5 space-y-4 shadow-xs">
+            <h2 className="text-lg font-semibold text-[#1c1917]">Agregar alumno</h2>
+            <p className="text-xs text-[#57534e]">
+              Para cargar un curso completo usa la importación masiva en{" "}
               <Link href="/dashboard/courses" className="font-semibold text-[#07305f] underline">Cursos</Link>.
             </p>
             <StudentForm action={createStudent} courses={courseList} defaultCourse={selectedCourse?.name} />

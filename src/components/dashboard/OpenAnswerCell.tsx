@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { confirmOpenAnswer } from "@/app/dashboard/actions";
+import { useAbiertasLote } from "@/components/dashboard/AbiertasLote";
+import { claveCelda } from "@/lib/open_bulk";
 
 type Props = {
   paperId: string;
@@ -15,6 +17,8 @@ type Props = {
   /** Transcripcion/sugerencia de la IA, solo como referencia -- nunca se usa
    *  como valor por defecto (el input siempre parte en 0). */
   aiHint?: string;
+  /** Puntaje que sugirio la IA, para avisar al guardar en lote algo distinto. */
+  aiPoints?: number | null;
 };
 
 /**
@@ -26,17 +30,34 @@ type Props = {
  * para poder mostrar el error inline en la celda en vez de tirar abajo toda
  * la pantalla si algo sale mal.
  */
-export function OpenAnswerCell({ paperId, question, quizId, maxPoints, initialConfirmed, aiHint }: Props) {
+export function OpenAnswerCell({ paperId, question, quizId, maxPoints, initialConfirmed, aiHint, aiPoints = null }: Props) {
   const [value, setValue] = useState(initialConfirmed ?? 0);
-  const [saved, setSaved] = useState(initialConfirmed != null);
+  const [savedHere, setSaved] = useState(initialConfirmed != null);
+  const [touched, setTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const disabled = !maxPoints || maxPoints <= 0;
+
+  const lote = useAbiertasLote();
+  const clave = claveCelda(paperId, question);
+  // Guardada aqui mismo, o por la barra de guardado en lote con este valor.
+  const saved = savedHere || lote?.guardadas.get(clave) === value;
+  const registrar = lote?.registrar;
+  const quitar = lote?.quitar;
+  useEffect(() => {
+    if (!registrar || disabled) return;
+    registrar({
+      paperId, question, value, maxPoints: maxPoints ?? 0, guardada: saved,
+      editada: touched && !saved, revisada: initialConfirmed != null, iaSugiere: aiPoints,
+    });
+  }, [registrar, paperId, question, value, maxPoints, saved, touched, initialConfirmed, aiPoints, disabled]);
+  useEffect(() => () => quitar?.(clave), [quitar, clave]);
 
   const save = () => {
     setError(null);
     const clamped = Math.max(0, Math.min(value, maxPoints ?? value));
     setValue(clamped);
+    lote?.olvidar(clave);
     const fd = new FormData();
     fd.set("paper_id", paperId);
     fd.set("question", String(question));
@@ -47,6 +68,7 @@ export function OpenAnswerCell({ paperId, question, quizId, maxPoints, initialCo
       try {
         await confirmOpenAnswer(fd);
         setSaved(true);
+        setTouched(false);
       } catch (e) {
         setError(e instanceof Error ? e.message : "No se pudo guardar.");
       }
@@ -66,7 +88,7 @@ export function OpenAnswerCell({ paperId, question, quizId, maxPoints, initialCo
           max={maxPoints ?? undefined}
           value={value}
           disabled={disabled}
-          onChange={(e) => { setValue(Number(e.target.value)); setSaved(false); }}
+          onChange={(e) => { setValue(Number(e.target.value)); setSaved(false); setTouched(true); lote?.olvidar(clave); }}
           className="w-14 rounded border border-[#cfd6df] px-1.5 py-1 text-sm disabled:cursor-not-allowed disabled:bg-[#f8fafc]"
         />
         <button

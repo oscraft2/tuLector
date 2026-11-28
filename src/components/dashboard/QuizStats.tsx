@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { computeItemAnalysis, type ItemStat } from "@/lib/item_analysis";
+import { computeItemAnalysis } from "@/lib/item_analysis";
 import { calculateGrade } from "@/lib/latam";
+import { ExpandableQuestionList } from "@/components/dashboard/ExpandableQuestionList";
 
 const LVL = {
   good: { text: "text-[#1a8f52]", bar: "bg-[#1a8f52]" },
@@ -21,8 +22,24 @@ type QuizLite = {
   answer_key: string | null;
 };
 
-export function QuizStats({ quiz, papers, metadata, variant = "default" }: { quiz: QuizLite; papers: PaperLite[]; metadata: MetaLite[]; variant?: "default" | "dashboard" }) {
-  const analysis = computeItemAnalysis(papers, quiz.answer_key, quiz.num_questions ?? 0, quiz.options_per_question ?? 5, metadata);
+export function QuizStats({
+  quiz,
+  papers,
+  metadata,
+  variant = "default",
+}: {
+  quiz: QuizLite;
+  papers: PaperLite[];
+  metadata: MetaLite[];
+  variant?: "default" | "dashboard";
+}) {
+  const analysis = computeItemAnalysis(
+    papers,
+    quiz.answer_key,
+    quiz.num_questions ?? 0,
+    quiz.options_per_question ?? 5,
+    metadata,
+  );
 
   const notaBuckets = [0, 0, 0, 0, 0, 0];
   let notaSum = 0;
@@ -42,9 +59,11 @@ export function QuizStats({ quiz, papers, metadata, variant = "default" }: { qui
 
   if (analysis.totalPapers === 0) {
     return (
-      <div className="rounded-md border border-dashed border-[#cfd6df] bg-white p-8 text-center">
-        <p className="text-sm font-semibold text-[#111827]">Sin lecturas para analizar</p>
-        <p className="mx-auto mt-2 max-w-md text-sm text-[#5b6472]">Cuando escanees hojas de este ensayo, aquí verás la distribución de notas, el análisis por pregunta y el dominio por eje.</p>
+      <div className="rounded-xl border border-[#e7e5df] bg-white p-8 text-center shadow-xs">
+        <p className="text-sm font-semibold text-[#1c1917]">Sin lecturas para analizar</p>
+        <p className="mx-auto mt-2 max-w-md text-sm text-[#57534e]">
+          Cuando escanees hojas de este ensayo, aquí verás la distribución de notas, el análisis por pregunta y el dominio por eje.
+        </p>
       </div>
     );
   }
@@ -54,58 +73,88 @@ export function QuizStats({ quiz, papers, metadata, variant = "default" }: { qui
   const meanNota = notaTotal ? notaSum / notaTotal : 0;
   const maxBucket = Math.max(1, ...notaBuckets);
   const avgPct = analysis.items.length
-    ? Math.round(analysis.items.filter((i) => i.correct).reduce((s, i) => s + i.pctCorrect, 0) / Math.max(1, analysis.items.filter((i) => i.correct).length))
+    ? Math.round(
+        analysis.items.filter((i) => i.correct).reduce((s, i) => s + i.pctCorrect, 0) /
+          Math.max(1, analysis.items.filter((i) => i.correct).length),
+      )
     : 0;
-  const reteach = analysis.items.filter((i) => i.correct).sort((a, b) => a.pctCorrect - b.pctCorrect).slice(0, 4);
+  const reteach = analysis.items
+    .filter((i) => i.correct)
+    .sort((a, b) => a.pctCorrect - b.pctCorrect)
+    .slice(0, 4);
   const worstAxis = analysis.axes.length ? analysis.axes[0] : null;
 
   if (variant === "dashboard") {
     return (
       <>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
-          <div className="rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
+          <div className="rounded-xl border border-[#e7e5df] bg-white p-5 shadow-xs">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold text-[#111827]">Análisis por pregunta</h2>
-                <p className="mt-1 text-xs text-[#5b6472]">Qué dominó y qué falló el curso — con distribución de alternativas.</p>
+                <h2 className="text-base font-semibold text-[#1c1917]">Análisis por pregunta</h2>
+                <p className="mt-1 text-xs text-[#57534e]">Qué dominó y qué falló el curso — con distribución de alternativas.</p>
               </div>
-              {quiz.id ? <Link href={`/dashboard/quizzes/${quiz.id}`} className="shrink-0 text-sm font-semibold text-[#07305f] hover:underline">Ver ensayo →</Link> : null}
+              {quiz.id ? (
+                <Link href={`/dashboard/quizzes/${quiz.id}`} className="shrink-0 text-sm font-semibold text-[#07305f] hover:underline">
+                  Ver ensayo →
+                </Link>
+              ) : null}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              {quiz.title ? <span className="rounded-full bg-[#eef4ff] px-2.5 py-1 text-[11px] font-bold text-[#07305f]">{quiz.title}</span> : null}
-              {quiz.grade ? <span className="rounded-full bg-[#eef0f3] px-2.5 py-1 text-[11px] font-bold text-[#4b5563]">{quiz.grade}</span> : null}
-              <span className="rounded-full bg-[#eef0f3] px-2.5 py-1 text-[11px] font-bold text-[#4b5563]">{analysis.totalPapers} alumnos</span>
-              <span className="rounded-full bg-[#eef0f3] px-2.5 py-1 text-[11px] font-bold text-[#4b5563]">{quiz.num_questions} preguntas</span>
+              {quiz.title ? (
+                <span className="rounded-full bg-[#eef4ff] px-2.5 py-1 text-[11px] font-bold text-[#07305f]">{quiz.title}</span>
+              ) : null}
+              {quiz.grade ? (
+                <span className="rounded-full bg-[#efede8] px-2.5 py-1 text-[11px] font-bold text-[#44403c]">{quiz.grade}</span>
+              ) : null}
+              <span className="tnum rounded-full bg-[#efede8] px-2.5 py-1 text-[11px] font-bold text-[#44403c]">
+                {analysis.totalPapers} alumnos
+              </span>
+              <span className="tnum rounded-full bg-[#efede8] px-2.5 py-1 text-[11px] font-bold text-[#44403c]">
+                {quiz.num_questions} preguntas
+              </span>
             </div>
-            <div className="mt-3 max-h-[520px] overflow-y-auto pr-1">
-              {analysis.items.map((it) => (<ItemRow key={it.q} it={it} />))}
-            </div>
-            <div className="mt-4 flex flex-wrap gap-3.5 text-[11.5px] text-[#6b7280]">
-              <span className="inline-flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-[3px] bg-[#1a8f52]" /> Alternativa correcta</span>
-              <span className="inline-flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-[3px] bg-[#e6e8eb]" /> Distractores</span>
-              <span className="inline-flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-[3px] bg-[#c77700]" /> 50–79%</span>
-              <span className="inline-flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-[3px] bg-[#c2410c]" /> &lt;50% revisar</span>
+
+            <ExpandableQuestionList items={analysis.items} />
+
+            <div className="mt-4 flex flex-wrap gap-3.5 text-[11.5px] text-[#78716c]">
+              <span className="inline-flex items-center gap-1.5">
+                <i className="inline-block h-2.5 w-2.5 rounded-[3px] bg-[#1a8f52]" /> Alternativa correcta
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <i className="inline-block h-2.5 w-2.5 rounded-[3px] bg-[#e7e5df]" /> Distractores
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <i className="inline-block h-2.5 w-2.5 rounded-[3px] bg-[#c77700]" /> 50–79%
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <i className="inline-block h-2.5 w-2.5 rounded-[3px] bg-[#c2410c]" /> &lt;50% revisar
+              </span>
             </div>
           </div>
 
-          <div className="rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-[#111827]">Preguntas para reforzar</h2>
-            <p className="mt-1 text-xs text-[#5b6472]">Las {reteach.length} preguntas con menor logro del curso.</p>
+          <div className="rounded-xl border border-[#e7e5df] bg-white p-5 shadow-xs">
+            <h2 className="text-base font-semibold text-[#1c1917]">Preguntas para reforzar</h2>
+            <p className="mt-1 text-xs text-[#57534e]">Las {reteach.length} preguntas con menor logro del curso.</p>
             <div className="mt-4 flex flex-col gap-2.5">
               {reteach.map((it) => (
-                <div key={it.q} className="flex items-center gap-3 rounded-lg border border-[#e6e8eb] bg-[#fbfcfd] px-3 py-2.5">
-                  <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[#fbeae1] text-xs font-extrabold text-[#c2410c]">{it.q}</div>
+                <div key={it.q} className="flex items-center gap-3 rounded-lg border border-[#efede8] bg-[#faf9f6] px-3 py-2.5">
+                  <div className="tnum grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[#fbeae1] text-xs font-extrabold text-[#c2410c]">
+                    {it.q}
+                  </div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-semibold text-[#111827]">{it.skill || it.axis || `Pregunta ${it.q}`}</div>
-                    <div className="truncate text-[11.5px] text-[#6b7280]">
+                    <div className="truncate text-[13px] font-semibold text-[#1c1917]">{it.skill || it.axis || `Pregunta ${it.q}`}</div>
+                    <div className="truncate text-[11.5px] text-[#78716c]">
                       {it.axis ? `${it.axis} · ` : ""}
                       {it.topDistractor ? `${it.topDistractorPct}% marcó ${it.topDistractor}` : "sin distractor dominante"}
                     </div>
                   </div>
-                  <div className={`text-[15px] font-extrabold ${LVL[it.level].text}`}>{it.pctCorrect}%</div>
+                  <div className={`tnum text-[15px] font-extrabold ${LVL[it.level].text}`}>{it.pctCorrect}%</div>
                 </div>
               ))}
-              {reteach.length === 0 ? <p className="text-xs italic text-[#9aa3af]">Carga la clave del ensayo para ver las preguntas más falladas.</p> : null}
+              {reteach.length === 0 ? (
+                <p className="text-xs italic text-[#78716c]">Carga la clave del ensayo para ver las preguntas más falladas.</p>
+              ) : null}
             </div>
             {worstAxis && analysis.hasMetadata ? (
               <div className="mt-4 rounded-lg bg-[#eef4ff] px-3.5 py-3 text-[12.5px] font-semibold text-[#07305f]">
@@ -116,45 +165,65 @@ export function QuizStats({ quiz, papers, metadata, variant = "default" }: { qui
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-          <div className="rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-[#111827]">Distribución de notas</h2>
-            <p className="mt-1 text-xs text-[#5b6472]">{quiz.title}{quiz.grade ? ` · ${quiz.grade}` : ""}.</p>
+          <div className="rounded-xl border border-[#e7e5df] bg-white p-5 shadow-xs">
+            <h2 className="text-base font-semibold text-[#1c1917]">Distribución de notas</h2>
+            <p className="mt-1 text-xs text-[#57534e]">
+              {quiz.title}
+              {quiz.grade ? ` · ${quiz.grade}` : ""}.
+            </p>
             <div className="mt-4 grid grid-cols-6 items-end gap-2" style={{ height: "150px" }}>
               {notaBuckets.map((n, i) => {
                 const hot = i >= 3;
                 return (
                   <div key={i} className="flex h-full flex-col items-center justify-end gap-1.5">
-                    <span className="text-[11px] font-bold text-[#4b5563]">{n}</span>
-                    <div className={`w-full rounded-t-md ${hot ? "bg-[#1a8f52]" : "bg-[#07305f]"}`} style={{ height: `${Math.max(4, Math.round((n / maxBucket) * 100))}%`, opacity: n === 0 ? 0.25 : 1 }} />
-                    <span className="text-[10.5px] text-[#6b7280]">{NOTA_LABELS[i]}</span>
+                    <span className="tnum text-[11px] font-bold text-[#44403c]">{n}</span>
+                    <div
+                      className={`w-full rounded-t-md ${hot ? "bg-[#1a8f52]" : "bg-[#07305f]"}`}
+                      style={{ height: `${Math.max(4, Math.round((n / maxBucket) * 100))}%`, opacity: n === 0 ? 0.25 : 1 }}
+                    />
+                    <span className="tnum text-[10.5px] text-[#78716c]">{NOTA_LABELS[i]}</span>
                   </div>
                 );
               })}
             </div>
-            <div className="mt-3 flex flex-wrap justify-between gap-2 border-t border-dashed border-[#e6e8eb] pt-2.5 text-xs text-[#4b5563]">
-              <span>Reprobados: <b className="text-[#c2410c]">{notaTotal - approved}</b></span>
-              <span>Nota media: <b className="text-[#07305f]">{meanNota.toFixed(1)}</b></span>
-              <span>Aprobación: <b className="text-[#1a8f52]">{approvalPct}%</b></span>
+            <div className="tnum mt-3 flex flex-wrap justify-between gap-2 border-t border-dashed border-[#e7e5df] pt-2.5 text-xs text-[#44403c]">
+              <span>
+                Reprobados: <b className="text-[#c2410c]">{notaTotal - approved}</b>
+              </span>
+              <span>
+                Nota media: <b className="text-[#07305f]">{meanNota.toFixed(1)}</b>
+              </span>
+              <span>
+                Aprobación: <b className="text-[#1a8f52]">{approvalPct}%</b>
+              </span>
             </div>
           </div>
 
-          <div className="rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-[#111827]">Dominio por eje</h2>
-            <p className="mt-1 text-xs text-[#5b6472]">% de logro por eje curricular (metadatos por pregunta).</p>
+          <div className="rounded-xl border border-[#e7e5df] bg-white p-5 shadow-xs">
+            <h2 className="text-base font-semibold text-[#1c1917]">Dominio por eje</h2>
+            <p className="mt-1 text-xs text-[#57534e]">% de logro por eje curricular (metadatos por pregunta).</p>
             {analysis.hasMetadata && analysis.axes.length > 0 ? (
               <div className="mt-4 flex flex-col gap-3">
                 {analysis.axes.map((ax) => (
                   <div key={ax.axis} className="grid grid-cols-[minmax(90px,140px)_minmax(0,1fr)_42px] items-center gap-3">
-                    <div className="truncate text-[12.5px] font-semibold text-[#111827]" title={ax.axis}>{ax.axis}</div>
-                    <div className="h-4 overflow-hidden rounded-full bg-[#eef0f3]"><div className={`h-full rounded-full ${LVL[ax.level].bar}`} style={{ width: `${ax.pct}%` }} /></div>
-                    <div className={`text-right text-[13px] font-bold ${LVL[ax.level].text}`}>{ax.pct}%</div>
+                    <div className="truncate text-[12.5px] font-semibold text-[#1c1917]" title={ax.axis}>
+                      {ax.axis}
+                    </div>
+                    <div className="h-4 overflow-hidden rounded-full bg-[#efede8]">
+                      <div className={`h-full rounded-full ${LVL[ax.level].bar}`} style={{ width: `${ax.pct}%` }} />
+                    </div>
+                    <div className={`tnum text-right text-[13px] font-bold ${LVL[ax.level].text}`}>{ax.pct}%</div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="mt-4 rounded-lg bg-[#f8fafc] px-4 py-6 text-center text-xs text-[#6b7280]">
+              <div className="mt-4 rounded-lg bg-[#faf9f6] px-4 py-6 text-center text-xs text-[#78716c]">
                 Este ensayo no tiene ejes/habilidades cargados por pregunta.
-                {quiz.id ? <Link href={`/dashboard/quizzes/${quiz.id}`} className="ml-1 font-semibold text-[#07305f] underline">Configurar metadatos</Link> : null}
+                {quiz.id ? (
+                  <Link href={`/dashboard/quizzes/${quiz.id}`} className="ml-1 font-semibold text-[#07305f] underline">
+                    Configurar metadatos
+                  </Link>
+                ) : null}
               </div>
             )}
           </div>
@@ -173,65 +242,84 @@ export function QuizStats({ quiz, papers, metadata, variant = "default" }: { qui
       </section>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-        <div className="rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
-          <h3 className="text-base font-semibold text-[#111827]">Distribución de notas</h3>
-          <p className="mt-1 text-xs text-[#5b6472]">Cuántos alumnos en cada rango.</p>
+        <div className="rounded-xl border border-[#e7e5df] bg-white p-5 shadow-xs">
+          <h3 className="text-base font-semibold text-[#1c1917]">Distribución de notas</h3>
+          <p className="mt-1 text-xs text-[#57534e]">Cuántos alumnos en cada rango.</p>
           <div className="mt-4 grid grid-cols-6 items-end gap-2" style={{ height: "150px" }}>
             {notaBuckets.map((n, i) => (
               <div key={i} className="flex h-full flex-col items-center justify-end gap-1.5">
-                <span className="text-[11px] font-bold text-[#4b5563]">{n}</span>
-                <div className={`w-full rounded-t-md ${i >= 3 ? "bg-[#1a8f52]" : "bg-[#07305f]"}`} style={{ height: `${Math.max(4, Math.round((n / maxBucket) * 100))}%`, opacity: n === 0 ? 0.25 : 1 }} />
-                <span className="text-[10.5px] text-[#6b7280]">{NOTA_LABELS[i]}</span>
+                <span className="tnum text-[11px] font-bold text-[#44403c]">{n}</span>
+                <div
+                  className={`w-full rounded-t-md ${i >= 3 ? "bg-[#1a8f52]" : "bg-[#07305f]"}`}
+                  style={{ height: `${Math.max(4, Math.round((n / maxBucket) * 100))}%`, opacity: n === 0 ? 0.25 : 1 }}
+                />
+                <span className="tnum text-[10.5px] text-[#78716c]">{NOTA_LABELS[i]}</span>
               </div>
             ))}
           </div>
-          <div className="mt-3 flex flex-wrap justify-between gap-2 border-t border-dashed border-[#e6e8eb] pt-2.5 text-xs text-[#4b5563]">
-            <span>Reprobados: <b className="text-[#c2410c]">{notaTotal - approved}</b></span>
-            <span>Aprobados: <b className="text-[#1a8f52]">{approved}</b></span>
+          <div className="tnum mt-3 flex flex-wrap justify-between gap-2 border-t border-dashed border-[#e7e5df] pt-2.5 text-xs text-[#44403c]">
+            <span>
+              Reprobados: <b className="text-[#c2410c]">{notaTotal - approved}</b>
+            </span>
+            <span>
+              Aprobados: <b className="text-[#1a8f52]">{approved}</b>
+            </span>
           </div>
         </div>
 
-        <div className="rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
-          <h3 className="text-base font-semibold text-[#111827]">Dominio por eje</h3>
-          <p className="mt-1 text-xs text-[#5b6472]">% de logro por eje curricular.</p>
+        <div className="rounded-xl border border-[#e7e5df] bg-white p-5 shadow-xs">
+          <h3 className="text-base font-semibold text-[#1c1917]">Dominio por eje</h3>
+          <p className="mt-1 text-xs text-[#57534e]">% de logro por eje curricular.</p>
           {analysis.hasMetadata && analysis.axes.length > 0 ? (
             <div className="mt-4 flex flex-col gap-3">
               {analysis.axes.map((ax) => (
                 <div key={ax.axis} className="grid grid-cols-[minmax(90px,150px)_minmax(0,1fr)_42px] items-center gap-3">
-                  <div className="truncate text-[12.5px] font-semibold text-[#111827]" title={ax.axis}>{ax.axis}</div>
-                  <div className="h-4 overflow-hidden rounded-full bg-[#eef0f3]"><div className={`h-full rounded-full ${LVL[ax.level].bar}`} style={{ width: `${ax.pct}%` }} /></div>
-                  <div className={`text-right text-[13px] font-bold ${LVL[ax.level].text}`}>{ax.pct}%</div>
+                  <div className="truncate text-[12.5px] font-semibold text-[#1c1917]" title={ax.axis}>
+                    {ax.axis}
+                  </div>
+                  <div className="h-4 overflow-hidden rounded-full bg-[#efede8]">
+                    <div className={`h-full rounded-full ${LVL[ax.level].bar}`} style={{ width: `${ax.pct}%` }} />
+                  </div>
+                  <div className={`tnum text-right text-[13px] font-bold ${LVL[ax.level].text}`}>{ax.pct}%</div>
                 </div>
               ))}
-              {worstAxis ? <div className="mt-1 rounded-lg bg-[#eef4ff] px-3.5 py-2.5 text-[12.5px] font-semibold text-[#07305f]">Eje más débil: <b>{worstAxis.axis}</b> ({worstAxis.pct}%).</div> : null}
+              {worstAxis ? (
+                <div className="mt-1 rounded-lg bg-[#eef4ff] px-3.5 py-2.5 text-[12.5px] font-semibold text-[#07305f]">
+                  Eje más débil: <b>{worstAxis.axis}</b> ({worstAxis.pct}%).
+                </div>
+              ) : null}
             </div>
           ) : (
-            <p className="mt-4 rounded-lg bg-[#f8fafc] px-4 py-6 text-center text-xs text-[#6b7280]">Este ensayo no tiene ejes/habilidades cargados por pregunta.</p>
+            <p className="mt-4 rounded-lg bg-[#faf9f6] px-4 py-6 text-center text-xs text-[#78716c]">
+              Este ensayo no tiene ejes/habilidades cargados por pregunta.
+            </p>
           )}
         </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
-        <div className="rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
-          <h3 className="text-base font-semibold text-[#111827]">Análisis por pregunta</h3>
-          <p className="mt-1 text-xs text-[#5b6472]">% de acierto y distribución de alternativas (la correcta en verde).</p>
-          <div className="mt-3 max-h-[480px] overflow-y-auto pr-1">
-            {analysis.items.map((it) => (<ItemRow key={it.q} it={it} />))}
-          </div>
+        <div className="rounded-xl border border-[#e7e5df] bg-white p-5 shadow-xs">
+          <h3 className="text-base font-semibold text-[#1c1917]">Análisis por pregunta</h3>
+          <p className="mt-1 text-xs text-[#57534e]">% de acierto y distribución de alternativas (la correcta en verde).</p>
+          <ExpandableQuestionList items={analysis.items} />
         </div>
 
-        <div className="rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm">
-          <h3 className="text-base font-semibold text-[#111827]">Preguntas para reforzar</h3>
-          <p className="mt-1 text-xs text-[#5b6472]">Las {reteach.length} de menor logro.</p>
+        <div className="rounded-xl border border-[#e7e5df] bg-white p-5 shadow-xs">
+          <h3 className="text-base font-semibold text-[#1c1917]">Preguntas para reforzar</h3>
+          <p className="mt-1 text-xs text-[#57534e]">Las {reteach.length} de menor logro.</p>
           <div className="mt-4 flex flex-col gap-2.5">
             {reteach.map((it) => (
-              <div key={it.q} className="flex items-center gap-3 rounded-lg border border-[#e6e8eb] bg-[#fbfcfd] px-3 py-2.5">
-                <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[#fbeae1] text-xs font-extrabold text-[#c2410c]">{it.q}</div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-semibold text-[#111827]">{it.skill || it.axis || `Pregunta ${it.q}`}</div>
-                  <div className="truncate text-[11.5px] text-[#6b7280]">{it.topDistractor ? `${it.topDistractorPct}% marcó ${it.topDistractor}` : "sin distractor dominante"}</div>
+              <div key={it.q} className="flex items-center gap-3 rounded-lg border border-[#efede8] bg-[#faf9f6] px-3 py-2.5">
+                <div className="tnum grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[#fbeae1] text-xs font-extrabold text-[#c2410c]">
+                  {it.q}
                 </div>
-                <div className={`text-[15px] font-extrabold ${LVL[it.level].text}`}>{it.pctCorrect}%</div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-semibold text-[#1c1917]">{it.skill || it.axis || `Pregunta ${it.q}`}</div>
+                  <div className="truncate text-[11.5px] text-[#78716c]">
+                    {it.topDistractor ? `${it.topDistractorPct}% marcó ${it.topDistractor}` : "sin distractor dominante"}
+                  </div>
+                </div>
+                <div className={`tnum text-[15px] font-extrabold ${LVL[it.level].text}`}>{it.pctCorrect}%</div>
               </div>
             ))}
           </div>
@@ -242,51 +330,11 @@ export function QuizStats({ quiz, papers, metadata, variant = "default" }: { qui
 }
 
 function MiniStat({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" }) {
-  const color = tone === "good" ? "text-[#1a8f52]" : tone === "bad" ? "text-[#c2410c]" : "text-[#111827]";
+  const color = tone === "good" ? "text-[#1a8f52]" : tone === "bad" ? "text-[#c2410c]" : "text-[#1c1917]";
   return (
-    <div className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
-      <p className="text-xs font-semibold text-[#6b7280]">{label}</p>
-      <p className={`mt-1.5 text-2xl font-bold tracking-tight ${color}`}>{value}</p>
-    </div>
-  );
-}
-
-function ItemRow({ it }: { it: ItemStat }) {
-  const opts = Object.keys(it.counts).filter((k) => k !== "-").sort();
-  const mx = Math.max(1, ...Object.values(it.counts));
-  const lvl = LVL[it.level];
-  const discriminationTitle = it.discrimination === null
-    ? "Discriminación: sin datos suficientes (se necesitan 6+ lecturas)"
-    : `Discriminación: ${it.discrimination.toFixed(2)} (tercio superior vs inferior)`;
-  return (
-    <div className="grid grid-cols-[26px_minmax(0,1fr)_88px] items-center gap-3 border-b border-[#eef0f3] py-2.5 last:border-0">
-      <div className="text-xs font-bold text-[#6b7280]">P{it.q}</div>
-      <div className="min-w-0">
-        <div className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-[#111827]">
-          {it.axis ? (<span className="truncate">{it.axis}{it.skill ? <span className="font-normal text-[#6b7280]"> · {it.skill}</span> : null}</span>) : `Pregunta ${it.q}`}
-          {it.possibleKeyError && (
-            <span
-              className="shrink-0 rounded-full bg-[#fbeae1] px-1.5 py-0.5 text-[10px] font-bold text-[#c2410c]"
-              title="Un distractor supera a la respuesta correcta, o el item discrimina al reves -- revisa si la clave de esta pregunta esta bien cargada."
-            >
-              ⚠ revisar clave
-            </span>
-          )}
-        </div>
-        <div className="mt-1.5 flex h-5 items-end gap-[3px]">
-          {opts.map((o) => {
-            const h = Math.round(((it.counts[o] ?? 0) / mx) * 100);
-            return <div key={o} className={`flex-1 rounded-t-[3px] ${o === it.correct ? "bg-[#1a8f52]" : "bg-[#e6e8eb]"}`} style={{ height: `${Math.max(6, h)}%` }} title={`${o}: ${it.counts[o] ?? 0}`} />;
-          })}
-        </div>
-      </div>
-      <div className="text-right" title={discriminationTitle}>
-        <span className={`text-[15px] font-bold ${lvl.text}`}>{it.pctCorrect}%</span>
-        <div className="mt-1 h-2 overflow-hidden rounded-full bg-[#eef0f3]"><div className={`h-full rounded-full ${lvl.bar}`} style={{ width: `${it.pctCorrect}%` }} /></div>
-        {it.discrimination !== null && (
-          <div className={`mt-0.5 text-[10px] font-semibold ${it.discrimination < 0.1 ? "text-[#c2410c]" : "text-[#9aa3af]"}`}>disc. {it.discrimination.toFixed(2)}</div>
-        )}
-      </div>
+    <div className="rounded-xl border border-[#e7e5df] bg-white p-4 shadow-xs">
+      <p className="text-xs font-semibold text-[#78716c]">{label}</p>
+      <p className={`tnum mt-1.5 text-2xl font-bold tracking-tight ${color}`}>{value}</p>
     </div>
   );
 }

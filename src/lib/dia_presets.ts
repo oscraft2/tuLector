@@ -23,7 +23,7 @@
  * 3 niveles.
  */
 
-import type { OpenQuestionSubtype } from "@/lib/quiz_constraints";
+import type { OpenQuestionRubric, OpenQuestionSubtype } from "@/lib/quiz_constraints";
 
 export interface DiaPreset {
   /** Usado como evaluation_variant en BD y como value del <select>. */
@@ -463,4 +463,44 @@ export const DIA_CUSTOM_ID = "dia_custom";
 
 export function findDiaPreset(id: string): DiaPreset | undefined {
   return DIA_PRESETS.find((p) => p.id === id);
+}
+
+/**
+ * Pautas por pregunta abierta al aplicar un preset DIA en el formulario.
+ *
+ * Regla: lo que el profesor escribió a mano nunca se pisa, pero lo que SOLO
+ * puso el preset anterior sí se reemplaza por lo del preset nuevo. Antes se
+ * trataba toda pauta previa como "tipeada por el profesor": al elegir "Generar
+ * prueba DIA" el formulario carga primero DIA_PRESETS[0] (7° Lectura, con pauta
+ * en la P6) y, al pasar a 7° Matemática (Cierre), la P6 se quedaba con la pauta
+ * de Lectura y con max_points 2 en vez de 1 (completación). Afectaba a cualquier
+ * par de instrumentos con el mismo número de pregunta abierta.
+ *
+ * "Intacta" = idéntica a lo que dejó el preset anterior para esa pregunta (o a
+ * los valores vacíos por defecto si ese preset no traía pauta). Sin preset
+ * anterior conocido solo cuentan como intactas las vacías (comportamiento
+ * histórico al editar un ensayo guardado).
+ */
+export function mergePresetRubrics(
+  prev: Record<number, OpenQuestionRubric>,
+  openQuestions: number[],
+  preset: DiaPreset,
+  previousPreset?: DiaPreset,
+): Record<number, OpenQuestionRubric> {
+  const next: Record<number, OpenQuestionRubric> = {};
+  for (const q of openQuestions) {
+    const official = preset.openQuestionRubrics?.[q];
+    const before = prev[q];
+    const previousOfficial = previousPreset?.openQuestionRubrics?.[q];
+    const untouched =
+      !before ||
+      (before.rubric === (previousOfficial?.rubric ?? "") &&
+        before.max_points === (previousOfficial?.max_points ?? 2));
+    next[q] = {
+      rubric: untouched ? (official?.rubric ?? "") : (before.rubric || official?.rubric || ""),
+      max_points: untouched ? (official?.max_points ?? 2) : (before.max_points ?? official?.max_points ?? 2),
+      subtipo: preset.openQuestionSubtypes?.[q] ?? "simple",
+    };
+  }
+  return next;
 }

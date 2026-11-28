@@ -2,13 +2,11 @@ import { getDashboardContext } from "@/lib/supabase_server";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { DataTable } from "@/components/dashboard/DataTable";
 import Link from "next/link";
-import { createSupabaseServerClient } from "@/lib/supabase_server";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardSupportPage() {
-  const { school } = await getDashboardContext();
-  const supabase = await createSupabaseServerClient();
+  const { supabase, school } = await getDashboardContext();
 
   // Obtener tickets de la escuela
   const { data: tickets } = await supabase
@@ -30,7 +28,7 @@ export default async function DashboardSupportPage() {
       <PageHeader title="Soporte Técnico" description="Gestiona tus solicitudes de soporte con nuestro equipo." />
       <div className="space-y-6">
         <div className="flex justify-end">
-          <Link href="/dashboard/support/new" className="rounded-md bg-[#0a0a0a] px-4 py-2 text-sm font-semibold text-white shadow hover:bg-[#111]">
+          <Link href="/dashboard/support/new" className="rounded-lg bg-[#07305f] px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-[#062447]">
             + Nuevo Ticket
           </Link>
         </div>

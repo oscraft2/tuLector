@@ -21,11 +21,27 @@ type CourseEditRowProps = {
 
 const initialState: DashboardActionState = { status: "idle" };
 
+const COURSE_BADGES = [
+  { emoji: "🏫", cls: "bg-[#eef4ff] ring-[#d5e3fb]" },
+  { emoji: "📚", cls: "bg-[#fef3c7] ring-[#fde68a]" },
+  { emoji: "🎒", cls: "bg-[#dcfce7] ring-[#bbf7d0]" },
+  { emoji: "✏️", cls: "bg-[#ffedd5] ring-[#fed7aa]" },
+  { emoji: "🌿", cls: "bg-[#ecfccb] ring-[#d9f99d]" },
+  { emoji: "🧭", cls: "bg-[#e0f2fe] ring-[#bae6fd]" },
+] as const;
+
+function courseBadge(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return COURSE_BADGES[hash % COURSE_BADGES.length];
+}
+
 /** Antes solo se podia crear/eliminar un curso -- una vez creado, un error de
  * tipeo (ej. "IIMC" en vez de "II C") quedaba pegado para siempre. Este
  * componente agrega edicion inline: boton "Editar" muestra un mini-form con
  * Guardar/Cancelar en el lugar del link+nivel de siempre. */
 export function CourseEditRow({ course, isAdmin, updateAction, archiveAction, grades, studentCount = null }: CourseEditRowProps) {
+  const badge = courseBadge(course.name);
   const [editing, setEditing] = useState(false);
   const [state, formAction] = useActionState(updateAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
@@ -81,17 +97,22 @@ export function CourseEditRow({ course, isAdmin, updateAction, archiveAction, gr
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
-      <Link href={`/dashboard/courses/${course.id}`} className="min-w-0 flex-1 rounded-md px-2 py-1 hover:bg-[#f4f6f8] hover:text-[#07305f]">
-        <span className="block truncate font-semibold">{course.name}</span>
-        <span className="text-xs text-[#6b7280]">{course.grade}</span>
+      <Link href={`/dashboard/courses/${course.id}`} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1 hover:bg-[#faf9f6] hover:text-[#07305f]">
+        <span aria-hidden="true" className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg text-sm ring-1 ${badge.cls}`}>
+          {badge.emoji}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate font-semibold">{course.name}</span>
+          <span className="text-xs text-[#78716c]">{course.grade}</span>
+        </span>
       </Link>
 
       <div className="flex shrink-0 items-center gap-3">
         {studentCount !== null && (
           <Link
             href={`/dashboard/students?course=${course.id}`}
-            className="rounded bg-[#f4f6f8] px-2 py-0.5 text-xs font-semibold text-[#1e293b] hover:bg-[#eef4ff] hover:text-[#07305f]"
-            title="Ver estos alumnos en Gestion de alumnos"
+            className="tnum rounded-md bg-[#f4f2ec] px-2.5 py-0.5 text-xs font-semibold text-[#44403c] hover:bg-[#eef4ff] hover:text-[#07305f]"
+            title="Ver estos alumnos en Gestión de alumnos"
           >
             {studentCount} alumno{studentCount === 1 ? "" : "s"}
           </Link>

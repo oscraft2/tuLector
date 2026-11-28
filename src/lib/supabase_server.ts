@@ -198,24 +198,23 @@ export const getDashboardContext = cache(async function getDashboardContext() {
     school = data;
   }
 
-  // allMemberships alimenta el switcher de colegios y profile.locale el
-  // idioma — ninguno de los dos lo usa ninguna pantalla nativa (/app/*), solo
-  // el dashboard web. Saltarla ahi ahorra otro round-trip completo en CADA
-  // navegacion del APK (se detecta por el mismo User-Agent que ya usa
-  // dashboard/layout.tsx para enrutar nativo -> /app).
+  // profile.locale solo lo usa el dashboard web (las pantallas nativas /app/*
+  // heredan del país del colegio). Saltar esta consulta en nativo ahorra un
+  // round-trip completo; en web también ahorramos pedir allMemberships porque
+  // no hay selector multi-colegio activo en el shell.
   const isNativeRequest = /TuLectorApp/i.test((await headers()).get("user-agent") ?? "");
-  const [{ data: allMemberships }, { data: profile }] = isNativeRequest
-    ? [{ data: null }, { data: null }]
-    : await Promise.all([
-        supabase.from("school_members").select("id, school_id, role, schools(name)").eq("user_id", user.id),
-        supabase.from("profiles").select("locale").eq("user_id", user.id).maybeSingle(),
-      ]);
+  const { data: profile } = isNativeRequest
+    ? { data: null }
+    : await supabase.from("profiles").select("locale").eq("user_id", user.id).maybeSingle();
 
-  const userSchools = (allMemberships ?? []).map((m: any) => ({
-    id: m.school_id,
-    name: m.schools?.name || "Colegio sin nombre",
-    role: m.role,
-  }));
+  const typedSchool = school as DashboardSchool;
+  const userSchools = [
+    {
+      id: typedSchool.id,
+      name: typedSchool.name || "Colegio sin nombre",
+      role: membership.role,
+    },
+  ];
 
   const countryProfile = resolveCountryProfile((school as DashboardSchool).country_code);
 

@@ -6,7 +6,6 @@ import { assignPaperAction, undoAssignAction, voidPaperAction, updatePaperAnswer
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { PaperAssignPanel } from "@/components/dashboard/PaperAssignPanel";
 import { PaperAnswerCorrectionPanel, type BreakdownRow } from "@/components/dashboard/PaperAnswerCorrectionPanel";
-import { isMissingColumnError } from "@/lib/supabase_errors";
 import { buildPaperQuestionBreakdown } from "@/lib/item_analysis";
 import { parseOptionOverrides, optionLabelsFor } from "@/lib/quiz_constraints";
 
@@ -182,7 +181,7 @@ export default async function PaperIdentifyPage({ params }: PageProps) {
                   ))}
                 </select>
               </label>
-              <button type="submit" disabled={courseList.length === 0} className="w-full rounded-md bg-[#111827] py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50">
+              <button type="submit" disabled={courseList.length === 0} className="w-full rounded-lg bg-[#07305f] py-2 text-sm font-semibold text-white hover:bg-[#062447] disabled:opacity-50">
                 {courseList.length === 0 ? "Primero crea un curso" : "Crear y asignar"}
               </button>
             </form>

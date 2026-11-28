@@ -90,17 +90,19 @@ export async function checkAndTriggerQuotaAlerts(schoolId: string): Promise<void
 
     const adminUserIds = admins.map((a) => a.user_id);
 
-    // Fetch emails of these admins from auth schema using auth.admin.listUsers
-    // For simplicity, we can query profiles or just list users and match IDs
-    const { data: usersData, error: usersError } = await admin.auth.admin.listUsers();
-    if (usersError || !usersData) {
-      console.warn("[quota_alerts] error fetching user emails:", usersError?.message);
-      return;
-    }
+    // Fetch emails only for this school's admins instead of listing all platform users
+    const userResults = await Promise.all(
+      adminUserIds.map(async (uid) => {
+        try {
+          const { data } = await admin.auth.admin.getUserById(uid);
+          return data?.user?.email ?? null;
+        } catch {
+          return null;
+        }
+      }),
+    );
 
-    const adminEmails = usersData.users
-      .filter((u) => adminUserIds.includes(u.id) && u.email)
-      .map((u) => u.email!);
+    const adminEmails = userResults.filter((email): email is string => Boolean(email));
 
     if (adminEmails.length === 0) return;
 

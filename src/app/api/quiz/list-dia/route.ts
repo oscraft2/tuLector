@@ -63,7 +63,7 @@ export async function GET() {
   const quizIds = quizzes.map((q) => q.id);
   const paperCountByQuiz = new Map<string, number>();
   if (quizIds.length > 0) {
-    const { data: paperRows } = await supabase.from("papers").select("quiz_id").in("quiz_id", quizIds);
+    const { data: paperRows } = await supabase.from("papers").select("quiz_id").in("quiz_id", quizIds).neq("status", "void");
     for (const row of paperRows ?? []) paperCountByQuiz.set(row.quiz_id, (paperCountByQuiz.get(row.quiz_id) ?? 0) + 1);
   }
 

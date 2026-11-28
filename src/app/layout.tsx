@@ -1,6 +1,14 @@
 import type { Metadata, Viewport } from "next";
+import { Source_Sans_3 } from "next/font/google";
 import { Suspense } from "react";
 import "./globals.css";
+
+const sourceSans = Source_Sans_3({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-source-sans",
+  display: "swap",
+});
 import { NativeBootstrap } from "@/components/native/NativeBootstrap";
 import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 import { JsonLd } from "@/components/JsonLd";
@@ -128,8 +136,8 @@ async function FloatingButtonsSlot() {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang={defaultLocale} className="h-full antialiased">
-      <body className="min-h-full flex flex-col bg-[#fafafa] text-[#0b1220]">
+    <html lang={defaultLocale} className={`h-full antialiased ${sourceSans.variable}`}>
+      <body className="min-h-full flex flex-col bg-[#f7f6f2] text-[#1c1917]">
         <JsonLd data={[orgLd, webAppLd, webSiteLd]} />
         <NativeBootstrap />
         <Suspense fallback={null}>

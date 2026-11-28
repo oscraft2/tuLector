@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { getDashboardContext } from "@/lib/supabase_server";
 import { calculateGrade } from "@/lib/latam";
 import { DataTable } from "@/components/dashboard/DataTable";
-import { StatusPill } from "@/components/AppShell";
 import { startScanForQuiz, confirmOpenAnswer } from "@/app/dashboard/actions";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { QuizStats } from "@/components/dashboard/QuizStats";
@@ -25,6 +24,8 @@ import { fetchTeacherOptions } from "@/lib/teacher_scope";
 import { fetchSharesForQuiz, fetchUserEmails, userLabel } from "@/lib/quiz_shares";
 import { ShareQuizPanel } from "@/components/dashboard/ShareQuizPanel";
 import { findDiaPreset } from "@/lib/dia_presets";
+import { StudentAvatar } from "@/components/dashboard/StudentAvatar";
+import { getPaperStatusVisual } from "@/lib/subject_visuals";
 
 export const dynamic = "force-dynamic";
 
@@ -97,57 +98,69 @@ export default async function QuizDetailPage({ params }: PageProps) {
     return null;
   };
 
-  const [{ data: quiz }, papers, { data: metadata }, { data: students }] = await Promise.all([
+  const [{ data: quiz }, papers, { data: metadata }] = await Promise.all([
     supabase.from("quizzes").select("*").eq("id", id).single(),
     fetchPapers(),
     supabase.from("question_metadata").select("question_number,axis_name,skill_name,difficulty").eq("quiz_id", id).order("question_number"),
-    supabase.from("students").select("id,rut,student_id,rut_normalized").eq("school_id", school.id),
   ]);
   if (!quiz) notFound();
   const quizPapers = (papers ?? []) as unknown as QuizPaper[];
-  // Curso REAL del alumno (la hoja no manda: un curso puede rendir con la hoja
-  // de otro -- ver src/lib/paper_course.ts).
-  const courseOf = await buildPaperCourseResolver(supabase, school.id, quizPapers);
-  // Hojas que deberian estar en otro ensayo del mismo lote (ver el aviso abajo).
-  const misplaced = await findMisplacedPapers(supabase, school.id, id);
-  const avg = quizPapers.length ? Math.round(quizPapers.reduce((s, p) => s + ((p.score ?? 0) / Math.max(1, p.total ?? quiz.num_questions)) * 100, 0) / quizPapers.length) : 0;
-  // Preguntas de desarrollo: su slot de clave es "-" fijo — no cuentan como
-  // "clave incompleta" ni tienen letra en la grilla.
   const openQuestions = parseOpenQuestions(quiz.open_questions ?? "", Number(quiz.num_questions ?? 0));
+  const isOwner = quiz.created_by === user.id;
+  const canManageQuiz = isOwner || isAdmin;
+  const canShare = canManageQuiz && planHasFeature(school.plan, "quiz_sharing");
+
+  const rutsInPapers = [
+    ...new Set(
+      quizPapers
+        .map((p) => p.student_rut_norm ?? canonicalRut(p.student_id))
+        .filter((r): r is string => Boolean(r)),
+    ),
+  ];
+
+  const [
+    courseOf,
+    misplaced,
+    studentsRes,
+    openAnswersRes,
+    exportTemplates,
+    rawExportPresets,
+    quizShares,
+    teacherOptions,
+  ] = await Promise.all([
+    buildPaperCourseResolver(supabase, school.id, quizPapers),
+    findMisplacedPapers(supabase, school.id, id),
+    rutsInPapers.length > 0
+      ? supabase.from("students").select("id,rut,student_id,rut_normalized").eq("school_id", school.id).in("rut_normalized", rutsInPapers)
+      : Promise.resolve({ data: [] as Array<{ id: string; rut: string | null; student_id: string | null; rut_normalized: string | null }> }),
+    openQuestions.length > 0 && quizPapers.length > 0
+      ? supabase
+          .from("open_answers")
+          .select("paper_id,question,transcripcion,puntaje,max_points,confianza,legible,confirmed_points")
+          .in("paper_id", quizPapers.map((p) => p.id))
+      : Promise.resolve({ data: [], error: null }),
+    fetchExportTemplates(supabase, school.id),
+    fetchExportPresets(supabase, school.country_code ?? "CL"),
+    canShare ? fetchSharesForQuiz(supabase, quiz.id) : Promise.resolve([]),
+    canShare ? fetchTeacherOptions(supabase, school.id, user.id) : Promise.resolve([]),
+  ]);
+
+  const students = studentsRes.data ?? [];
+  const avg = quizPapers.length ? Math.round(quizPapers.reduce((s, p) => s + ((p.score ?? 0) / Math.max(1, p.total ?? quiz.num_questions)) * 100, 0) / quizPapers.length) : 0;
   const openSet0 = new Set(openQuestions.map((q) => q - 1));
-  // Mismo criterio que el listado de ensayos (quiz_constraints): una pregunta
-  // de desarrollo lleva "-" en la clave y eso NO es un hueco.
   const missingClosed = countMissingKeySlots(quiz);
   const keyIncomplete = missingClosed > 0;
-  // Formato de la hoja (migracion sheet_mode): decide si "Generar" ofrece la
-  // hoja completa o el bloque pegable. `compactIssue` es el mismo criterio que
-  // valida el servidor al guardar el ensayo.
   const isCompact = parseSheetMode(quiz.sheet_mode) === "compact";
   const compactIssue = compactModeIssue(Number(quiz.num_questions ?? 0), Number(quiz.options_per_question ?? 5), openQuestions.length);
 
-  // Sugerencias de la IA para las preguntas de desarrollo (Fase 3, docs/plan-
-  // correccion-ia-abiertas.md) -- consulta aparte porque open_answers no tiene
-  // quiz_id (se cuelga de paper_id). Si la migracion aun no se aplico (tabla
-  // no existe todavia), se degrada a lista vacia en vez de romper la pagina.
   type OpenAnswerRow = {
     paper_id: string; question: number; transcripcion: string | null; puntaje: number | null;
     max_points: number | null; confianza: string | null; legible: boolean | null; confirmed_points: number | null;
   };
-  let openAnswers: OpenAnswerRow[] = [];
-  if (openQuestions.length > 0 && quizPapers.length > 0) {
-    const { data: oa, error: oaError } = await supabase
-      .from("open_answers")
-      .select("paper_id,question,transcripcion,puntaje,max_points,confianza,legible,confirmed_points")
-      .in("paper_id", quizPapers.map((p) => p.id));
-    if (!oaError) openAnswers = (oa ?? []) as OpenAnswerRow[];
-  }
+  const openAnswers: OpenAnswerRow[] = !openAnswersRes.error ? ((openAnswersRes.data ?? []) as OpenAnswerRow[]) : [];
   const paperNameById = new Map(quizPapers.map((p) => [p.id, p.student_name || p.student_id || "Sin identificar"]));
 
-  // Opciones del panel de exportacion. Ambas se degradan a lista vacia si la
-  // tabla no existe todavia: sin plantillas ni presets el panel sigue
-  // exportando con las columnas que elija el profesor.
-  const exportTemplates = await fetchExportTemplates(supabase, school.id);
-  const exportPresets = (await fetchExportPresets(supabase, school.country_code ?? "CL")).map((preset) => ({
+  const exportPresets = rawExportPresets.map((preset) => ({
     id: preset.id,
     name: preset.name,
     description: preset.description,
@@ -235,10 +248,6 @@ export default async function QuizDetailPage({ params }: PageProps) {
   // compartieron y lo acepte. En el segundo caso NO se ofrecen las acciones de
   // dueño (editar, compartir de nuevo): la RLS las rechazaria igual, y un boton
   // que revienta es peor que un boton ausente.
-  const isOwner = quiz.created_by === user.id;
-  const canManageQuiz = isOwner || isAdmin;
-  const canShare = canManageQuiz && planHasFeature(school.plan, "quiz_sharing");
-  const quizShares = canShare ? await fetchSharesForQuiz(supabase, quiz.id) : [];
   const shareUserIds = quizShares.map((s) => s.shared_with);
   // El correo del dueño hace falta para el aviso "Compartido por …" cuando el
   // ensayo es ajeno; el de los invitados, para la lista del panel.
@@ -246,7 +255,6 @@ export default async function QuizDetailPage({ params }: PageProps) {
     ...shareUserIds,
     ...(!isOwner && quiz.created_by ? [String(quiz.created_by)] : []),
   ]);
-  const teacherOptions = canShare ? await fetchTeacherOptions(supabase, school.id, user.id) : [];
   const shareCandidates = teacherOptions
     .filter((t) => !t.isSelf && t.userId !== quiz.created_by)
     .map((t) => ({ userId: t.userId, label: t.label }));
@@ -499,27 +507,31 @@ export default async function QuizDetailPage({ params }: PageProps) {
             // de alumnos y descarte) en vez de quedar como un texto muerto.
             const needsId = paper.status === "manual_review";
             const eq = getEquivalences(paper);
+            const avatarSeed = paper.student_rut_norm ?? paper.student_id ?? paper.student_name ?? paper.id;
             return (
-              <tr key={paper.id} className="border-b border-[#eef0f3] last:border-0">
-                <td className="px-5 py-4 font-semibold">
-                  {needsId ? (
-                    <Link href={`/dashboard/papers/${paper.id}`} className="text-[#9a3412] underline decoration-dotted hover:text-[#7c2d12]">
-                      {studentLabel} · identificar
-                    </Link>
-                  ) : studentHref ? (
-                    <Link href={studentHref} className="text-[#07305f] hover:underline">{studentLabel}</Link>
-                  ) : studentLabel}
+              <tr key={paper.id} className="border-b border-[#efede8] last:border-0">
+                <td className="px-5 py-3.5 font-semibold">
+                  <div className="flex items-center gap-2.5">
+                    <StudentAvatar seed={avatarSeed} name={studentLabel} unknown={needsId} size="sm" />
+                    {needsId ? (
+                      <Link href={`/dashboard/papers/${paper.id}`} className="text-[#9a3412] underline decoration-dotted hover:text-[#7c2d12]">
+                        {studentLabel} · identificar
+                      </Link>
+                    ) : studentHref ? (
+                      <Link href={studentHref} className="text-[#07305f] hover:underline">{studentLabel}</Link>
+                    ) : studentLabel}
+                  </div>
                 </td>
-                <td className="px-5 py-4 text-[#5b6472]">{course?.name ?? "-"}</td>
-                <td className="px-5 py-4">{getCorrectDisplay(paper)}</td>
-                <td className="px-5 py-4 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
+                <td className="px-5 py-3.5 text-[#57534e]">{course?.name ?? "-"}</td>
+                <td className="tnum px-5 py-3.5">{getCorrectDisplay(paper)}</td>
+                <td className="tnum px-5 py-3.5 font-semibold text-[#07305f]">{getScoreDisplay(paper)}</td>
                 {showEquivalence.paes && (
-                  <td className="px-5 py-4 font-semibold text-[#111827]" title={paesTitle}>
+                  <td className="tnum px-5 py-3.5 font-semibold text-[#1c1917]" title={paesTitle}>
                     {eq.paes?.score ?? "-"}
                   </td>
                 )}
                 {showEquivalence.simce && (
-                  <td className="px-5 py-4 font-semibold text-[#111827]" title={simceTitle}>
+                  <td className="tnum px-5 py-3.5 font-semibold text-[#1c1917]" title={simceTitle}>
                     {eq.simce?.score ?? "-"}
                   </td>
                 )}
@@ -530,19 +542,25 @@ export default async function QuizDetailPage({ params }: PageProps) {
             const studentLabel = paper.student_name ?? paper.student_id ?? "Sin identificar";
             const studentHref = studentHrefForPaper(paper);
             const eq = getEquivalences(paper);
+            const needsId = paper.status === "manual_review";
+            const avatarSeed = paper.student_rut_norm ?? paper.student_id ?? paper.student_name ?? paper.id;
+            const statusVis = getPaperStatusVisual(paper.status);
             return (
-              <article key={paper.id} className="rounded-md border border-[#e6e8eb] bg-white p-4 shadow-sm">
+              <article key={paper.id} className="rounded-xl border border-[#e7e5df] bg-white p-4 shadow-xs">
                 <div className="flex items-start justify-between gap-3">
-                  {paper.status === "manual_review" ? (
-                    <Link href={`/dashboard/papers/${paper.id}`} className="min-w-0 truncate text-base font-semibold text-[#9a3412] underline decoration-dotted">
-                      {studentLabel} · identificar
-                    </Link>
-                  ) : studentHref ? (
-                    <Link href={studentHref} className="min-w-0 truncate text-base font-semibold text-[#07305f] hover:underline">{studentLabel}</Link>
-                  ) : (
-                    <p className="min-w-0 truncate text-base font-semibold text-[#111827]">{studentLabel}</p>
-                  )}
-                  <StatusPill>{paper.status ?? "active"}</StatusPill>
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <StudentAvatar seed={avatarSeed} name={studentLabel} unknown={needsId} size="sm" />
+                    {needsId ? (
+                      <Link href={`/dashboard/papers/${paper.id}`} className="min-w-0 truncate text-base font-semibold text-[#9a3412] underline decoration-dotted">
+                        {studentLabel} · identificar
+                      </Link>
+                    ) : studentHref ? (
+                      <Link href={studentHref} className="min-w-0 truncate text-base font-semibold text-[#07305f] hover:underline">{studentLabel}</Link>
+                    ) : (
+                      <p className="min-w-0 truncate text-base font-semibold text-[#1c1917]">{studentLabel}</p>
+                    )}
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusVis.className}`}>{statusVis.label}</span>
                 </div>
                 {/* La tarjeta muestra lo MISMO que la fila de escritorio. */}
                 <div className="mt-3 grid gap-1 text-sm text-[#5b6472]">

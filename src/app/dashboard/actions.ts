@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { guardarLoteAbiertas, type ItemLote } from "@/lib/open_bulk";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { parse } from "csv-parse/sync";
@@ -1145,6 +1146,42 @@ export async function confirmOpenAnswer(formData: FormData) {
   // esto el numero confirmado se quedaba guardado sin llegar nunca a la nota.
   if (quizId) await regradePaperAfterOpenAnswer(supabase, school, quizId, paperId);
   if (quizId) revalidatePath(`/dashboard/quizzes/${quizId}`);
+}
+
+/**
+ * Guarda muchos puntajes de preguntas abiertas de una vez ("Guardar todo" y
+ * puntaje masivo de la calificacion rapida). Las comprobaciones viven en
+ * guardarLoteAbiertas(). Devuelve el error como dato: en produccion Next
+ * oculta el mensaje de una excepcion.
+ */
+export async function confirmOpenAnswersBulk(input: { quizId: string; items: ItemLote[]; soloSinRevisar: boolean }): Promise<
+  { ok: true; guardadas: number; omitidas: number; sinRecalcular: number } | { ok: false; error: string }
+> {
+  const { supabase, school } = await getDashboardContext();
+  const quizId = String(input?.quizId ?? "");
+  const resultado = await guardarLoteAbiertas(supabase, {
+    schoolId: school.id,
+    quizId,
+    items: input?.items,
+    soloSinRevisar: input?.soloSinRevisar !== false,
+    ahora: new Date().toISOString(),
+  });
+  if (!resultado.ok) return resultado;
+
+  // Si el ensayo puntua las abiertas, la nota se recalcula; de a 5 para no
+  // saturar la base.
+  let sinRecalcular = 0;
+  if (resultado.puntuaAbiertas) {
+    for (let i = 0; i < resultado.paperIds.length; i += 5) {
+      const tanda = await Promise.allSettled(
+        resultado.paperIds.slice(i, i + 5).map((paperId) => regradeSinglePaper(supabase, school, { quizId, paperId })),
+      );
+      sinRecalcular += tanda.filter((r) => r.status === "rejected").length;
+    }
+  }
+  revalidatePath(`/dashboard/quizzes/${quizId}`);
+  revalidatePath(`/dashboard/quizzes/${quizId}/abiertas`);
+  return { ok: true, guardadas: resultado.guardadas, omitidas: resultado.omitidas, sinRecalcular };
 }
 
 /**

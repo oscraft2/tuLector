@@ -5,12 +5,14 @@ import { useEffect, useRef, useState, useTransition } from "react";
 
 type CourseOption = { id: string; label: string };
 
-const FILTER_KEYS = ["q", "course", "page"] as const;
+const FILTER_KEYS = ["q", "course", "estado", "pregunta", "page"] as const;
 
 type AbiertasFiltersProps = {
   /** Solo los cursos que de verdad tienen hojas en ESTE ensayo (no todo el
    *  colegio) -- ver groupByCourse en src/lib/paper_course.ts. */
   courses: readonly CourseOption[];
+  /** Preguntas abiertas del ensayo. */
+  questions: readonly number[];
   total: number;
 };
 
@@ -20,13 +22,15 @@ type AbiertasFiltersProps = {
  * Mismo patron que StudentFilters.tsx (URL como fuente de verdad, el server
  * component filtra) pero acotado a los alumnos de ESTE ensayo.
  */
-export function AbiertasFilters({ courses, total }: AbiertasFiltersProps) {
+export function AbiertasFilters({ courses, questions, total }: AbiertasFiltersProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
 
   const [q, setQ] = useState(searchParams.get("q") ?? "");
   const course = searchParams.get("course") ?? "";
+  const estado = searchParams.get("estado") ?? "";
+  const pregunta = searchParams.get("pregunta") ?? "";
 
   const typing = useRef(false);
   useEffect(() => {
@@ -83,6 +87,23 @@ export function AbiertasFilters({ courses, total }: AbiertasFiltersProps) {
           <select value={course} onChange={(e) => push({ course: e.target.value })} className={`${selectClass} max-w-[220px]`}>
             <option value="">Todos</option>
             {courses.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        </label>
+
+        <label className="text-xs font-semibold text-[#5b6472]">
+          Pregunta
+          <select value={pregunta} onChange={(e) => push({ pregunta: e.target.value })} className={selectClass}>
+            <option value="">Todas</option>
+            {questions.map((n) => <option key={n} value={String(n)}>P{n}</option>)}
+          </select>
+        </label>
+
+        <label className="text-xs font-semibold text-[#5b6472]">
+          Estado
+          <select value={estado} onChange={(e) => push({ estado: e.target.value })} className={selectClass}>
+            <option value="">Todos</option>
+            <option value="pendientes">Con algo sin revisar</option>
+            <option value="revisadas">Todo revisado</option>
           </select>
         </label>
 

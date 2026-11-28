@@ -54,7 +54,7 @@ export default async function CoursesPage() {
     <>
       <PageHeader
         title="Cursos"
-        description="Crea y administra los cursos del establecimiento, e importa alumnos de forma masiva. Los alumnos individuales se gestionan en Gestion de alumnos."
+        description="Crea y administra los cursos del establecimiento, e importa alumnos de forma masiva. Los alumnos individuales se gestionan en Gestión de alumnos."
       />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:gap-6">
@@ -63,17 +63,17 @@ export default async function CoursesPage() {
             <EmptyState
               icon="🏫"
               title="Sin cursos creados"
-              description="Crea cursos como '4° Básico' o 'I Medio' para organizar tus alumnos y ver el rendimiento de cada curso por ensayo. Tambien puedes importar un CSV: los cursos que traiga se crean solos."
+              description="Crea cursos como '4° Básico' o 'I Medio' para organizar tus alumnos y ver el rendimiento de cada curso por ensayo. También puedes importar un CSV: los cursos que traiga se crean solos."
               action={{ label: "Ver alumnos", href: "/dashboard/students" }}
             />
           ) : (
-            <div className="rounded-md border border-[#e6e8eb] bg-white p-5">
+            <div className="rounded-xl border border-[#e7e5df] bg-white p-5 shadow-xs">
               <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-[#111827]">Cursos activos</h2>
-                <span className="text-xs text-[#5b6472]">{courseList.length} curso{courseList.length === 1 ? "" : "s"}</span>
+                <h2 className="text-lg font-semibold text-[#1c1917]">Cursos activos</h2>
+                <span className="tnum text-xs text-[#78716c]">{courseList.length} curso{courseList.length === 1 ? "" : "s"}</span>
               </div>
-              <p className="mb-3 text-xs text-[#5b6472]">
-                Toca un curso para ver su detalle y rendimiento, o el contador de alumnos para verlos en Gestion de alumnos.
+              <p className="mb-3 text-xs text-[#57534e]">
+                Toca un curso para ver su detalle y rendimiento, o el contador de alumnos para verlos en Gestión de alumnos.
               </p>
               <div className="divide-y divide-[#eef0f3]">
                 {courseList.map((course) => (
@@ -119,18 +119,18 @@ export default async function CoursesPage() {
 
         <aside className="space-y-6">
           {isAdmin && (
-            <div className="rounded-md border border-[#e6e8eb] bg-white p-5 space-y-3">
-              <h2 className="text-lg font-semibold text-[#111827]">Crear curso</h2>
-              <p className="text-xs text-[#5b6472]">Define los cursos oficiales para asociarlos a alumnos y ensayos.</p>
+            <div className="rounded-xl border border-[#e7e5df] bg-white p-5 space-y-3 shadow-xs">
+              <h2 className="text-lg font-semibold text-[#1c1917]">Crear curso</h2>
+              <p className="text-xs text-[#57534e]">Define los cursos oficiales para asociarlos a alumnos y ensayos.</p>
               <CourseForm action={createCourse} grades={SCHOOL_GRADES} />
             </div>
           )}
 
           <CSVImport action={importStudents} mappedAction={importStudentsMapped} studentIdLabel={studentIdLabel} />
 
-          <p className="rounded-md border border-[#eef0f3] bg-[#f8fafc] px-4 py-3 text-xs text-[#5b6472]">
+          <p className="rounded-xl border border-[#e7e5df] bg-[#faf9f6] px-4 py-3 text-xs text-[#57534e]">
             ¿Buscas un alumno puntual? Usa el buscador de{" "}
-            <Link href="/dashboard/students" className="font-semibold text-[#07305f] underline">Gestion de alumnos</Link>.
+            <Link href="/dashboard/students" className="font-semibold text-[#07305f] underline">Gestión de alumnos</Link>.
           </p>
         </aside>
       </div>

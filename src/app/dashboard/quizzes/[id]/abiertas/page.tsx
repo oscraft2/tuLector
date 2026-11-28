@@ -9,6 +9,8 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { AbiertasFilters } from "@/components/dashboard/AbiertasFilters";
 import { Pagination } from "@/components/dashboard/Pagination";
 import { OpenAnswerCell } from "@/components/dashboard/OpenAnswerCell";
+import { AbiertasBarraLote, AbiertasLoteProvider } from "@/components/dashboard/AbiertasLote";
+import { claveCelda, cumpleEstado } from "@/lib/open_bulk";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +66,8 @@ export default async function AbiertasPage({ params, searchParams }: PageProps) 
   const courseParam = firstParam(sp.course);
   const q = firstParam(sp.q);
   const pageNum = Math.max(1, Number(firstParam(sp.page)) || 1);
+  const estadoParam = firstParam(sp.estado);
+  const preguntaParam = Number(firstParam(sp.pregunta)) || null;
 
   const { supabase, school } = await getDashboardContext();
 
@@ -79,7 +83,7 @@ export default async function AbiertasPage({ params, searchParams }: PageProps) 
   const rubrics = parseOpenQuestionRubrics(quiz.open_question_rubrics ?? "");
 
   const papersQuery = (select: string) =>
-    supabase.from("papers").select(select).eq("quiz_id", id).order("scanned_at", { ascending: false });
+    supabase.from("papers").select(select).eq("quiz_id", id).neq("status", "void").order("scanned_at", { ascending: false });
   const PAPER_COLUMNS = "id,student_name,student_id,student_rut_norm";
   // `course_id` puede faltar en una BD sin migrar (20260812000000) -- el curso
   // se resuelve igual por el alumno (paper_course.ts) si falta la columna.
@@ -106,7 +110,9 @@ export default async function AbiertasPage({ params, searchParams }: PageProps) 
   const courseGroups = groupByCourse(students, courseOf);
   const courseOptions = courseGroups.map((g) => ({ id: g.key, label: `${g.label} (${g.rows.length})` }));
 
-  const filtered = students.filter((paper) => {
+  const visibleQuestions = preguntaParam && openQuestions.includes(preguntaParam) ? [preguntaParam] : openQuestions;
+
+  const porCursoYBusqueda = students.filter((paper) => {
     if (courseParam) {
       const course = courseOf(paper);
       const key = course?.id ?? NO_COURSE_KEY;
@@ -115,6 +121,25 @@ export default async function AbiertasPage({ params, searchParams }: PageProps) 
     const rutNorm = paper.student_rut_norm ?? canonicalRut(paper.student_id ?? null);
     return matchesQuery(q, paper.student_name, rutNorm);
   });
+
+  // Las respuestas se leen para toda la lista (no solo la pagina): el filtro
+  // por estado y el puntaje masivo las necesitan. Por tandas, por el tope de
+  // filas de una consulta.
+  const openAnswers: OpenAnswerRow[] = [];
+  let lecturaIncompleta = false;
+  for (let i = 0; i < porCursoYBusqueda.length; i += 100) {
+    const { data: oa, error } = await supabase
+      .from("open_answers")
+      .select("paper_id,question,transcripcion,puntaje,max_points,confianza,legible,confirmed_points")
+      .in("paper_id", porCursoYBusqueda.slice(i, i + 100).map((p) => p.id));
+    if (error) { lecturaIncompleta = true; break; }
+    openAnswers.push(...((oa ?? []) as OpenAnswerRow[]));
+  }
+  const answerByPaperQuestion = new Map<string, OpenAnswerRow>();
+  for (const row of openAnswers) answerByPaperQuestion.set(claveCelda(row.paper_id, row.question), row);
+  const confirmadas = new Set(openAnswers.filter((r) => r.confirmed_points != null).map((r) => claveCelda(r.paper_id, r.question)));
+
+  const filtered = porCursoYBusqueda.filter((paper) => cumpleEstado(paper.id, visibleQuestions, confirmadas, estadoParam));
   filtered.sort((a, b) => (a.student_name ?? "").localeCompare(b.student_name ?? "", "es"));
 
   const total = filtered.length;
@@ -122,20 +147,20 @@ export default async function AbiertasPage({ params, searchParams }: PageProps) 
   const safePage = Math.min(pageNum, pageCount);
   const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  let openAnswers: OpenAnswerRow[] = [];
-  if (pageRows.length > 0) {
-    const { data: oa, error } = await supabase
-      .from("open_answers")
-      .select("paper_id,question,transcripcion,puntaje,max_points,confianza,legible,confirmed_points")
-      .in("paper_id", pageRows.map((p) => p.id));
-    if (!error) openAnswers = (oa ?? []) as OpenAnswerRow[];
-  }
-  const answerByPaperQuestion = new Map<string, OpenAnswerRow>();
-  for (const row of openAnswers) answerByPaperQuestion.set(`${row.paper_id}:${row.question}`, row);
+  const preguntasLote = visibleQuestions
+    .filter((n) => (rubrics[n]?.max_points ?? 0) > 0)
+    .map((n) => ({ question: n, maxPoints: rubrics[n].max_points, completacion: rubrics[n].subtipo !== "simple" }));
+  const filtro = [
+    courseParam ? `curso ${courseOptions.find((c) => c.id === courseParam)?.label ?? ""}` : "todos los cursos",
+    q ? `búsqueda «${q}»` : "",
+    estadoParam === "pendientes" ? "con algo sin revisar" : estadoParam === "revisadas" ? "todo revisado" : "",
+  ].filter(Boolean).join(", ");
 
   const baseQuery = new URLSearchParams();
   if (courseParam) baseQuery.set("course", courseParam);
   if (q) baseQuery.set("q", q);
+  if (estadoParam) baseQuery.set("estado", estadoParam);
+  if (preguntaParam) baseQuery.set("pregunta", String(preguntaParam));
 
   return (
     <>
@@ -147,14 +172,21 @@ export default async function AbiertasPage({ params, searchParams }: PageProps) 
       <PageHeader
         eyebrow="Calificación rápida"
         title={`Preguntas de desarrollo — ${quiz.title ?? "Ensayo"}`}
-        description="Filtra por curso o busca por RUT/nombre y confirma el puntaje de cada pregunta abierta. Todo parte en 0: solo se sube si el alumno realmente respondió."
+        description="Filtra y confirma el puntaje de cada pregunta abierta, una por una o en lote. Una respuesta queda «sin revisar» hasta que la guardas, aunque sea en 0."
       />
 
       {openQuestions.length === 0 ? (
         <p className="text-sm text-[#6b7280]">Este ensayo no tiene preguntas de desarrollo configuradas.</p>
       ) : (
         <div className="space-y-4">
-          <AbiertasFilters courses={courseOptions} total={total} />
+          <AbiertasFilters courses={courseOptions} questions={openQuestions} total={total} />
+
+          <AbiertasLoteProvider>
+          {lecturaIncompleta ? (
+            <p className="text-sm font-semibold text-[#b91c1c]">No se pudieron leer los puntajes guardados: el guardado en lote queda oculto para no pisarlos. Recarga la página.</p>
+          ) : filtered.length > 0 && preguntasLote.length > 0 ? (
+            <AbiertasBarraLote quizId={id} preguntas={preguntasLote} paperIds={filtered.map((p) => p.id)} confirmadas={[...confirmadas]} filtro={filtro} />
+          ) : null}
 
           {pageRows.length === 0 ? (
             <p className="text-sm text-[#6b7280]">Sin alumnos que calcen con el filtro.</p>
@@ -165,7 +197,7 @@ export default async function AbiertasPage({ params, searchParams }: PageProps) 
                   <tr>
                     <th className="px-3 py-2">Alumno</th>
                     <th className="px-3 py-2">Curso</th>
-                    {openQuestions.map((qNum) => (
+                    {visibleQuestions.map((qNum) => (
                       <th key={qNum} className="px-3 py-2" title={rubrics[qNum]?.rubric || undefined}>
                         P{qNum} {rubrics[qNum]?.max_points ? `(máx ${rubrics[qNum].max_points})` : ""}
                       </th>
@@ -183,7 +215,7 @@ export default async function AbiertasPage({ params, searchParams }: PageProps) 
                           <div className="text-xs text-[#8a93a1]">{formatRutConGuion(rutNorm) || "-"}</div>
                         </td>
                         <td className="px-3 py-2">{course?.name ?? NO_COURSE_LABEL}</td>
-                        {openQuestions.map((qNum) => {
+                        {visibleQuestions.map((qNum) => {
                           const oa = answerByPaperQuestion.get(`${paper.id}:${qNum}`);
                           const rubric = rubrics[qNum];
                           const maxPoints = rubric?.max_points ?? oa?.max_points ?? null;
@@ -193,12 +225,14 @@ export default async function AbiertasPage({ params, searchParams }: PageProps) 
                           return (
                             <td key={qNum} className="px-3 py-2">
                               <OpenAnswerCell
+                                key={`${paper.id}:${qNum}:${oa?.confirmed_points ?? "sr"}`}
                                 paperId={paper.id}
                                 question={qNum}
                                 quizId={id}
                                 maxPoints={maxPoints}
                                 initialConfirmed={oa?.confirmed_points ?? null}
                                 aiHint={aiHint}
+                                aiPoints={oa?.transcripcion ? oa.puntaje : null}
                               />
                             </td>
                           );
@@ -210,6 +244,8 @@ export default async function AbiertasPage({ params, searchParams }: PageProps) 
               </table>
             </div>
           )}
+
+          </AbiertasLoteProvider>
 
           <Pagination page={safePage} pageCount={pageCount} total={total} pageSize={PAGE_SIZE} baseQuery={baseQuery} />
         </div>

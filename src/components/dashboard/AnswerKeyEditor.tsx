@@ -8,7 +8,7 @@ import {
   type OpenQuestionRubric, type OpenQuestionSubtype,
 } from "@/lib/quiz_constraints";
 import { resolveCountryProfile } from "@/lib/country_profiles";
-import { DIA_PRESETS, DIA_CUSTOM_ID, findDiaPreset } from "@/lib/dia_presets";
+import { DIA_PRESETS, DIA_CUSTOM_ID, findDiaPreset, mergePresetRubrics, type DiaPreset } from "@/lib/dia_presets";
 import { parseQuestionPoints } from "@/lib/quiz_constraints";
 import { AnswerKeyGrid } from "@/components/dashboard/AnswerKeyGrid";
 import { AnswerKeyFromSheet } from "@/components/dashboard/AnswerKeyFromSheet";
@@ -113,6 +113,9 @@ export function AnswerKeyEditor({
   // PAES de 30 preguntas volveria a 40). El preset solo debe aplicarse cuando el
   // profesor CAMBIA el tipo, no al abrir el formulario.
   const skipPresetPrefill = useRef(Boolean(defaultEvaluationType || defaultEvaluationVariant));
+  // Último preset DIA aplicado (al editar, el del ensayo guardado): sirve para
+  // distinguir una pauta que solo puso el preset de una que escribió el profesor.
+  const lastPresetRef = useRef<DiaPreset | undefined>(defaultEvaluationVariant ? findDiaPreset(defaultEvaluationVariant) : undefined);
 
   // Pre-fill question/option count when evalType or variant changes.
   // Campos SIEMPRE editables (el profesor puede ajustar el N° de preguntas).
@@ -161,18 +164,11 @@ export function AnswerKeyEditor({
         // exacta), tambien el texto de la rubrica y el puntaje maximo -- sin
         // pisar lo que el profesor ya haya tipeado para esa misma pregunta.
         const openQs = parseOpenQuestions(preset.openQuestions, preset.numQuestions);
-        setRubrics((prev) => {
-          const next: Record<number, OpenQuestionRubric> = {};
-          for (const q of openQs) {
-            const official = preset.openQuestionRubrics?.[q];
-            next[q] = {
-              rubric: prev[q]?.rubric || official?.rubric || "",
-              max_points: prev[q]?.max_points ?? official?.max_points ?? 2,
-              subtipo: preset.openQuestionSubtypes?.[q] ?? "simple",
-            };
-          }
-          return next;
-        });
+        // La pauta que solo puso el preset anterior se reemplaza; la que escribió
+        // el profesor se respeta (ver mergePresetRubrics).
+        const previousPreset = lastPresetRef.current;
+        lastPresetRef.current = preset;
+        setRubrics((prev) => mergePresetRubrics(prev, openQs, preset, previousPreset));
       }
     }
   }, [evalType, evalVariant]);

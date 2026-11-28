@@ -5,6 +5,7 @@ import { calculateGrade } from "@/lib/latam";
 import { PrintButton } from "@/components/dashboard/PrintButton";
 import { canonicalRut } from "@/lib/rut";
 import { computeAxisMastery, type AxisStat } from "@/lib/item_analysis";
+import { StudentAvatar } from "@/components/dashboard/StudentAvatar";
 
 export const dynamic = "force-dynamic";
 
@@ -94,7 +95,18 @@ export default async function StudentProfilePage({ params }: PageProps) {
     );
   }
 
-  const paperResults = paperQueries.length ? await Promise.all(paperQueries) : [];
+  const [paperResults, { data: gradeRecordsRaw }] = await Promise.all([
+    paperQueries.length ? Promise.all(paperQueries) : Promise.resolve([]),
+    studentRutNorm
+      ? supabase
+          .from("grade_records")
+          .select("id, quiz_id, paper_id, raw_score, total_questions, calculated_grade, passing, graded_at, quizzes(title)")
+          .eq("school_id", school.id)
+          .eq("student_code", studentRutNorm)
+          .order("graded_at", { ascending: false })
+      : Promise.resolve({ data: [] as StudentGradeRecord[] }),
+  ]);
+
   const papersById = new Map<string, StudentPaper>();
   for (const result of paperResults) {
     for (const paper of (result.data ?? []) as unknown as StudentPaper[]) papersById.set(String(paper.id), paper);
@@ -109,15 +121,6 @@ export default async function StudentProfilePage({ params }: PageProps) {
     const quizId = (p.quizzes?.id ?? p.quiz_id) as string | null | undefined;
     if (quizId) paperIdByQuiz.set(quizId, String(p.id));
   }
-
-  const { data: gradeRecordsRaw } = studentRutNorm
-    ? await supabase
-        .from("grade_records")
-        .select("id, quiz_id, paper_id, raw_score, total_questions, calculated_grade, passing, graded_at, quizzes(title)")
-        .eq("school_id", school.id)
-        .eq("student_code", studentRutNorm)
-        .order("graded_at", { ascending: false })
-    : { data: [] as StudentGradeRecord[] };
   const gradeHistory = ((gradeRecordsRaw ?? []) as unknown as StudentGradeRecord[]).map((record) => {
     const quiz = Array.isArray(record.quizzes) ? record.quizzes[0] : record.quizzes;
     const grade = Number(record.calculated_grade ?? 0);
@@ -220,13 +223,13 @@ export default async function StudentProfilePage({ params }: PageProps) {
       </div>
 
       {/* Encabezado del alumno */}
-      <div className="rounded-md border border-[#e6e8eb] bg-white p-5 shadow-sm md:p-6">
+      <div className="rounded-xl border border-[#e7e5df] bg-white p-5 shadow-xs md:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
-            <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[#07305f] text-xl font-bold text-white">{student.name?.charAt(0)?.toUpperCase() ?? "A"}</span>
+            <StudentAvatar seed={student.id} name={student.name} size="lg" />
             <div className="min-w-0">
-              <h1 className="truncate text-2xl font-semibold tracking-tight text-[#111827]">{student.name}</h1>
-              <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[#5b6472]">
+              <h1 className="truncate text-2xl font-bold tracking-tight text-[#1c1917]">{student.name}</h1>
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[#57534e]">
                 <span className="font-mono">{idLabel}</span>
                 {student.course ? <span className="rounded-full bg-[#eef4ff] px-2.5 py-0.5 text-xs font-semibold text-[#07305f]">{student.course}</span> : null}
               </p>
@@ -355,8 +358,8 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: 
 }
 
 function ApprovedPill({ passing }: { passing: boolean | null }) {
-  if (passing === null) return <span className="text-xs text-[#6b7280]">-</span>;
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${passing ? "bg-emerald-50 text-emerald-700" : "bg-orange-50 text-orange-700"}`}>{passing ? "Si" : "No"}</span>;
+  if (passing === null) return <span className="text-xs text-[#78716c]">-</span>;
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${passing ? "bg-emerald-50 text-emerald-700" : "bg-orange-50 text-orange-700"}`}>{passing ? "Sí" : "No"}</span>;
 }
 
 const AXIS_LVL = {
