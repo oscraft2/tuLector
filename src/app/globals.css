@@ -3,7 +3,7 @@
 @theme inline {
   --color-background: #f7f6f2;
   --color-foreground: #1c1917;
-  --font-sans: var(--font-source-sans), "Source Sans 3", "Segoe UI", Arial, sans-serif;
+  --font-sans: "Source Sans 3 Variable", "Source Sans 3", "Segoe UI", Arial, sans-serif;
 }
 
 body {
